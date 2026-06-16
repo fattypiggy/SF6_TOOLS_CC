@@ -14,7 +14,7 @@
     },
     "box_fill_alphas": {
         "clash": 64,
-        "hitbox": 255,
+        "hitbox": 108,
         "hurtbox": 64,
         "hurtbox_invuln": 10,
         "proximity": 64,
@@ -74,7 +74,7 @@
     },
     "divide_distance_display": false,
     "fill_alpha": 0,
-    "font_base_size": 27,
+    "font_base_size": 24,
     "font_filename": "frutigerltarabic-57cn.ttf",
     "hud_x_padding": 0.27900001406669617,
     "hud_y_pos": 0.132,
@@ -85,7 +85,7 @@
             "charge_x_pos": 0.012000000104308128,
             "charge_y_pos": 0.1120000034570694,
             "hud_x_padding": 0.3059999942779541,
-            "hud_y_pos": 0.12999999523162842,
+            "hud_y_pos": 0.132,
             "vital_ruler": {
                 "click_h": 0.050999999046325684,
                 "click_w": 0.3720000088214874,

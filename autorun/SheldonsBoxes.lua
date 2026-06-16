@@ -519,14 +519,14 @@ local draw_boxes = function(w, aP, p1)
                         draw_thick_outline(fX, fY, fSX, fSY, box_col.hitbox, config.box_thicknesses.hitbox)
                         draw.filled_rect(fX, fY, fSX, fSY, box_col.hitbox_fill)
                         if dprop then
-                            local he = "Can't Hit "; local co = "Combo "
-                            if bitand(r.CondFlag, 16) == 16 then he = he .. "Std, " end
-                            if bitand(r.CondFlag, 32) == 32 then he = he .. "Crch, " end
-                            if bitand(r.CondFlag, 64) == 64 then he = he .. "Air, " end
-                            if bitand(r.CondFlag, 256) == 256 then he = he .. "Fwd, " end
-                            if bitand(r.CondFlag, 512) == 512 then he = he .. "Bwd, " end
-                            if bitand(r.CondFlag, 262144) == 262144 then co = co .. "Only" end
-                            if bitand(r.CondFlag, 524288) == 524288 then co = co .. "Only" end
+                            local he = "不可命中 "; local co = "连段 "
+                            if bitand(r.CondFlag, 16) == 16 then he = he .. "站, " end
+                            if bitand(r.CondFlag, 32) == 32 then he = he .. "蹲, " end
+                            if bitand(r.CondFlag, 64) == 64 then he = he .. "空, " end
+                            if bitand(r.CondFlag, 256) == 256 then he = he .. "前, " end
+                            if bitand(r.CondFlag, 512) == 512 then he = he .. "后, " end
+                            if bitand(r.CondFlag, 262144) == 262144 then co = co .. "限定" end
+                            if bitand(r.CondFlag, 524288) == 524288 then co = co .. "限定" end
                             local fs = ""; if string.len(he) > 10 then fs = fs .. string.sub(he, 0, -3) .. "\n" end
                             if string.len(co) > 6 then fs = fs .. co .. "\n" end
                             if string.len(fs) > 0 then draw.text(fs, fX, fY + fSY / 2 + 2, 0xFFFFFFFF, property_text_font_size) end
@@ -557,14 +557,14 @@ local draw_boxes = function(w, aP, p1)
                                 draw.filled_rect(fX, fY, fSX, fSY, box_col.hurtbox_fill)
                             end
                             if dprop then
-                                local hi = ""; if r.TypeFlag == 1 then hi = hi .. "Proj" end; if r.TypeFlag == 2 then hi = hi .. "Strike" end
-                                local hu = ""; if bitand(r.Immune, 1) == 1 then hu = hu .. "Std, " end
-                                if bitand(r.Immune, 2) == 2 then hu = hu .. "Crch, " end
-                                if bitand(r.Immune, 4) == 4 then hu = hu .. "Air, " end
+                                local hi = ""; if r.TypeFlag == 1 then hi = hi .. "飞行道具" end; if r.TypeFlag == 2 then hi = hi .. "打击" end
+                                local hu = ""; if bitand(r.Immune, 1) == 1 then hu = hu .. "站, " end
+                                if bitand(r.Immune, 2) == 2 then hu = hu .. "蹲, " end
+                                if bitand(r.Immune, 4) == 4 then hu = hu .. "空, " end
                                 if bitand(r.Immune, 64) == 64 then hu = hu .. "XUp, " end
-                                if bitand(r.Immune, 128) == 128 then hu = hu .. "Rev, " end
-                                local fs = ""; if string.len(hi) > 0 then fs = fs .. hi .. " Invuln\n" end
-                                if string.len(hu) > 0 then fs = fs .. string.sub(hu, 0, -3) .. " Immune\n" end
+                                if bitand(r.Immune, 128) == 128 then hu = hu .. "逆转, " end
+                                local fs = ""; if string.len(hi) > 0 then fs = fs .. hi .. " 无敌\n" end
+                                if string.len(hu) > 0 then fs = fs .. string.sub(hu, 0, -3) .. " 免疫\n" end
                                 if string.len(fs) > 0 then draw.text(fs, fX, fY + fSY / 2 + 2, 0xFFFFFFFF, property_text_font_size) end
                             end
                         end
