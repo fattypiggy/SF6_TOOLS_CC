@@ -1,11 +1,72 @@
 {
     "activate_on_load": true,
-    "char_name": "Akuma",
-    "combo_files": null,
+    "char_name": "Ken",
+    "combo_files": [
+        "Ken_OKI_3998_D3_SA0.json",
+        "Ken_OKI_980_D0_SA0.json"
+    ],
     "files": [
-        "Akuma_Base.json"
+        "Ken_Base.json",
+        "Ken_Cheepz.json"
     ],
     "selected_file": "",
-    "slots": null,
-    "status_msg": "角色已选择 : Akuma"
+    "slots": [
+        {
+            "active": false,
+            "frames": 222,
+            "name": "",
+            "valid": true,
+            "weight": 1
+        },
+        {
+            "active": false,
+            "frames": 908,
+            "name": "",
+            "valid": true,
+            "weight": 1
+        },
+        {
+            "active": false,
+            "frames": 0,
+            "name": "",
+            "valid": false,
+            "weight": 1
+        },
+        {
+            "active": false,
+            "frames": 0,
+            "name": "",
+            "valid": false,
+            "weight": 1
+        },
+        {
+            "active": false,
+            "frames": 0,
+            "name": "",
+            "valid": false,
+            "weight": 1
+        },
+        {
+            "active": false,
+            "frames": 0,
+            "name": "",
+            "valid": false,
+            "weight": 1
+        },
+        {
+            "active": false,
+            "frames": 0,
+            "name": "",
+            "valid": false,
+            "weight": 1
+        },
+        {
+            "active": false,
+            "frames": 0,
+            "name": "",
+            "valid": false,
+            "weight": 1
+        }
+    ],
+    "status_msg": "角色已选择 : Ken"
 }

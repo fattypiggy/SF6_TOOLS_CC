@@ -1,6 +1,5 @@
 {
     "hide_ui": false,
-    "in_replay": true,
     "is_recording": false,
-    "recording_player": 0
+    "recording_player": -1
 }
