@@ -1,63 +1,62 @@
-# Hit Confirm Training
+# 04 Hit Confirm 确认训练
 
-Practice confirming hits into combos. The dummy blocks randomly, and you must react: continue the combo on hit, stop on block.
+Hit Confirm 用于练习命中确认：木人会随机防御或被击中，你需要在命中时继续连段，在被防时停止进攻。
 
-## What Is a Hit Confirm?
+## 什么是命中确认？
 
-A hit confirm means reacting to whether your attack actually hit the opponent or was blocked. On hit, you continue into a full combo for maximum damage. On block, you stop attacking to stay safe. This is one of the most important skills in competitive play.
+命中确认是指根据攻击是否命中来决定后续行动。命中时继续连段拿伤害；被防时停止或转入安全选择。这是实战中非常重要的基础能力。
 
-## Prerequisites
+## 前置条件
 
-- Be in **Training Mode**
-- Set the Script Manager to mode **1 (Hit Confirm)** — see Guide 02
-- Record at least one attack sequence in the dummy's recording slots — see Guide 07 (Recording Slot Manager) for how to record dummy actions
+- 进入 **Training Mode**。
+- 将 Script Manager 切到 **确认训练**。
+- 至少在木人录制槽里录制一个攻击序列。录制槽管理见指南 07。
 
-## How It Works
+## 工作方式
 
-1. Attack the dummy — it will randomly block or get hit
-2. **On hit**: Continue your combo (confirm the hit)
-3. **On block**: Stop attacking (confirm the block)
-4. The script evaluates your reaction and shows SUCCESS or FAIL
+1. 你攻击木人。
+2. 木人随机防御或被击中。
+3. **命中时**：继续连段。
+4. **被防时**：停止进攻。
+5. 脚本判断反应并显示成功或失败。
 
-## Setup
+## 设置
 
-1. The dummy guard is automatically set to **Random** when Hit Confirm mode activates
-2. Record your attack sequence in the training recording slots (see Guide 07)
-3. Start a session using the controls below
+1. 激活确认训练后，木人防御会自动设为随机。
+2. 录制你的攻击序列。
+3. 用下方快捷键开始 session。
 
-## Controls
+## 控制
 
-| Action | Keyboard | Gamepad |
-|--------|----------|---------|
-| Timer - / Trials - | [1] | FUNC + DOWN |
-| Timer + / Trials + | [2] | FUNC + UP |
-| Reset (idle) / Stop (active) | [3] | FUNC + LEFT |
-| Start (idle) / Pause (active) | [4] | FUNC + RIGHT |
+| 动作 | 键盘 | 手柄 |
+| --- | --- | --- |
+| 时间/次数 - | [1] | FUNC + DOWN |
+| 时间/次数 + | [2] | FUNC + UP |
+| 重置（空闲）/ 停止（运行中） | [3] | FUNC + LEFT |
+| 开始（空闲）/ 暂停（运行中） | [4] | FUNC + RIGHT |
 
-## Result Messages
+## 结果提示
 
-| Message | Meaning |
-|---------|---------|
-| HIT CONFIRM SUCCESS | You correctly continued the combo on hit |
-| BLOCK CONFIRMED | You correctly stopped on block |
-| FAIL: HIT NOT CONFIRMED | The hit landed but you dropped the combo |
-| FAIL: GAP IN COMBO AFTER HIT CONFIRMED | You confirmed, then dropped mid-combo |
-| FAIL: ON BLOCK MISCONFIRM | Dummy blocked but you kept attacking |
-| FAIL: GAP DETECTED AFTER DRC | Gap in your combo after a Drive Rush Cancel on block |
-| FAIL: HEAVY DR CANCEL | Used Heavy + Drive Rush on block (unsafe option) |
-| FAIL: SUBOPTIMAL (NEED HEAVY) | Drive Rush on hit but didn't follow up with a Heavy attack (suboptimal damage) |
-| SUCCESS: OPTIMAL DRC HIT CONFIRM | Drive Rush on hit followed by the correct Heavy attack |
+| 提示 | 含义 |
+| --- | --- |
+| HIT CONFIRM SUCCESS | 命中后正确继续连段。 |
+| BLOCK CONFIRMED | 被防后正确停止。 |
+| FAIL: HIT NOT CONFIRMED | 命中了，但没有完成确认。 |
+| FAIL: GAP IN COMBO AFTER HIT CONFIRMED | 确认后连段中断。 |
+| FAIL: ON BLOCK MISCONFIRM | 木人防住了，但你继续进攻。 |
+| FAIL: GAP DETECTED AFTER DRC | 被防 DRC 后出现空隙。 |
+| FAIL: HEAVY DR CANCEL | 被防时使用了不安全的重攻击 DRC。 |
+| FAIL: SUBOPTIMAL (NEED HEAVY) | 命中 DRC 后没有接正确重攻击。 |
+| SUCCESS: OPTIMAL DRC HIT CONFIRM | 命中 DRC 后接了正确重攻击。 |
 
-**Drive Rush Cancel (DRC)** is when you cancel a normal attack into a Drive Rush dash. The script tracks these separately because the optimal follow-up differs on hit vs block.
+## Session 模式
 
-## Session Modes
+- **TRIALS**：固定次数练习。
+- **TIMER**：固定时间练习。
+- 结束后统计导出到 `data/Stats/HitConfirm_SessionStats.txt`。
 
-- **TRIALS**: Fixed number of attempts — practice until you reach the count
-- **TIMER**: Timed session — practice for a set duration
-- Stats are exported to `data/Stats/HitConfirm_SessionStats.txt` at session end
+## 提示
 
-## Tips
-
-- The script detects multi-hit moves (same action with multiple active frames) and handles them correctly
-- Drive Rush Cancel confirms are tracked separately with optimal/suboptimal feedback
-- Light attacks only need combo count to validate; medium/heavy attacks need a new action to follow
+- 多段攻击会被脚本特殊处理，避免重复误判。
+- DRC 确认会单独判断，并区分最优/非最优选择。
+- 轻攻击通常只需要 Combo 计数验证；中/重攻击更依赖后续动作验证。

@@ -1,62 +1,66 @@
-# Reaction Drills
+# 06 Reaction Drills 反应训练
 
-Train your reactions against randomized dummy recordings. The dummy performs random actions from its recording slots, and you must react in time.
+反应训练用于练习对随机假人录制动作的即时应对。假人会从录制槽中随机播放动作，你需要在合适窗口内打断、惩罚或做出正确防守。
 
-## Prerequisites
+## 前置条件
 
-- Be in **Training Mode**
-- Set the Script Manager to mode **2 (Reaction Drills)** — see Guide 02
-- Record multiple actions in the dummy's recording slots — the more variety, the better (see Guide 07 for how to record dummy actions)
+- 进入 **Training Mode**
+- 在 Script Manager 中切换到模式 **2 (Reaction Drills)**，见 [02_Training_ScriptManager.md](02_Training_ScriptManager.md)
+- 在假人录制槽中录入多个动作，动作越丰富，训练价值越高
+- 录制槽管理见 [07_RecordingSlotManager.md](07_RecordingSlotManager.md)
 
-## How It Works
+## 工作方式
 
-1. The dummy randomly picks one of its recorded actions and performs it
-2. You must react and interrupt or punish the action
-3. The script tracks your success rate per slot
+1. 脚本从已启用的假人录制槽中随机选择一个动作
+2. 假人播放该动作
+3. 玩家需要及时反应，打断或惩罚该动作
+4. 脚本按录制槽统计成功率
 
-## Setup
+## 设置流程
 
-1. Record various attacks in slots 1-8 (e.g., different pokes, special moves, Drive Impact, throws)
-2. Activate the slots you want to practice against (or use **Activate All**)
-3. The dummy guard is automatically set to **No Guard**
-4. Start a session using the controls below
+1. 在 1-8 号槽录入不同动作，例如牵制、必杀技、Drive Impact、投技等
+2. 启用需要练习的录制槽，或使用 **Activate All**
+3. 脚本会自动把假人防御设置为 **No Guard**
+4. 使用下方控制项开始训练
 
-## Controls
+## 控制方式
 
-| Action | Keyboard | Gamepad |
-|--------|----------|---------|
+| 动作 | 键盘 | 手柄 |
+| --- | --- | --- |
 | Timer - / Trials - | [1] | FUNC + DOWN |
 | Timer + / Trials + | [2] | FUNC + UP |
-| Reset (idle) / Stop (active) | [3] | FUNC + LEFT |
-| Start (idle) / Pause (active) | [4] | FUNC + RIGHT |
+| Reset / Stop | [3] | FUNC + LEFT |
+| Start / Pause | [4] | FUNC + RIGHT |
 
-## Menu Options
+## 菜单选项
 
-- **Auto-activate**: Forces all filled slots active when starting a session
-- **Manual mode**: You manually press Play each time instead of auto-looping
-- **Show Slot Percentages**: Displays per-slot success rate on the overlay (e.g., `S1:95% S2:87%`)
+- **Auto-activate**：开始训练时强制启用所有有内容的录制槽
+- **Manual mode**：每次动作需要手动播放，不自动循环
+- **Show Slot Percentages**：在覆盖层显示每个槽位的成功率，例如 `S1:95% S2:87%`
 
-## Scoring
+## 计分规则
 
-- **Success**: You interrupted the dummy's action (hit it before it completes)
-- **Fail**: The dummy's action hit you, you blocked, or you whiffed (missed entirely)
+- **Success**：你在动作完成前打中了假人，成功打断
+- **Fail**：假人动作命中你、你被迫防御，或你挥空未能处理动作
 
-## D2D Overlay
+## D2D 覆盖层
 
-- Per-slot success percentages (when enabled)
-- Overall success rate
-- Session timer or remaining trials
-- Color-coded feedback per attempt
+反应训练的 D2D HUD 会显示：
 
-## Session Modes
+- 每个槽位的成功率
+- 总体成功率
+- 当前计时或剩余次数
+- 每次尝试的颜色反馈
 
-- **TRIALS**: Fixed number of attempts
-- **TIMER**: Timed session
-- Stats exported to `data/Stats/TrainingReactions_SessionStats.txt`
+## 训练模式
 
-## Tips
+- **TRIALS**：固定次数训练
+- **TIMER**：固定时长训练
+- 统计结果会导出到 `data/Stats/TrainingReactions_SessionStats.txt`
 
-- Record a mix of fast and slow attacks to train different reaction windows
-- Use slot weights in the Recording Slot Manager (Guide 07) to make certain actions appear more often
-- The auto-loop waits for the dummy's action to complete before starting the next one
-- Per-slot stats help identify which situations you struggle with most
+## 建议
+
+- 同时录入快动作和慢动作，用来训练不同反应窗口
+- 在 Recording Slot Manager 中调整槽位权重，让重点动作更常出现
+- 自动循环会等待假人动作结束后再进入下一次
+- 分槽位统计能帮助你定位最容易失败的具体情景

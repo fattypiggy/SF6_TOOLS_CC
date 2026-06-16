@@ -1,57 +1,61 @@
-# Training Script Manager
+# 02 Training Script Manager 训练脚本管理器
 
-Central hub that manages all training scripts. It provides a floating top bar for quick mode switching and handles shared configuration (colors, button mapping, shortcuts).
+Training Script Manager 是训练工具包的总入口。它负责顶部浮动栏、主动训练模式切换、快捷键、颜色和共享配置。
 
-## Prerequisites
+## 前置条件
 
-- **REFramework** must be installed (see the Getting Started guide — Guide 00)
-- You must be in **Training Mode** for the manager to activate
+- 已安装 REFramework。
+- 当前处于 **Training Mode**。
 
-## First-Time Setup
+## 首次使用
 
-1. Launch SF6 and enter Training Mode
-2. Press **Insert** to open the REFramework menu
-3. Find **Training Script Manager** in the script list — it should already be active
-4. Close the menu (Insert again) and look for the floating top bar at the top of the screen
+1. 启动 SF6 并进入训练模式。
+2. 按 **Insert** 打开 REFramework 菜单。
+3. 找到 **训练脚本管理器 / Training Script Manager**。
+4. 关闭菜单后，屏幕顶部应出现浮动模式栏。
 
-## Modes
+## 主动训练模式
 
-The manager controls 4 training modes. Only one can be active at a time:
+管理器控制 4 个主动训练模式，同一时间只能启用一个：
 
-| Mode | Description |
-|------|-------------|
-| Disabled | All training scripts off (normal Training Mode) |
-| Hit Confirm | Practice confirming hits vs blocks (see Guide 04) |
-| Reaction Drills | React to random dummy actions (see Guide 06) |
-| Post Guard | Practice punishing after blocking (see Guide 05) |
-| Custom Combo Trials | Record and practice your own combos (see Guide 03) |
+| 模式 | 说明 |
+| --- | --- |
+| 关闭 | 不启用主动训练脚本，回到普通训练模式。 |
+| 确认训练 | 练习命中确认，详见指南 04。 |
+| 反应训练 | 随机播放木人录制动作，详见指南 06。 |
+| 防后训练 | 练习防住后的惩罚，详见指南 05。 |
+| 连段 Trial | 录制并练习自定义连段，详见指南 03。 |
 
-## Controls
+## 快捷键
 
-### Gamepad
-- **FUNCTION BUTTON + SQUARE/X**: Cycle through modes
-- The function button defaults to SELECT/BACK — you can change it in the menu (see below)
+### 手柄
 
-### Keyboard
-- **[0]** (zero key, top row): Cycle through modes (customizable — see below)
+- **FUNC + SQUARE/X**：循环切换模式。
+- FUNC 默认是 SELECT/BACK，可在菜单中修改。
 
-## Top Bar (Floating Overlay)
+### 键盘
 
-A floating bar at the top of the screen shows:
-- **SWITCH** button — click to cycle modes
-- One button per mode — **green** = active, **grey** = inactive
-- Click any mode button to jump straight to it
+- **[0]**：循环切换模式。
+- 可在菜单中修改为其他按键或组合键。
 
-## Changing Your Button Bindings
+## 顶部浮动栏
 
-In the REFramework menu under **Training Script Manager**:
+顶部浮动栏包含：
 
-- **CHANGE FUNCTION BUTTON**: Press any gamepad button to set it as your new function key
-- **CHANGE SWITCH KEY**: Press any keyboard key (with optional modifiers like Shift/Ctrl) to set it as your new mode-cycling key
-- **Color Slots**: Customize the 4 color slots used across all training scripts. Each slot has separate color (RGB) and opacity (Alpha) values — for example, set slot 1 to red with 80% opacity for hit feedback
+- **切换**：循环切换模式。
+- 各模式按钮：点击可直接进入指定模式。
+- 当前激活模式通常以高亮颜色显示。
 
-## Notes
+## 修改按键和颜色
 
-- When switching modes, a ticker notification appears on screen showing the active mode name.
-- When you leave Training Mode, all modes automatically reset to Disabled
-- During replays, training scripts are temporarily paused with a short reactivation delay
+在 REFramework 菜单的 Training Script Manager 中可以修改：
+
+- **CHANGE FUNCTION BUTTON / 修改 FUNC 按钮**：按任意手柄键设置新的 FUNC。
+- **CHANGE SWITCH KEY / 修改切换按键**：按任意键盘按键或组合键设置模式切换键。
+- **Color Slots**：配置全套训练工具使用的颜色槽，包括 RGB 和透明度。
+
+## 注意事项
+
+- 切换模式时，屏幕会显示当前模式提示。
+- 离开训练模式后，主动训练模式会自动回到关闭。
+- 录像或非训练场景下，部分训练脚本会暂停或延迟恢复。

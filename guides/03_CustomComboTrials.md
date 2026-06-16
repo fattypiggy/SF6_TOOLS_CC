@@ -1,80 +1,86 @@
-# Custom Combo Trials
+# 03 Custom Combo Trials 自定义连段 Trial
 
-Record your own combos and practice them with full validation, stats tracking, and visual feedback.
+Custom Combo Trials 用于录制自己的连段，并以 Trial 形式进行步骤验证、数据统计和可视化练习。
 
-## Prerequisites
+## 前置条件
 
-- Be in **Training Mode**
-- Set the Script Manager to mode **4 (Custom Combo Trials)** — see Guide 02 for how to switch modes
-- A dummy character must be present
+- 进入 **Training Mode**。
+- 将 Script Manager 切到模式 **4：连段 Trial**。
+- 场上必须有木人角色。
 
-## Quick Start — Recording a Combo
+## 快速开始：录制连段
 
-1. Switch to mode 4 (press **[0]** until "CUSTOM COMBO TRIALS" is active, or click it in the top bar)
-2. Press **[1]** (keyboard) or **FUNC + LEFT** (gamepad) to start recording as P1
-3. Perform your combo on the dummy
-4. Press **[1]** again to stop recording and save
+1. 切到模式 4，顶部栏显示连段 Trial。
+2. 按键盘 **[1]** 或手柄 **FUNC + LEFT**，开始以 P1 录制。
+3. 对木人打出你的连段。
+4. 再按一次 **[1]** 或 **FUNC + LEFT**，停止并保存。
 
-The combo is now saved and ready to practice.
+保存后，连段会出现在当前角色的文件下拉框中。
 
-## Quick Start — Playing a Trial
+## 快速开始：播放 Trial
 
-1. With a combo recorded, press **[2]** (keyboard) or **FUNC + UP** (gamepad) to start the trial
-2. Perform the recorded combo — each step lights up green on success
-3. If you drop the combo, it resets and you try again
-4. Press **[2]** again to stop the trial
+1. 选择一个已保存连段。
+2. 按键盘 **[2]** 或手柄 **FUNC + UP** 开始 Trial。
+3. 按录制顺序完成连段。成功步骤会高亮。
+4. 如果失败，系统会重置并让你重新尝试。
+5. 再按 **[2]** 或 **FUNC + UP** 停止 Trial。
 
-## Controls
+## 控制
 
-| Action | Keyboard | Gamepad |
-|--------|----------|---------|
-| Record P1 / Stop & Save | [1] | FUNC + LEFT |
-| Start Trial / Stop Trial | [2] | FUNC + UP |
-| Record P2 | [3] | FUNC + DOWN |
-| Switch Position Mode | [4] | FUNC + RIGHT |
-| Demo (during trial) | D key | - |
+| 动作 | 键盘 | 手柄 |
+| --- | --- | --- |
+| 录制 P1 / 停止并保存 | [1] | FUNC + LEFT |
+| 开始 Trial / 停止 Trial | [2] | FUNC + UP |
+| 录制 P2 | [3] | FUNC + DOWN |
+| 切换位置模式 | [4] | FUNC + RIGHT |
+| 演示 Demo | D | - |
 
-## Position Modes
+## 位置模式
 
-Cycle through 3 modes with the Switch Position button:
+切换位置按钮会循环 3 种模式：
 
-1. **Forced Position OFF** — Characters stay where you leave them
-2. **Forced Position ON** — Characters teleport to recorded starting positions before each attempt
-3. **Mirrored** — Same as Forced but positions are flipped (practice both sides)
+1. **任意位置**：不强制重置位置。
+2. **固定位置**：每次尝试前回到录制起始位置。
+3. **镜像位置**：固定位置基础上左右互换，方便练习双边。
 
 ## D2D Overlay
 
-The floating window shows:
-- Step list with direction/button icons for each move
-- Current step highlighted during playback
-- Green overlay on validated steps, dark overlay on failed steps
-- Combo count per step (e.g., `[Combo: 3]`)
+浮动显示层会显示：
 
-## Recording Features
+- 每一步的方向/按钮图标。
+- 当前步骤高亮。
+- 已验证步骤显示成功覆盖层。
+- 失败步骤显示深色覆盖层。
+- 每步 Combo 计数，例如 `[Combo: 3]`。
 
-- **Counter Type**: If a step lands as Counter Hit (hitting the opponent during their attack startup) or Punish Counter (hitting during recovery), it's recorded and automatically applied during playback
-- **Guard Type**: The dummy's guard is managed automatically — guard after 1st hit during combos, no guard during oki (wakeup pressure) sequences
-- **Follow-ups**: Multiple actions on the same step are grouped visually
-- **Delay tracking**: Frame gaps between steps are recorded
+## 录制特性
 
-## Session Mode
+- **Counter Type**：CH/PC 会被记录，并在播放时自动设置木人。
+- **Guard Type**：连段中木人会自动设置防御逻辑；oki 片段会允许起身压制。
+- **Follow-up 分组**：同一步中的派生动作会合并显示。
+- **Delay tracking**：记录步骤之间的帧间隔，用于时机验证。
 
-In the REFramework menu under **SESSION CONFIGURATION**:
-- **TRIALS mode**: Set a number of attempts (10-200)
-- **TIMER mode**: Set a duration (1-60 minutes)
-- Start/Stop/Pause/Reset the session
-- Stats are exported to `data/Stats/` at the end
+## Session 模式
 
-## Combo Data
+在 REFramework 菜单中可以设置：
 
-- Combos are saved per character in `data/TrainingComboTrials_data/CustomCombos/[CharacterName]/`
-- Each file is a `.json` containing the step sequence, positions, and metadata
-- Use the **Recording Slot Manager** (see Guide 07) to import/export slot data alongside combos
+- **TRIALS**：固定尝试次数。
+- **TIMER**：固定练习时间。
+- Session 结束后统计会导出到 `data/Stats/`。
 
-## Tips
+## 连段数据位置
 
-- The first step is always validated on action detection — you don't need to hit the dummy
-- For oki sequences (attacks timed against the opponent's wakeup after a knockdown), record a movement step (dash/jump) before the meaty attack — the system tolerates combo count gaps for movement steps
-- Use **Demo** mode to watch the dummy perform your combo (useful for verifying timing)
-- Flip inputs update dynamically before you start the combo, so walking to the other side works naturally
-- You can also control Combo Trials from your phone via the Training Remote Control (see Guide 09). Available actions: Record, Start/Stop Trial, Reset, Demo, Position toggle.
+连段按角色保存：
+
+```text
+data/TrainingComboTrials_data/CustomCombos/[CharacterName]/
+```
+
+每个 `.json` 文件包含步骤序列、起始位置、统计数据和可选 Demo 时间线。
+
+## 提示
+
+- 第一步只要检测到动作即可验证，不一定要立刻命中木人。
+- oki 连段建议先录制移动步骤，再录 meaty 攻击。
+- Demo 可以用来检查录制时机。
+- 走到另一侧时，显示输入会根据方向自动翻转。

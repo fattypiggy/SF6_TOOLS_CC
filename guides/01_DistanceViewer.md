@@ -1,104 +1,97 @@
-# Distance Viewer
+# 01 Distance Viewer 距离显示
 
-Real-time visualization of attack ranges, opponent zones, crossup distances, and jump arcs. Works in Training Mode and online matches.
+Distance Viewer 用于实时显示攻击范围、双方距离、穿身跳距离和跳跃轨迹。它可用于训练模式，也可以在对战、Battle Hub 和录像中辅助观察距离。
 
-## What Is This For?
+## 这个工具解决什么问题？
 
-Understanding your character's effective ranges is key to controlling neutral (the mid-range spacing game where both players are looking for openings). This tool shows you exactly where each of your moves can reach, so you can learn optimal spacing for pokes, anti-airs, and whiff punishes (hitting the opponent's missed attacks).
+格斗游戏中的中距离控制非常依赖距离感。这个工具把当前双方距离和招式最大范围可视化，帮助你练习：
 
-## Getting Started — Basic Mode
+- 牵制距离。
+- 对空距离。
+- 差返距离。
+- 特定招式的最远命中点。
+- 跳入是否会穿身。
 
-Basic Mode works out of the box with no setup. Just open the REFramework menu (Insert), find **Distance Viewer**, and make sure **Expert Mode** is OFF.
+## 基础模式
 
-### What You See
+基础模式不需要额外设置。打开 REFramework 菜单，找到 **Distance Viewer**，确认 **Expert Mode** 关闭即可。
 
-A simple zone-based display using predefined distance thresholds. Four colored zones (Red/Orange/Yellow/Green) give you a quick read on your current spacing relative to the opponent.
+基础模式会用预设距离阈值显示红、橙、黄、绿等区域，让你快速判断当前距离。
 
-### Crossup Indicator
+### 穿身跳提示
 
-Shows whether a forward jump from the current distance will cross up (land behind the opponent):
-- **CrossUpSt** (red): Will cross up a standing opponent
-- **CrossUpCr** (yellow): Will cross up a crouching opponent
-- **No Cross** (grey): Won't cross up
+工具会判断当前位置前跳是否会穿到对手背后：
 
-### Jump Arc
+- **CrossUpSt**：可穿站姿对手。
+- **CrossUpCr**：可穿蹲姿对手。
+- **No Cross**：不会穿身。
 
-A visual arc showing the forward jump trajectory from your current position.
+### 跳跃轨迹
 
----
+可显示前跳轨迹，用于判断跳入、穿身和对空距离。
 
 ## Expert Mode
 
-Expert Mode replaces the simple zones with precise per-move range visualization. Each move gets its own colored marker on a distance line, so you can see exactly which attacks reach at your current spacing.
+Expert Mode 会用每个招式的具体范围替代简单分区。每个招式都会在距离线上显示标记，让你看到当前距离有哪些招式能碰到对手。
 
-### How to Enable
+### 开启方式
 
-1. Open the REFramework menu (Insert)
-2. Find **Distance Viewer**
-3. Toggle **Expert Mode** ON
-4. The viewer loads attack range data from `data/SF6_DistanceViewer_data/SF6Distance_Data_Attacks.json` (included with the mod)
+1. 打开 REFramework 菜单。
+2. 找到 **Distance Viewer**。
+3. 打开 **Expert Mode**。
+4. 工具会读取 `data/SF6_DistanceViewer_data/SF6Distance_Data_Attacks.json` 中的攻击范围数据。
 
-### What You See
+### 显示内容
 
-#### Horizontal Line
-A colored line extending from your character to the opponent, segmented by attack ranges:
-- Each segment corresponds to a move's maximum reach
-- Color gradient from close (red) to far (blue)
-- A cursor marks the current distance
+- **水平距离线**：从角色延伸到对手，按招式范围分段。
+- **垂直标记线**：在每个招式范围边界画线。
+- **当前距离游标**：标记当前双方距离。
+- **对手区域标签**：显示当前距离可命中的招式输入，并随移动实时更新。
 
-#### Vertical Markers
-Full-height lines at each move's range boundary (configurable: top half, bottom half, or full screen).
+## 区域配置
 
-#### Opponent Zone Label
-Text above the opponent's head showing which move can reach from the current distance. Displays the move input with direction icons and updates in real-time as you move.
+你可以把特定招式设为参考点：
 
-### Zone Configuration
+- **Red Zone**：通常设为近距离惩罚或关键按钮。
+- **Orange Zone**：通常设为更远的牵制按钮。
+- **Yellow Offset**：控制橙色区域外黄色区域的宽度。
 
-You can customize the colored zones by assigning specific moves as reference points:
+每个区域旁的 **TELEPORT** 可以把双方放到该招式最大距离，方便练习最远点确认。
 
-- **Red Zone**: Pick a move from the dropdown to define the "danger zone" — inside this range, that move will reach. A **TELEPORT** button places both characters at exactly that move's max range so you can practice spacing.
-- **Orange Zone**: Same idea, but for a second reference move (typically a slightly longer-range poke).
-- **Yellow Offset**: Adjust the width of the yellow zone beyond the orange zone (default 50).
+## 单招显示偏好
 
-This lets you build a personalized spacing map for your character — for example, set Red Zone to your best close-range punish and Orange Zone to your longest poke.
+Expert Mode 中每个角色都有招式列表。你可以：
 
-### Per-Move Preferences
+- 单独开关某个招式是否显示。
+- 使用 **Max Only** 只显示每种防御类型下最远的招式。
 
-Each character has a move list in Expert Mode. You can:
-- Toggle visibility of individual moves to only show the ones you care about
-- Use **Max Only** to show only the farthest-reaching move per guard type (standing/crouching)
+## 常用显示选项
 
-### Display Options
+| 选项 | 说明 |
+| --- | --- |
+| Show Markers | 显示垂直范围线。 |
+| Show Vertical Cursor | 显示当前距离游标。 |
+| Show Horizontal Lines | 显示水平距离条。 |
+| Show Numbers | 显示距离数值。 |
+| Show Opp Zone | 显示对手头上的区域标签。 |
+| Crossup Show | 显示穿身跳距离。 |
+| Show Jump Arc | 显示前跳轨迹。 |
+| Fill Background | 在范围之间填充颜色背景。 |
+| Color Text | 文本颜色跟随区域颜色。 |
 
-| Option | Description |
-|--------|-------------|
-| Show Markers | Vertical lines at each move's range |
-| Show Vertical Cursor | Moving line tracking current distance |
-| Show Horizontal Lines | Horizontal distance bar |
-| Show Numbers | Distance values on the bar |
-| Show Opp Zone | Zone label above opponent |
-| Crossup Show | Crossup distance indicator |
-| Show Jump Arc | Forward jump arc visualization |
-| Fill Background | Colored background fill between markers |
-| Color Text | Color the zone text to match the zone color |
+## Auto Active
 
-### Auto Active Mode
+Auto Active 可以在对手进入指定范围时自动执行动作：
 
-Automatically performs an action when the opponent enters a specific range:
+1. 在 **Auto Active** 区域勾选 **Enable**。
+2. 从下拉框选择动作，包括当前角色招式和 **FORWARD JUMP**。
+3. 设置延迟帧数：`0` 为立即执行，`60` 约等于 1 秒。
+4. 对手进入范围后，木人会自动执行该动作。
 
-1. In the **Auto Active** section, check **Enable**
-2. Select a move from the dropdown — this includes all your character's logged moves plus **FORWARD JUMP** (uses the crossup distance as trigger range)
-3. Set the **Delay** in frames with the -/+ buttons (0 = instant, 60 = 1 second delay before firing)
-4. The dummy will auto-fire the selected move when the opponent is in range
+`FORWARD JUMP` 特别适合练习对空：木人会在合适距离自动跳入。
 
-**FORWARD JUMP** is especially useful for practicing anti-airs: the dummy will automatically jump at you from the right distance, so you can drill your anti-air reactions.
+## 注意事项
 
-Useful for practicing anti-airs, whiff punishes, or spacing traps.
-
----
-
-## Notes
-
-- The viewer works in Training Mode, online matches, Battle Hub, and replays
-- Attack range data is stored in `data/SF6_DistanceViewer_data/SF6Distance_Data_Attacks.json`
-- Stance characters (e.g., characters with alternate fighting stances) show separate move sets per stance
+- 攻击范围数据保存在 `data/SF6_DistanceViewer_data/SF6Distance_Data_Attacks.json`。
+- 有架势/派生状态的角色可能有多个招式集合。
+- 这是被动/辅助工具，不属于顶部互斥训练模式。

@@ -1,60 +1,61 @@
-# Post-Guard Training
+# 05 Post Guard 防后训练
 
-Practice punishing the dummy after blocking its attacks. The dummy attacks, you block, then punish during its recovery.
+Post Guard 用于练习防住木人攻击后的惩罚。木人执行录制动作，你防住后，在对手硬直期间进行反击。
 
-## What Is a Punish?
+## 什么是防后惩罚？
 
-After you block an attack, the opponent is briefly stuck in recovery. If the attack is "unsafe," you can hit them during that recovery window — this is called a **punish**. Learning which moves are punishable and reacting in time is key to strong defense.
+当你防住一个不安全招式后，对手会进入硬直。如果你能在硬直内打中对手，就是 punish / 确反。识别哪些招式可惩罚，并及时出手，是防守能力的重要部分。
 
-## Prerequisites
+## 前置条件
 
-- Be in **Training Mode**
-- Set the Script Manager to mode **3 (Post Guard)** — see Guide 02
-- Record at least one attack sequence in the dummy's recording slots — see Guide 07 (Recording Slot Manager) for how to record dummy actions
+- 进入 **Training Mode**。
+- 将 Script Manager 切到 **防后训练**。
+- 至少在木人录制槽里录制一个攻击序列。录制槽管理见指南 07。
 
-## How It Works
+## 工作方式
 
-1. The dummy performs a recorded attack
-2. You block it
-3. **If the dummy is in recovery**: Punish with your own attack
-4. **If the dummy does nothing after**: Wait and don't press buttons
-5. **If the dummy uses Drive Impact** (a powerful armored attack, costs 1 Drive bar): React with your own Drive Impact or counter
+1. 木人执行录制攻击。
+2. 你进行防御。
+3. 如果木人处于硬直，你需要出手惩罚。
+4. 如果木人招式安全，应该等待，不要乱按。
+5. 如果木人使用 DI，需要用你的 DI 或其他反制方式处理。
 
-## Setup
+## 设置
 
-1. Record attacks for the dummy to perform — see Guide 07 (Recording Slot Manager)
-2. The dummy guard is automatically set to **Guard All** when Post Guard activates
-3. Start a session using the controls below
+1. 录制木人要执行的攻击。
+2. 激活防后训练后，木人防御会自动设为全防。
+3. 使用快捷键开始 session。
 
-## Controls
+## 控制
 
-| Action | Keyboard | Gamepad |
-|--------|----------|---------|
-| Timer - / Trials - | [1] | FUNC + DOWN |
-| Timer + / Trials + | [2] | FUNC + UP |
-| Reset (idle) / Stop (active) | [3] | FUNC + LEFT |
-| Start (idle) / Pause (active) | [4] | FUNC + RIGHT |
+| 动作 | 键盘 | 手柄 |
+| --- | --- | --- |
+| 时间/次数 - | [1] | FUNC + DOWN |
+| 时间/次数 + | [2] | FUNC + UP |
+| 重置（空闲）/ 停止（运行中） | [3] | FUNC + LEFT |
+| 开始（空闲）/ 暂停（运行中） | [4] | FUNC + RIGHT |
 
-## Scoring
+## 判定
 
-- **Success**: You punished the dummy during its recovery window
-- **Fail**: You attacked when you shouldn't have (the dummy's move was safe) or didn't punish in time
-- **DI Counter**: Detected and tracked separately when Drive Impact is involved
+- **Success**：在木人硬直内成功惩罚。
+- **Fail**：不该出手时出手，或没有及时惩罚。
+- **DI Counter**：涉及 Drive Impact 时单独追踪。
 
-## Configuration
+## 配置
 
-In the REFramework menu:
-- **block_stun_grace**: Extra frames of leniency after blockstun ends before the script starts judging you (default 10 — at 60fps, that's about 0.17 seconds)
-- **observation_window**: Maximum time you have to land your punish after blockstun ends (default 120 frames = 2 seconds)
-- **Debug Info**: Shows player states, current phase, and scoring details
+REFramework 菜单中可调整：
 
-## Session Modes
+- `block_stun_grace`：防御硬直结束后的宽限帧，默认 10。
+- `observation_window`：防御硬直结束后允许你惩罚的最大窗口，默认 120 帧。
+- **Debug Info**：显示双方状态、当前阶段和评分细节。
 
-- **TRIALS**: Fixed number of attempts
-- **TIMER**: Timed session
-- Stats exported to `data/Stats/PostGuard_Stats.txt`
+## Session 模式
 
-## Tips
+- **TRIALS**：固定次数。
+- **TIMER**：固定时间。
+- 统计导出到 `data/Stats/PostGuard_Stats.txt`。
 
-- The script detects parries and throw techs as valid defensive options
-- Focus on recognizing which moves are punishable vs safe — the script trains your decision-making, not just your reactions
+## 提示
+
+- 脚本会把 parry 和拆投识别为有效防守选项。
+- 重点是判断对手招式是否可惩罚，不只是练反应速度。

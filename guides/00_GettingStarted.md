@@ -1,77 +1,79 @@
-# Getting Started
+# 00 入门指南
 
-Welcome! This guide will get you up and running with the SF6 Training Tools mod suite. No prior modding experience is needed.
+欢迎使用 SF6 Training Tools 训练工具包。本指南会帮助你完成基本启动和功能入口说明，不需要提前了解 mod 开发。
 
-## What Are These Tools?
+## 这套工具是什么？
 
-These are a collection of training add-ons for Street Fighter 6 that run inside REFramework. They add features like custom combo trials, hit confirm drills, distance visualization, hitbox display, and more — all designed to help you level up your game.
+这是一组运行在 REFramework 内的 Street Fighter 6 训练辅助脚本。它提供自定义连段 Trial、命中确认训练、反应训练、距离显示、碰撞框显示、录制槽管理等功能，目标是把训练模式变成更高效的练习环境。
 
-## Step 1: Install REFramework
+## 第 1 步：确认 REFramework 已安装
 
-REFramework is the mod loader that makes everything work. If you're reading this, it's probably already installed (the mods are inside the `reframework/` folder). If not:
+REFramework 是这些脚本运行的加载器。如果你正在阅读这个目录，通常说明它已经安装在游戏目录下。如果需要重新安装：
 
-1. Download REFramework from [GitHub](https://github.com/Wael3rd/SF6_Tools)
-2. Download the Street Fighter 6 zip file.
-3. Extract the contents of the zip file to your SF6 game folder (next to `StreetFighter6.exe`)
-4. Launch the game — you should see a brief "REFramework" watermark in the top-left corner
+1. 下载适用于 Street Fighter 6 的 REFramework。
+2. 解压到 SF6 游戏根目录，也就是 `StreetFighter6.exe` 所在目录。
+3. 启动游戏。
+4. 如果 REFramework 正常注入，游戏启动时左上角通常会短暂显示 REFramework 水印。
 
-## Step 2: Open the REFramework Menu
+## 第 2 步：打开 REFramework 菜单
 
-Press the **Insert** key on your keyboard at any time during the game. This opens the REFramework overlay menu where all mod settings live. Press **Insert** again to close it.
+游戏内按 **Insert** 打开 REFramework 菜单，再按一次关闭。
 
-> **Tip:** The overlay menu is separate from the game's pause menu. You can open it during gameplay, in menus, or anywhere else.
+如果笔记本键盘没有独立 Insert，可以尝试：
 
-## Step 3: Enter Training Mode
+- `Fn + Insert`
+- `Fn + Del`
+- `Fn + 0`
+- `Home`
 
-Most tools only work in Training Mode. Start the game, go to **Training Mode** from the main menu, and pick any two characters.
+## 第 3 步：进入训练模式
 
-## Step 4: Activate a Training Script
+大多数训练脚本只在 **Training Mode** 中工作。进入训练模式并选择双方角色后，训练工具会开始生效。
 
-Once in Training Mode, you have two ways to switch between training tools:
+## 第 4 步：切换训练脚本
 
-### Using the Gamepad
-Hold **FUNCTION BUTTON** (defaults to SELECT/BACK) and press **SQUARE/X** to cycle through modes.
+进入训练模式后，可以用两种方式切换主动训练模式。
 
-### Using the Keyboard
-Press **[0]** (zero key, top row) to cycle through modes.
+### 手柄
 
-The active mode appears in a floating bar at the top of the screen:
-- **Hit Confirm** — Practice confirming hits vs blocks
-- **Reaction Drills** — React to random dummy actions
-- **Post Guard** — Practice punishing after blocking
-- **Custom Combo Trials** — Record and practice your own combos
+按住 **FUNC 按钮**，再按 **方块 / X** 循环切换模式。FUNC 默认通常是 SELECT/BACK，可在菜单里修改。
 
-## Step 5: Explore
+### 键盘
 
-Each tool has its own guide in this folder (numbered 01 through 10). Start with whichever sounds most useful to you. Here's a quick map:
+按键盘顶部数字行的 **[0]** 循环切换模式。
 
-| Guide | Tool | What It Does |
-|-------|------|-------------|
-| 01 | Distance Viewer | Visualize attack ranges on screen |
-| 02 | Script Manager | Central hub — mode switching, button config, colors |
-| 03 | Custom Combo Trials | Record combos and practice them with validation |
-| 04 | Hit Confirm | Train hit confirm reactions (hit vs block) |
-| 05 | Post Guard | Practice punishing after blocking |
-| 06 | Reaction Drills | React to random dummy attacks |
-| 07 | Recording Slot Manager | Manage dummy recording slots (import/export) |
-| 08 | Training Remote Control | Control training tools from your phone |
+屏幕顶部会显示浮动模式栏：
 
-## Quick Glossary
+- **确认训练**：练习命中/防御确认。
+- **反应训练**：针对木人随机动作做反应。
+- **防后训练**：练习防住后惩罚。
+- **连段 Trial**：录制并练习自定义连段。
 
-New to fighting games? Here are some terms you'll see in these guides:
+## 工具索引
 
-- **Dummy** — The opponent character controlled by the CPU in Training Mode
-- **Frame** — One unit of game time. SF6 runs at 60 frames per second, so 1 frame = ~0.017 seconds
-- **Frame data** — How many frames each phase of a move takes (startup, active, recovery)
-- **Hit confirm** — Reacting to whether your attack hit or was blocked, and choosing your next action accordingly
-- **Oki (okizeme)** — Attacking the opponent as they get up from a knockdown
-- **Meaty** — An attack timed so that its active frames overlap with the opponent's wakeup
-- **Punish** — Hitting the opponent during their recovery (after they whiff or you block their attack)
-- **Whiff punish** — Hitting the opponent during the recovery of an attack that missed you
-- **Drive Impact (DI)** — A powerful armored attack unique to SF6 (costs 1 Drive bar)
-- **Drive Rush Cancel (DRC)** — Canceling a normal into a Drive Rush dash for pressure or combos
-- **Counter Hit (CH)** — Hitting the opponent during their attack startup, causing extra hitstun
-- **Punish Counter (PC)** — Hitting the opponent during their recovery, causing even more hitstun
-- **Numpad notation** — A system for writing joystick directions using the number pad layout: 7=up-back, 8=up, 9=up-forward, 4=back, 5=neutral, 6=forward, 1=down-back, 2=down, 3=down-forward
-- **Blockstring** — A sequence of attacks designed to keep the opponent blocking
-- **Proximity normal** — A different normal attack that comes out when the opponent is close (standing close HP vs standing far HP)
+| 指南 | 工具 | 作用 |
+| --- | --- | --- |
+| 01 | Distance Viewer | 在画面上显示距离、攻击范围、跳跃轨迹。 |
+| 02 | Training Script Manager | 顶部模式栏、模式切换、快捷键和颜色配置。 |
+| 03 | Custom Combo Trials | 录制连段并按步骤验证练习。 |
+| 04 | Hit Confirm | 练习命中确认和防御确认。 |
+| 05 | Post Guard | 练习防住对手攻击后的惩罚。 |
+| 06 | Reaction Drills | 针对随机录制动作做反应训练。 |
+| 07 | Recording Slot Manager | 管理训练模式木人录制槽。 |
+| 08 | Training Remote Control | 用手机网页远程控制训练工具。 |
+
+## 常用术语
+
+- **Dummy / 木人**：训练模式中由 CPU 控制的对手。
+- **Frame / 帧**：游戏时间单位。SF6 为 60 FPS，1 帧约等于 0.017 秒。
+- **Frame data / 帧数据**：招式启动、持续、硬直等阶段的帧数。
+- **Hit Confirm / 命中确认**：根据攻击命中或被防，决定是否继续连段。
+- **Oki / 起攻**：对手倒地起身时进行压制。
+- **Meaty / 压起身**：让攻击持续帧覆盖对手起身时机。
+- **Punish / 确反**：在对手硬直期间命中对手。
+- **Whiff Punish / 差返**：打中对手挥空招式的硬直。
+- **DI / Drive Impact**：SF6 的 Drive Impact。
+- **DRC / Drive Rush Cancel**：普通技取消到 Drive Rush。
+- **CH / Counter Hit**：对手启动中被命中。
+- **PC / Punish Counter**：对手硬直中被命中，收益更高。
+- **数字方向记法**：用数字小键盘表示方向：`6` 前、`4` 后、`2` 下、`8` 上、`5` 中立。
