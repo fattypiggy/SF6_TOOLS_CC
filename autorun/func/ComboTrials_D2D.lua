@@ -650,6 +650,11 @@ local function d2d_draw_inner()
     if math.abs(assets.last_pixel_size - pixel_font_h) > 1.0 or assets.font == nil then
         assets.font = d2d.Font.new("msyhbd.ttc", math.floor(pixel_font_h))
         assets.last_pixel_size = pixel_font_h
+        -- Measure the real rendered box height for font-independent vertical centering.
+        -- d2d.text draws from the top-left of this box, and msyh's box is taller than
+        -- its nominal em size, so centering on pixel_font_h would mis-align the glyphs.
+        local _, mh = assets.font:measure("Combo: 8")
+        assets.text_h = (mh and mh > 0) and mh or pixel_font_h
     end
 
     local icon_h = d2d_cfg.icon_size * sh
@@ -657,7 +662,7 @@ local function d2d_draw_inner()
     local spacing_y = d2d_cfg.spacing_y * sh
     local spacing_x = d2d_cfg.spacing_x * sh
 
-    local base_text_y = (icon_h - pixel_font_h) / 2
+    local base_text_y = (icon_h - (assets.text_h or pixel_font_h)) / 2
     local final_text_y_offset = base_text_y + (d2d_cfg.text_y_offset * sh)
 
     local function draw_player_icons(p_idx, base_x, base_y, align_right, max_count, reverse_layout)

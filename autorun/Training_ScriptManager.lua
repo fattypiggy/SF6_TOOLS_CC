@@ -249,7 +249,7 @@ local TSM_MODE_NAMES = {
     [1] = "反应训练",
     [2] = "确认训练",
     [3] = "防后训练",
-    [4] = "连段 Trial",
+    [4] = "连段训练",
 }
 
 -- Cycling order: DISABLED → HIT CONFIRM → REACTION DRILLS → POST GUARD → CUSTOM COMBO TRIALS → DISABLED
@@ -501,7 +501,7 @@ local MODE_BUTTONS = {
     { id = 2, label = "确认训练" },
     { id = 1, label = "反应训练" },
     { id = 3, label = "防后训练" },
-    { id = 4, label = "连段 Trial" },
+    { id = 4, label = "连段训练" },
 }
 
 local VK_NAMES = {
@@ -926,7 +926,7 @@ re.on_draw_ui(function()
             local c3, v3 = imgui.checkbox("防后训练", _G.CurrentTrainerMode == 3)
             if c3 and v3 then _G.CurrentTrainerMode = 3 end
 
-            local c4, v4 = imgui.checkbox("自定义连段 Trial", _G.CurrentTrainerMode == 4)
+            local c4, v4 = imgui.checkbox("连段训练", _G.CurrentTrainerMode == 4)
             if c4 and v4 then _G.CurrentTrainerMode = 4 end
         end
 
@@ -1071,7 +1071,7 @@ re.on_draw_ui(function()
             imgui.spacing()
 
             imgui.separator()
-            imgui.text_colored("连段 Trial 快捷键", 0xFF00FFFF)
+            imgui.text_colored("连段训练快捷键", 0xFF00FFFF)
             imgui.text("  键盘 1 : 录制 P1 / 停止并保存")
             imgui.text("  键盘 2 : 开始 Trial P1 / 停止 Trial")
             imgui.text("  键盘 3 : 录制 P2")
@@ -1106,7 +1106,7 @@ re.on_draw_ui(function()
             imgui.text("  练习处理被防后的局面。")
             imgui.spacing()
 
-            imgui.text_colored("自定义连段 Trial", 0xFF00FF00)
+            imgui.text_colored("连段训练", 0xFF00FF00)
             imgui.text("  录制并练习自己的连段。")
             imgui.text("  保存连段的伤害、Drive、SA 统计。")
             imgui.text("  支持固定位置、镜像位置或自由位置回放。")

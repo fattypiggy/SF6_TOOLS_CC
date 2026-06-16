@@ -198,8 +198,8 @@ function UI.draw_standard_hud(window_name, cfg, session, mode_label, show_timer,
         end
 
         -- 2. SCORE & LABELS
-        local s_txt = "SCORE: " .. (session.score or 0)
-        local tot_txt = "TOTAL: " .. (session.total or 0)
+        local s_txt = "分数: " .. (session.score or 0)
+        local tot_txt = "总计: " .. (session.total or 0)
         
         local w_s = imgui.calc_text_size(s_txt).x
         UI.draw_text(s_txt, center_x - spread_score_px - w_s + off_score_px, top_y, session.score_col or UI.COLORS.White)
@@ -267,17 +267,17 @@ end
 function UI.pause_message()
     local fn = UI.get_func_name()
     if is_keyboard_mode() or not fn then
-        return "PAUSED : PRESS 4 TO RESUME"
+        return "已暂停：按 4 继续"
     end
-    return "PAUSED : PRESS (" .. fn .. ") + RIGHT TO RESUME"
+    return "已暂停：按 " .. fn .. " + RIGHT 继续"
 end
 
 function UI.reset_message()
     local fn = UI.get_func_name()
     if is_keyboard_mode() or not fn then
-        return "PRESS 3 TO RESET"
+        return "按 3 重置"
     end
-    return "PRESS (" .. fn .. ") + LEFT TO RESET"
+    return "按 " .. fn .. " + LEFT 重置"
 end
 
 -- Dynamic shortcut label for button text: D/U/R/L → keyboard number or FUNC+DIR
@@ -455,7 +455,6 @@ function UI.draw_floating_bg_top()
     local sz = imgui.get_window_size()
     local pos = imgui.get_window_pos()
     UI.publish_rect(pos.x, pos.y, sz.x, sz.y)
-    draw_neon_border_imgui()
     _G.TrainingBarsDrawn = true
 end
 

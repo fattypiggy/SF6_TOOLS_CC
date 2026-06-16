@@ -37,7 +37,7 @@
         "show_block_pct": true,
         "show_damage": true,
         "show_early_detection": false,
-        "show_floating": false,
+        "show_floating": true,
         "show_hit_pct": true,
         "show_hitstop": true,
         "show_index": true,

@@ -1228,14 +1228,14 @@ local function draw_combo_trials_menu_ui()
         imgui.push_font(custom_ui_font)
         pushed_font = true
     end
-    if imgui.tree_node("训练连段 Trial") then
+    if imgui.tree_node("连段训练") then
         local p_state = players[ui_state.viewed_player]
         imgui.spacing()
 
         -- ==========================================
         -- TAB 1: GLOBAL COMBO TRIAL (Shared P1/P2)
         -- ==========================================
-        if styled_header("--- Combo Trials（文件与播放）---", UI_THEME.hdr_info) then
+        if styled_header("--- 连段训练（文件与播放）---", UI_THEME.hdr_info) then
             local changed, new_val = imgui.checkbox("分离为浮动窗口", show_trial_overlay)
             if changed then show_trial_overlay = new_val end
 
@@ -1995,7 +1995,7 @@ end
 
 -- Register in floating window hub + keep standard menu entry
 if _G.FloatingScriptUI then
-    _G.FloatingScriptUI.register("训练连段 Trial", draw_combo_trials_menu_ui)
+    _G.FloatingScriptUI.register("连段训练", draw_combo_trials_menu_ui)
 end
 re.on_draw_ui(draw_combo_trials_menu_ui)
 

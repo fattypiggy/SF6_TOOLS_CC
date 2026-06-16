@@ -50,54 +50,54 @@ local guard_override = { active = false, timer = 0, duration = 40 }
 -- 0. GLOBAL TEXT VARIABLES (LOCALIZATION)
 -- =========================================================
 local TEXTS = {
-    ready           = "READY",
-    waiting         = "WAITING",
-    paused          = "PAUSED",
-    resumed         = "RESUMED",
-    time_up         = "TIME UP!",
-    score_label     = "SCORE: ",
-    total_label     = "TOTAL: ",
-    mode_label      = "HIT CONFIRM",
-    hit_pct_label   = "HIT: ",
-    blk_pct_label   = "BLOCK: ",
+    ready           = "准备",
+    waiting         = "等待中",
+    paused          = "已暂停",
+    resumed         = "已继续",
+    time_up         = "时间到！",
+    score_label     = "分数: ",
+    total_label     = "总计: ",
+    mode_label      = "确认训练",
+    hit_pct_label   = "命中: ",
+    blk_pct_label   = "被防: ",
     
-    hit_detected    = "HIT DETECTED!",
-    blk_detected    = "BLOCK DETECTED...",
-    resetting       = "RESETTING...",
+    hit_detected    = "检测到命中！",
+    blk_detected    = "检测到被防...",
+    resetting       = "正在重置...",
     
-    success_hit     = "SUCCESS: HIT CONFIRM",
-    success_safe    = "BLOCK CONFIRMED",
-    safe_generic    = "BLOCK CONFIRMED",
-    success_block   = "BLOCK CONFIRMED",
+    success_hit     = "成功：命中确认",
+    success_safe    = "确认被防",
+    safe_generic    = "确认被防",
+    success_block   = "确认被防",
     
-    fail_drop       = "FAIL: HIT NOT CONFIRMED",
-    fail_unsafe     = "FAIL: UNSAFE CANCEL",
-    fail_autopilot  = "FAIL: AUTOPILOT",
-    fail_blk_misconfirm = "FAIL: ON BLOCK MISCONFIRM",
-    fail_hit        = "HIT FAIL",
-    fail_blk_fast   = "BLOCK FAIL (CANCEL TOO FAST)",
-    fail_blk_soon   = "BLOCK FAIL (2ND HIT TOO SOON)",
+    fail_drop       = "失败：命中后未确认",
+    fail_unsafe     = "失败：不安全取消",
+    fail_autopilot  = "失败：自动确认",
+    fail_blk_misconfirm = "失败：被防误确认",
+    fail_hit        = "命中确认失败",
+    fail_blk_fast   = "被防失败（取消过快）",
+    fail_blk_soon   = "被防失败（第二击过早）",
     
     -- NEW SPECIFIC MESSAGES
-    fail_gap        = "FAIL: GAP DETECTED AFTER DRC",
-    safe_no_gap     = "SAFE: TRUE BLOCKSTRING",
-    fail_optimal    = "FAIL: SUBOPTIMAL (NEED HEAVY)",
-    perfect_dr      = "SUCCESS: OPTIMAL DRC HIT CONFIRM",
-    perfect_dr_light = "SUCCESS: OPTIMAL DRC HIT CONFIRM",
-    fail_heavy_dr   = "FAIL: HEAVY DR CANCEL",
+    fail_gap        = "失败：DRC 后有空隙",
+    safe_no_gap     = "安全：真连防",
+    fail_optimal    = "失败：不够最优（需要重攻击）",
+    perfect_dr      = "成功：最优 DRC 命中确认",
+    perfect_dr_light = "成功：最优 DRC 命中确认",
+    fail_heavy_dr   = "失败：重攻击 DR 取消",
     -- (removed attack_ignored)
-    fail_combo_drop = "FAIL: GAP IN COMBO AFTER HIT CONFIRMED",
+    fail_combo_drop = "失败：确认命中后连段断开",
     
-    started         = "STARTED!",
-    stopped_export  = "STOPPED & EXPORTED",
-    stats_exported  = "STATS EXPORTED",
-    reset_done      = "RESET DONE",
+    started         = "已开始！",
+    stopped_export  = "已停止并导出",
+    stats_exported  = "统计已导出",
+    reset_done      = "已重置",
     
     pause_overlay   = nil, -- dynamic, use SharedUI.pause_message()
     reset_prompt    = nil, -- dynamic, use SharedUI.reset_message()
     
-    err_session_file = "Err: Session File",
-    err_history_file = "Err: History File"
+    err_session_file = "错误：会话文件",
+    err_history_file = "错误：历史文件"
 }
 
 -- =========================================================
@@ -422,19 +422,19 @@ local function export_session_stats()
         session.hit_tot, session.hit_ok, h_pct,
         session.blk_tot, session.blk_ok, b_pct
     )
-    f:write(line); f:close(); session.export_msg = "Stats Appended!"
+    f:write(line); f:close(); session.export_msg = "统计已追加"
 end
 
 local function export_detailed_history()
     local filename = "_FULL_HISTORY_EXPORT.txt"; local f = io.open(filename, "w+")
     if not f then session.export_msg = TEXTS.err_history_file; return end
-    f:write("DETAILED MATRIX LOG [" .. os.date("%H:%M:%S") .. "]\n CLOCK  | P1_FT | P1_ST | P1_FR | P2_FT | DMG  | HS   | CMBO | STATUS\n")
+    f:write("详细矩阵日志 [" .. os.date("%H:%M:%S") .. "]\n 时钟  | P1_FT | P1_ST | P1_FR | P2_FT | 伤害 | 停顿 | 连击 | 状态\n")
     for _, line in ipairs(session.history_list) do
         local r = string.format(" %-6d |  %3s  |  %3s  |  %3s  |  %3s  | %-4s | %-4s | %-4s | ", line.clock, line.p1.ft, line.p1.st, line.p1.fn, line.p2.ft, line.dmg, line.hs, line.cmb)
-        local st = ""; if line.status ~= "" then st = "<<< " .. line.status elseif line.tag == "HIT" then st = "<<< HIT LANDED" elseif line.tag == "BLOCK" then st = "<<< BLOCK LANDED" end
+        local st = ""; if line.status ~= "" then st = "<<< " .. line.status elseif line.tag == "HIT" then st = "<<< 已命中" elseif line.tag == "BLOCK" then st = "<<< 已被防" end
         f:write(r .. st .. "\n")
     end
-    f:close(); session.export_msg = "Matrix Exported!"
+    f:close(); session.export_msg = "矩阵已导出"
 end
 
 local function update_history_status(clock_time, status_txt)
@@ -598,20 +598,20 @@ local function update_detection()
                 
                 -- Debug Display Logic
                 if is_ft_trig then
-                    if is_light_buffered then session.detected_type = "LIGHT"
-                    elseif is_medium_buffered then session.detected_type = "MEDIUM"
-                    else session.detected_type = "HEAVY" end
+                    if is_light_buffered then session.detected_type = "轻攻击"
+                    elseif is_medium_buffered then session.detected_type = "中攻击"
+                    else session.detected_type = "重攻击" end
                 end
                 
                 session.debug_logic.is_light = is_light_buffered
                 session.debug_logic.target_combo = required_combo_start
                 session.debug_logic.actual_combo = detection.live_combo
                 if is_ft_trig and is_dmg_allowed then
-                    if detection.live_combo == required_combo_start then session.debug_logic.reason = "MATCH"
-                    elseif detection.live_combo < required_combo_start then session.debug_logic.reason = "WAITING COMBO"
-                    else session.debug_logic.reason = "PASSED" end
+                    if detection.live_combo == required_combo_start then session.debug_logic.reason = "匹配"
+                    elseif detection.live_combo < required_combo_start then session.debug_logic.reason = "等待连击数"
+                    else session.debug_logic.reason = "已超过" end
                 else
-                   session.debug_logic.reason = "NO TRIGGER"
+                   session.debug_logic.reason = "未触发"
                 end
                 
                 local trig_hit = (is_ft_trig and detection.live_combo == required_combo_start and is_dmg_allowed)
@@ -657,10 +657,10 @@ local function update_detection()
                         detection.monitor.last_ft = p1_data.ft
                         detection.monitor.saw_recovery = false
                         detection.monitor.saw_recovery_to_startup = false
-                        detection.mem_res[active_head_index] = { status = "HIT LANDED", time = detection.abs_clock }
-                        update_history_status(detection.abs_clock, "HIT LANDED")
+                        detection.mem_res[active_head_index] = { status = "已命中", time = detection.abs_clock }
+                        update_history_status(detection.abs_clock, "已命中")
                         if user_config.show_early_detection then 
-                            local msg = is_light_buffered and "HIT (LIGHT CHAIN START)!" or TEXTS.hit_detected
+                            local msg = is_light_buffered and "命中（轻攻击连打开始）！" or TEXTS.hit_detected
                             local col = is_light_buffered and COLORS.Orange or COLORS.Yellow
                             set_feedback(msg, col, 2.0) 
                         end
@@ -693,8 +693,8 @@ local function update_detection()
                         -- MEMORIZE IF THIS IS A MEDIUM HIT
                         detection.monitor.is_medium = is_medium_buffered
                         
-                        detection.mem_res[active_head_index] = { status = "BLOCK LANDED", time = detection.abs_clock }
-                        update_history_status(detection.abs_clock, "BLOCK LANDED")
+                        detection.mem_res[active_head_index] = { status = "已被防", time = detection.abs_clock }
+                        update_history_status(detection.abs_clock, "已被防")
                         if user_config.show_early_detection then set_feedback(TEXTS.blk_detected, COLORS.Cyan, 2.0) end
                     end
                     end
@@ -786,9 +786,9 @@ local function update_detection()
                     local cur_ft = p1_data.ft
                     if cur_ft == 8 and not detection.monitor.saw_recovery and not detection._saw_cancelable and not detection.monitor.was_light then
                         detection.monitor.active = false; detection.lockout = true
-                        detection.mem_res[active_head_index] = { status = "NON CANCELABLE MOVE", time = detection.abs_clock }
-                        update_history_status(detection.abs_clock, "NON CANCELABLE MOVE")
-                        set_feedback("NON CANCELABLE MOVE", COLORS.Grey, 1.5)
+                        detection.mem_res[active_head_index] = { status = "不可取消动作", time = detection.abs_clock }
+                        update_history_status(detection.abs_clock, "不可取消动作")
+                        set_feedback("不可取消动作", COLORS.Grey, 1.5)
                     end
                     if cur_ft == 8 then detection.monitor.saw_recovery = true end
                     if detection.monitor.saw_recovery and cur_ft == 7 then
@@ -855,9 +855,9 @@ local function update_detection()
                                 set_feedback(TEXTS.fail_blk_misconfirm, COLORS.Red, 1.5)
                             elseif not detection._saw_cancelable and not detection.monitor.was_light and not is_in(work_tables.dmg_block, detection.live_dmg) then
                                 detection.monitor.active = false; detection.lockout = true
-                                detection.mem_res[active_head_index] = { status = "NON CANCELABLE MOVE", time = detection.abs_clock }
-                                update_history_status(detection.abs_clock, "NON CANCELABLE MOVE")
-                                set_feedback("NON CANCELABLE MOVE", COLORS.Grey, 1.5)
+                                detection.mem_res[active_head_index] = { status = "不可取消动作", time = detection.abs_clock }
+                                update_history_status(detection.abs_clock, "不可取消动作")
+                                set_feedback("不可取消动作", COLORS.Grey, 1.5)
                             elseif not is_in(work_tables.dmg_block, detection.live_dmg) then
                                 local blk_msg = TEXTS.success_block
                                 detection.mem_res[active_head_index] = { status = blk_msg, time = detection.abs_clock }; update_history_status(detection.abs_clock, blk_msg)
@@ -952,8 +952,8 @@ local function update_logic()
                 session.time_up_delay = 0
 
                 export_session_stats()
-                SessionRecap.show("HIT CONFIRM", "Stats/HitConfirm_SessionStats.txt", "hitconfirm")
-                set_feedback("TIME UP! & EXPORTED", COLORS.Red, 0)
+                SessionRecap.show("确认训练", "Stats/HitConfirm_SessionStats.txt", "hitconfirm")
+                set_feedback("时间到！已导出", COLORS.Red, 0)
             end
         else -- trials mode
             if session.total >= user_config.trial_count then
@@ -962,8 +962,8 @@ local function update_logic()
                 session.time_up_delay = 0
 
                 export_session_stats()
-                SessionRecap.show("HIT CONFIRM", "Stats/HitConfirm_SessionStats.txt", "hitconfirm")
-                set_feedback(session.total .. " TRIALS DONE! & EXPORTED", COLORS.Red, 0)
+                SessionRecap.show("确认训练", "Stats/HitConfirm_SessionStats.txt", "hitconfirm")
+                set_feedback(session.total .. " 次完成！已导出", COLORS.Red, 0)
             end
         end
     end
@@ -987,9 +987,9 @@ local function apply_difficulty(val)
     elseif val == 2 then user_config.show_early_detection = true; user_config.dont_count_blocked = true 
     elseif val == 3 then user_config.show_early_detection = false; user_config.dont_count_blocked = true end
     reset_session_stats()
-    local d_name = "MEDIUM"; local d_color = COLORS.Medium
-    if val == 1 then d_name = "EASY" d_color = COLORS.Easy elseif val == 3 then d_name = "HARD" d_color = COLORS.Hard end
-    set_feedback("DIFFICULTY: " .. d_name, d_color, 1.0)
+    local d_name = "普通"; local d_color = COLORS.Medium
+    if val == 1 then d_name = "简单" d_color = COLORS.Easy elseif val == 3 then d_name = "困难" d_color = COLORS.Hard end
+    set_feedback("难度：" .. d_name, d_color, 1.0)
     save_conf()
 end
 
@@ -1015,7 +1015,7 @@ local function handle_input()
             if user_config.session_mode == "timer" then
                 user_config.timer_minutes = math.min(60, user_config.timer_minutes + 1)
                 session.time_rem = user_config.timer_minutes * 60
-                set_feedback("TIMER: " .. user_config.timer_minutes .. " MIN", COLORS.White, 1.0)
+                set_feedback("计时：" .. user_config.timer_minutes .. " 分钟", COLORS.White, 1.0)
             else
                 user_config.trial_count = math.min(200, user_config.trial_count + 10)
                 set_feedback(tostring(user_config.trial_count), COLORS.White, 1.0)
@@ -1026,7 +1026,7 @@ local function handle_input()
             if user_config.session_mode == "timer" then
                 user_config.timer_minutes = math.max(1, user_config.timer_minutes - 1)
                 session.time_rem = user_config.timer_minutes * 60
-                set_feedback("TIMER: " .. user_config.timer_minutes .. " MIN", COLORS.White, 1.0)
+                set_feedback("计时：" .. user_config.timer_minutes .. " 分钟", COLORS.White, 1.0)
             else
                 user_config.trial_count = math.max(10, user_config.trial_count - 10)
                 set_feedback(tostring(user_config.trial_count), COLORS.White, 1.0)
@@ -1047,19 +1047,19 @@ local function handle_input()
         if pos3_kb or pos4_pad then
             reset_session_stats()
             set_feedback(TEXTS.reset_done, COLORS.White, 1.0)
-            hc_ticker("SESSION RESET")
+            hc_ticker("会话已重置")
         end
     elseif session.is_running then
         if pos3_kb or pos4_pad then
             reset_session_stats()
-            set_feedback("STOPPED", COLORS.Red, 1.5)
-            hc_ticker("SESSION STOPPED")
+            set_feedback("已停止", COLORS.Red, 1.5)
+            hc_ticker("训练已停止")
         end
     elseif session.is_time_up then
         if pos3_kb or pos4_pad then
             reset_session_stats()
             set_feedback(TEXTS.reset_done, COLORS.White, 1.0)
-            hc_ticker("SESSION RESET")
+            hc_ticker("会话已重置")
         end
     end
 
@@ -1070,13 +1070,13 @@ local function handle_input()
             if user_config.session_mode == "timer" then session.time_rem = user_config.timer_minutes * 60 end
             session.is_running = true; session.is_paused = false
             set_feedback(TEXTS.started, COLORS.Green, 1.0)
-            hc_ticker("SESSION STARTED")
+            hc_ticker("训练已开始")
         end
     elseif session.is_running then
         if pos4_kb or pos3_pad then
             session.is_paused = not session.is_paused
             set_feedback(session.is_paused and TEXTS.paused or TEXTS.resumed, COLORS.Yellow, 1.0)
-            hc_ticker(session.is_paused and "SESSION PAUSED" or "SESSION RESUMED")
+            hc_ticker(session.is_paused and "训练已暂停" or "训练已继续")
         end
     end
 
@@ -1143,45 +1143,45 @@ local function draw_session_buttons_docked()
     local sl = SharedUI.sc_label
     local SC = SharedUI.SC_COLORS
     -- Mode toggle
-    local mode_label = user_config.session_mode == "timer" and "MODE: TIMER" or "MODE: TRIALS"
+    local mode_label = user_config.session_mode == "timer" and "模式：计时" or "模式：次数"
     if imgui.button(mode_label .. "##dk_mode") then
         user_config.session_mode = user_config.session_mode == "timer" and "trials" or "timer"
         reset_session_stats(); save_conf()
-        hc_ticker(user_config.session_mode == "timer" and "TIMER MODE" or "TRIALS MODE")
+        hc_ticker(user_config.session_mode == "timer" and "计时模式" or "次数模式")
     end
     imgui.same_line()
     if user_config.session_mode == "timer" then
-        if SharedUI.sc_button("TIMER - (" .. sl("D") .. ")##dk_hc", SC.c1) then user_config.timer_minutes = math.max(1, user_config.timer_minutes - 1); reset_session_stats(); save_conf() end
+        if SharedUI.sc_button("减少本次训练量(1)##dk_hc", SC.c1) then user_config.timer_minutes = math.max(1, user_config.timer_minutes - 1); reset_session_stats(); save_conf() end
         imgui.same_line()
-        if SharedUI.sc_button("TIMER + (" .. sl("U") .. ")##dk_hc", SC.c2) then user_config.timer_minutes = math.min(60, user_config.timer_minutes + 1); reset_session_stats(); save_conf() end
-        imgui.same_line(); imgui.text(tostring(user_config.timer_minutes) .. " MIN")
+        if SharedUI.sc_button("增加本次训练量(2)##dk_hc", SC.c2) then user_config.timer_minutes = math.min(60, user_config.timer_minutes + 1); reset_session_stats(); save_conf() end
+        imgui.same_line(); imgui.text(tostring(user_config.timer_minutes) .. " 分钟")
     else
-        if SharedUI.sc_button("TRIALS - (" .. sl("D") .. ")##dk_hc", SC.c1) then user_config.trial_count = math.max(10, user_config.trial_count - 10); reset_session_stats(); save_conf() end
+        if SharedUI.sc_button("减少本次训练量(1)##dk_hc", SC.c1) then user_config.trial_count = math.max(10, user_config.trial_count - 10); reset_session_stats(); save_conf() end
         imgui.same_line()
-        if SharedUI.sc_button("TRIALS + (" .. sl("U") .. ")##dk_hc", SC.c2) then user_config.trial_count = math.min(200, user_config.trial_count + 10); reset_session_stats(); save_conf() end
-        imgui.same_line(); imgui.text(tostring(user_config.trial_count) .. " TRIALS")
+        if SharedUI.sc_button("增加本次训练量(2)##dk_hc", SC.c2) then user_config.trial_count = math.min(200, user_config.trial_count + 10); reset_session_stats(); save_conf() end
+        imgui.same_line(); imgui.text(tostring(user_config.trial_count) .. " 次")
     end
     imgui.same_line(300)
-    if SharedUI.sc_button("RESET (" .. sl("L", "3") .. ")##dk_hc", SC.c3) then reset_session_stats(); set_feedback(TEXTS.reset_done, COLORS.White, 1.0); hc_ticker("SESSION RESET") end
+    if SharedUI.sc_button("重置训练数据(3)##dk_hc", SC.c3) then reset_session_stats(); set_feedback(TEXTS.reset_done, COLORS.White, 1.0); hc_ticker("会话已重置") end
     imgui.spacing()
     if not session.is_running then
-        if SharedUI.sc_button("START SESSION (" .. sl("R", "4") .. ")##dk_hc", SC.c4) then
+        if SharedUI.sc_button("开始训练(4)##dk_hc", SC.c4) then
             reset_session_stats()
             if user_config.session_mode == "timer" then session.time_rem = user_config.timer_minutes * 60 end
             session.is_running = true; session.is_paused = false
             set_feedback(TEXTS.started, COLORS.Green, 1.0)
-            hc_ticker("SESSION STARTED")
+            hc_ticker("训练已开始")
         end
     else
-        if SharedUI.sc_button("STOP (" .. sl("L", "3") .. ")##dk_hc", SC.c3) then reset_session_stats(); set_feedback("STOPPED", COLORS.Red, 1.0); hc_ticker("SESSION STOPPED") end
+        if SharedUI.sc_button("停止 (" .. sl("L", "3") .. ")##dk_hc", SC.c3) then reset_session_stats(); set_feedback("已停止", COLORS.Red, 1.0); hc_ticker("训练已停止") end
         imgui.same_line()
-        if SharedUI.sc_button((session.is_paused and "RESUME" or "PAUSE") .. " (" .. sl("R", "4") .. ")##dk_hc", SC.c4) then session.is_paused = not session.is_paused; hc_ticker(session.is_paused and "SESSION PAUSED" or "SESSION RESUMED") end
+        if SharedUI.sc_button((session.is_paused and "继续" or "暂停") .. " (" .. sl("R", "4") .. ")##dk_hc", SC.c4) then session.is_paused = not session.is_paused; hc_ticker(session.is_paused and "训练已暂停" or "训练已继续") end
     end
 end
 
 -- SESSION BUTTONS — FLOATING (single-line)
 local function draw_session_floating()
-    local visible, sw, sh = SharedUI.begin_floating_window("Hit Confirm##float")
+    local visible, sw, sh = SharedUI.begin_floating_window("确认训练##float")
     if not visible then user_config.show_floating = false; save_conf(); SharedUI.end_floating_window(); return end
     local sl = SharedUI.sc_label
     local SC = SharedUI.SC_COLORS
@@ -1191,9 +1191,9 @@ local function draw_session_floating()
     SharedUI.draw_floating_bg()
     local slm = SharedUI.sc_label_max
     local all_labels = {
-        "TRIALS - (" .. slm("D") .. ")", "TRIALS + (" .. slm("U") .. ")",
-        "RESET (" .. slm("L") .. ")", "STOP (" .. slm("L") .. ")",
-        "START (" .. slm("R") .. ")", "PAUSE (" .. slm("R") .. ")"
+        "减少本次训练量(1)", "增加本次训练量(2)",
+        "重置训练数据(3)", "停止训练(3)",
+        "开始训练(4)", "暂停训练(4)"
     }
     local max_w = 0
     for _, t in ipairs(all_labels) do local tw = imgui.calc_text_size(t).x; if tw > max_w then max_w = tw end end
@@ -1203,32 +1203,32 @@ local function draw_session_floating()
     imgui.set_cursor_pos(Vector2f.new(pad_x, sh * 0.01))
     -- +/- buttons adapt to mode
     if user_config.session_mode == "timer" then
-        if SharedUI.sf6_button("TIMER - (" .. sl("D") .. ")##fl_hc", SC.c1, actual_w) then user_config.timer_minutes = math.max(1, user_config.timer_minutes - 1); reset_session_stats(); save_conf() end
+        if SharedUI.sf6_button("减少本次训练量(1)##fl_hc", SC.c1, actual_w) then user_config.timer_minutes = math.max(1, user_config.timer_minutes - 1); reset_session_stats(); save_conf() end
         imgui.same_line(0, sp)
-        if SharedUI.sf6_button("TIMER + (" .. sl("U") .. ")##fl_hc", SC.c2, actual_w) then user_config.timer_minutes = math.min(60, user_config.timer_minutes + 1); reset_session_stats(); save_conf() end
+        if SharedUI.sf6_button("增加本次训练量(2)##fl_hc", SC.c2, actual_w) then user_config.timer_minutes = math.min(60, user_config.timer_minutes + 1); reset_session_stats(); save_conf() end
     else
-        if SharedUI.sf6_button("TRIALS - (" .. sl("D") .. ")##fl_hc", SC.c1, actual_w) then user_config.trial_count = math.max(10, user_config.trial_count - 10); reset_session_stats(); save_conf() end
+        if SharedUI.sf6_button("减少本次训练量(1)##fl_hc", SC.c1, actual_w) then user_config.trial_count = math.max(10, user_config.trial_count - 10); reset_session_stats(); save_conf() end
         imgui.same_line(0, sp)
-        if SharedUI.sf6_button("TRIALS + (" .. sl("U") .. ")##fl_hc", SC.c2, actual_w) then user_config.trial_count = math.min(200, user_config.trial_count + 10); reset_session_stats(); save_conf() end
+        if SharedUI.sf6_button("增加本次训练量(2)##fl_hc", SC.c2, actual_w) then user_config.trial_count = math.min(200, user_config.trial_count + 10); reset_session_stats(); save_conf() end
     end
     imgui.same_line(0, sp)
     if not session.is_running then
-        if SharedUI.sf6_button("RESET (" .. sl("L", "3") .. ")##fl_hc", SC.c3, actual_w) then reset_session_stats(); set_feedback(TEXTS.reset_done, COLORS.White, 1.0); hc_ticker("SESSION RESET") end
+        if SharedUI.sf6_button("重置训练数据(3)##fl_hc", SC.c3, actual_w) then reset_session_stats(); set_feedback(TEXTS.reset_done, COLORS.White, 1.0); hc_ticker("会话已重置") end
     else
-        if SharedUI.sf6_button("STOP (" .. sl("L", "3") .. ")##fl_hc", SC.c3, actual_w) then reset_session_stats(); set_feedback("STOPPED", COLORS.Red, 1.0); hc_ticker("SESSION STOPPED") end
+        if SharedUI.sf6_button("停止 (" .. sl("L", "3") .. ")##fl_hc", SC.c3, actual_w) then reset_session_stats(); set_feedback("已停止", COLORS.Red, 1.0); hc_ticker("训练已停止") end
     end
     imgui.same_line(0, sp)
     if session.is_running then
-        if SharedUI.sf6_button((session.is_paused and "RESUME" or "PAUSE") .. " (" .. sl("R", "4") .. ")##fl_hc", SC.c4, actual_w) then session.is_paused = not session.is_paused; hc_ticker(session.is_paused and "SESSION PAUSED" or "SESSION RESUMED") end
+        if SharedUI.sf6_button((session.is_paused and "继续" or "暂停") .. " (" .. sl("R", "4") .. ")##fl_hc", SC.c4, actual_w) then session.is_paused = not session.is_paused; hc_ticker(session.is_paused and "训练已暂停" or "训练已继续") end
     else
-        if SharedUI.sf6_button("START (" .. sl("R", "4") .. ")##fl_hc", SC.c4, actual_w) then
+        if SharedUI.sf6_button("开始训练(4)##fl_hc", SC.c4, actual_w) then
             reset_session_stats()
             if user_config.session_mode == "timer" then
                 session.time_rem = user_config.timer_minutes * 60
             end
             session.is_running = true; session.is_paused = false
             set_feedback(TEXTS.started, COLORS.Green, 1.0)
-            hc_ticker("SESSION STARTED")
+            hc_ticker("训练已开始")
         end
     end
     imgui.same_line(w_width - cb_size - 10 - pad_x)
@@ -1242,14 +1242,14 @@ re.on_frame(function()
     if _G.CurrentTrainerMode == 2 then
         if _G._tsm_web_cmd then
             local cmd = _G._tsm_web_cmd; _G._tsm_web_cmd = nil
-            if cmd == "start" then reset_session_stats(); session.is_running = true; set_feedback("HERE WE GO!", 0xFF00FF00, 1.0); hc_ticker("SESSION STARTED") end
-            if cmd == "stop" then reset_session_stats(); set_feedback("STOPPED", 0xFF0000FF, 1.0); hc_ticker("SESSION STOPPED") end
-            if cmd == "reset" then reset_session_stats(); set_feedback("RESET", 0xFFFFFFFF, 1.0); hc_ticker("SESSION RESET") end
-            if cmd == "pause" then session.is_paused = not session.is_paused; hc_ticker(session.is_paused and "SESSION PAUSED" or "SESSION RESUMED") end
+            if cmd == "start" then reset_session_stats(); session.is_running = true; set_feedback("开始！", 0xFF00FF00, 1.0); hc_ticker("训练已开始") end
+            if cmd == "stop" then reset_session_stats(); set_feedback("已停止", 0xFF0000FF, 1.0); hc_ticker("训练已停止") end
+            if cmd == "reset" then reset_session_stats(); set_feedback("已重置", 0xFFFFFFFF, 1.0); hc_ticker("会话已重置") end
+            if cmd == "pause" then session.is_paused = not session.is_paused; hc_ticker(session.is_paused and "训练已暂停" or "训练已继续") end
             if cmd == "timer_up" then user_config.timer_minutes = math.min(60, user_config.timer_minutes + 1); reset_session_stats(); save_conf() end
             if cmd == "timer_down" then user_config.timer_minutes = math.max(1, user_config.timer_minutes - 1); reset_session_stats(); save_conf() end
             if cmd == "trials_up" then user_config.trial_count = math.min(200, user_config.trial_count + 10); reset_session_stats(); save_conf() end
-            if cmd == "switch_mode" then user_config.session_mode = user_config.session_mode == "timer" and "trials" or "timer"; reset_session_stats(); save_conf(); hc_ticker(user_config.session_mode == "timer" and "TIMER MODE" or "TRIALS MODE") end
+            if cmd == "switch_mode" then user_config.session_mode = user_config.session_mode == "timer" and "trials" or "timer"; reset_session_stats(); save_conf(); hc_ticker(user_config.session_mode == "timer" and "计时模式" or "次数模式") end
             if cmd == "trials_down" then user_config.trial_count = math.max(10, user_config.trial_count - 10); reset_session_stats(); save_conf() end
         end
         _G.TrainingSession_IsRunning = session.is_running
@@ -1301,14 +1301,14 @@ end)
 re.on_draw_ui(function()
     if DEPENDANT_ON_MANAGER and _G.CurrentTrainerMode ~= 2 then return end
 
-    if imgui.tree_node("Hit Confirm Trainer (V7.3 Heavy DR Fail)") then
+    if imgui.tree_node("确认训练（V7.3 重 DR 失败判定）") then
 
-        if styled_header("--- SESSION CONFIGURATION ---", UI_THEME.hdr_session) then
-            local c_fl, v_fl = imgui.checkbox("FLOATING WINDOW", user_config.show_floating)
+        if styled_header("--- 训练配置 ---", UI_THEME.hdr_session) then
+            local c_fl, v_fl = imgui.checkbox("显示浮动控制栏", user_config.show_floating)
             if c_fl then user_config.show_floating = v_fl; save_conf() end
 
             if user_config.show_floating then
-                imgui.text_colored("Session controls are in the floating window.", COLORS.DarkGrey)
+                imgui.text_colored("训练控制已显示在浮动控制栏中。", COLORS.DarkGrey)
             else
                 imgui.separator(); imgui.spacing()
                 draw_session_buttons_docked()
@@ -1316,88 +1316,88 @@ re.on_draw_ui(function()
         end
 
         imgui.separator()
-        if styled_header("--- DETECTION RULES ---", UI_THEME.hdr_rules) then
-            local chg1, v1 = imgui.input_text("Trigger Moves (ID)", user_config.str_trigger_list); if chg1 then user_config.str_trigger_list = v1; refresh_tables(); save_conf() end
-            local chg2, v2 = imgui.input_text("Confirm Moves (ID)", user_config.str_success_list); if chg2 then user_config.str_success_list = v2; refresh_tables(); save_conf() end
-            local chgBrk, vBrk = imgui.input_text("Break List (Reset)", user_config.str_break_list); if chgBrk then user_config.str_break_list = vBrk; refresh_tables(); save_conf() end
-            local chg3, v3 = imgui.input_text("Hit Damage Type List", user_config.str_dmg_hit_list); if chg3 then user_config.str_dmg_hit_list = v3; refresh_tables(); save_conf() end
+        if styled_header("--- 检测规则 ---", UI_THEME.hdr_rules) then
+            local chg1, v1 = imgui.input_text("触发动作（ID）", user_config.str_trigger_list); if chg1 then user_config.str_trigger_list = v1; refresh_tables(); save_conf() end
+            local chg2, v2 = imgui.input_text("确认动作（ID）", user_config.str_success_list); if chg2 then user_config.str_success_list = v2; refresh_tables(); save_conf() end
+            local chgBrk, vBrk = imgui.input_text("中断列表（重置）", user_config.str_break_list); if chgBrk then user_config.str_break_list = vBrk; refresh_tables(); save_conf() end
+            local chg3, v3 = imgui.input_text("命中伤害类型列表", user_config.str_dmg_hit_list); if chg3 then user_config.str_dmg_hit_list = v3; refresh_tables(); save_conf() end
             
             -- [NEW] Light Button Config Input
-            local chgBtn, vBtn = imgui.input_text("Light Buttons (Bitmask)", user_config.str_light_btn_list); 
+            local chgBtn, vBtn = imgui.input_text("轻攻击按键（位掩码）", user_config.str_light_btn_list);
             if chgBtn then user_config.str_light_btn_list = vBtn; refresh_tables(); save_conf() end
             if imgui.is_item_hovered() then imgui.set_tooltip("16=LP (X/Square), 128=LK (A/Cross)") end
             
-            local chg4, v4 = imgui.input_text("Block Damage Type List", user_config.str_dmg_block_list); if chg4 then user_config.str_dmg_block_list = v4; refresh_tables(); save_conf() end
+            local chg4, v4 = imgui.input_text("被防伤害类型列表", user_config.str_dmg_block_list); if chg4 then user_config.str_dmg_block_list = v4; refresh_tables(); save_conf() end
         end
         
         imgui.separator()
-        if styled_header("--- MATRIX COLUMNS CONFIG ---", UI_THEME.hdr_matrix) then
-            if styled_button(session.is_logging and "STOP & EXPORT HISTORY (V3)" or "START LOGGING (MATRIX)", UI_THEME.btn_neutral) then
+        if styled_header("--- 矩阵列配置 ---", UI_THEME.hdr_matrix) then
+            if styled_button(session.is_logging and "停止并导出历史（V3）" or "开始记录矩阵", UI_THEME.btn_neutral) then
                 if session.is_logging then export_detailed_history(); session.is_logging = false else session.is_logging = true; session.history_list = {}; session.history_map = {} end
             end
             if session.export_msg ~= "" then imgui.same_line(); imgui.text(session.export_msg) end
 
             imgui.separator()
-            local cd, vd = imgui.checkbox("Show Matrix Debug", user_config.show_matrix_debug); if cd then user_config.show_matrix_debug = vd; save_conf() end
+            local cd, vd = imgui.checkbox("显示矩阵调试", user_config.show_matrix_debug); if cd then user_config.show_matrix_debug = vd; save_conf() end
         end
         imgui.tree_pop()
     end
     
     if user_config.show_matrix_debug then
         imgui.set_next_window_size(Vector2f.new(1000, 600), 1 << 2)
-        if imgui.begin_window("Diagnostic Matrix (V3)", true, 0) then
+        if imgui.begin_window("诊断矩阵（V3）", true, 0) then
             
             -- [NEW] Debug Logic Monitor (TOP)
-            imgui.text_colored("--- LOGIC MONITOR ---", COLORS.Orange)
-            local log_txt = "DETECTED: " .. (session.debug_logic.is_light and "LIGHT (BUFFERED)" or "HEAVY/NORMAL")
-            log_txt = log_txt .. " | TARGET COMBO: " .. session.debug_logic.target_combo
-            log_txt = log_txt .. " | LIVE COMBO: " .. session.debug_logic.actual_combo
-            log_txt = log_txt .. " | STATUS: " .. session.debug_logic.reason
+            imgui.text_colored("--- 逻辑监视器 ---", COLORS.Orange)
+            local log_txt = "检测：" .. (session.debug_logic.is_light and "轻攻击（缓冲）" or "重攻击/普通")
+            log_txt = log_txt .. " | 目标连击数：" .. session.debug_logic.target_combo
+            log_txt = log_txt .. " | 当前连击数：" .. session.debug_logic.actual_combo
+            log_txt = log_txt .. " | 状态：" .. session.debug_logic.reason
             imgui.text(log_txt)
             
             if detection.dr_monitor.active then
-                imgui.text_colored(string.format("DR MONITOR: %s (%s) Timer: %d Grace: %d", detection.dr_monitor.type, detection.dr_monitor.context, detection.dr_monitor.timer, detection.dr_monitor.gap_grace), COLORS.Cyan)
+                imgui.text_colored(string.format("DR 监视：%s (%s) 计时：%d 宽限：%d", detection.dr_monitor.type, detection.dr_monitor.context, detection.dr_monitor.timer, detection.dr_monitor.gap_grace), COLORS.Cyan)
             end
-            local go_info = guard_override.active and string.format("GUARD OVERRIDE: ON (%d frames left)", guard_override.timer) or "GUARD OVERRIDE: OFF"
+            local go_info = guard_override.active and string.format("防御覆盖：开启（剩余 %d 帧）", guard_override.timer) or "防御覆盖：关闭"
             imgui.text_colored(go_info, guard_override.active and COLORS.Yellow or COLORS.Grey)
-            if imgui.button("DUMP DR TRACE") and #detection.dr_trace > 0 then
-                local lines = { "=== DR TRACE DUMP ===" }
+            if imgui.button("导出 DR 跟踪") and #detection.dr_trace > 0 then
+                local lines = { "=== DR 跟踪导出 ===" }
                 for _, l in ipairs(detection.dr_trace) do lines[#lines + 1] = l end
-                lines[#lines + 1] = "=== MATRIX SNAPSHOT ==="
+                lines[#lines + 1] = "=== 矩阵快照 ==="
                 for _, line in ipairs(detection.active_lines) do
                     local r = string.format("[%03d] p1_ft=%s p1_gau=%s p2_ft=%s p2_gau=%s dmg=%s hs=%s", line.idx, tostring(line.p1.frame_type), tostring(line.p1.main_gauge), tostring(line.p2.frame_type), tostring(line.p2.main_gauge), tostring(line.d), tostring(line.h))
                     if line.res ~= "" then r = r .. " <<< " .. line.res
-                    elseif line.is_h then r = r .. " <<< HIT"
-                    elseif line.is_b then r = r .. " <<< BLOCK" end
+                    elseif line.is_h then r = r .. " <<< 命中"
+                    elseif line.is_b then r = r .. " <<< 被防" end
                     lines[#lines + 1] = r
                 end
                 json.dump_file("HitConfirm_DR_Trace.json", lines)
             end
-            imgui.same_line(); imgui.text(string.format("(%d frames traced)", #detection.dr_trace))
+            imgui.same_line(); imgui.text(string.format("（已跟踪 %d 帧）", #detection.dr_trace))
 
             imgui.separator()
 
-            imgui.text(string.format("DMG: %d | HS: %d | CLOCK: %d", detection.live_dmg, detection.live_hs, detection.abs_clock))
-            imgui.same_line(); imgui.text_colored(string.format(" | COMBO: %d | TN: %d", detection.live_combo, detection._live_tn or 0), COLORS.Yellow)
+            imgui.text(string.format("伤害: %d | 停顿: %d | 时钟: %d", detection.live_dmg, detection.live_hs, detection.abs_clock))
+            imgui.same_line(); imgui.text_colored(string.format(" | 连击: %d | TN: %d", detection.live_combo, detection._live_tn or 0), COLORS.Yellow)
             if detection.monitor.active then 
-                imgui.text_colored("MONITOR ACTIVE: " .. (detection.monitor.type or "?"), COLORS.Green) 
-                imgui.same_line(); imgui.text(string.format("(Target: >= %d)", detection.monitor.target_combo))
+                imgui.text_colored("监视中：" .. (detection.monitor.type or "?"), COLORS.Green)
+                imgui.same_line(); imgui.text(string.format("（目标：>= %d）", detection.monitor.target_combo))
             end
-            if detection.lockout then imgui.same_line(); imgui.text_colored("[LOCKED]", COLORS.Red) end
+            if detection.lockout then imgui.same_line(); imgui.text_colored("[锁定]", COLORS.Red) end
             imgui.separator()
-            local h = ""; if user_config.show_index then h = h .. "IDX | " end
+            local h = ""; if user_config.show_index then h = h .. "序号 | " end
             local cols = {{k="frame_type", l="FT"}, {k="status_type", l="TYP"}, {k="frame_number", l="FRM"}, {k="start_frame", l="STR"}, {k="end_frame", l="END"}, {k="main_gauge", l="GAU"}}
             for _, c in ipairs(cols) do if user_config.p1[c.k] then h = h .. "P1_"..c.l.." | " end; if user_config.p2[c.k] then h = h .. "P2_"..c.l.." | " end end
-            if user_config.show_damage then h = h .. "DMG | " end; if user_config.show_hitstop then h = h .. "HS  | " end; if user_config.show_status_label then h = h .. "STATUS" end
+            if user_config.show_damage then h = h .. "伤害 | " end; if user_config.show_hitstop then h = h .. "停顿 | " end; if user_config.show_status_label then h = h .. "状态" end
             imgui.text(h); imgui.separator()
             imgui.begin_child_window("scroller", Vector2f.new(0, -5), true, 0)
             for _, line in ipairs(detection.active_lines) do
                 local r = ""; if user_config.show_index then r = r .. string.format("[%03d] | ", line.idx) end
                 for _, c in ipairs(cols) do if user_config.p1[c.k] then r = r .. string.format(" %2s   | ", (line.p1[c.k]~=0 and line.p1[c.k] or "-")) end; if user_config.p2[c.k] then r = r .. string.format(" %2s   | ", (line.p2[c.k]~=0 and line.p2[c.k] or "-")) end end
                 if user_config.show_damage then r = r .. string.format(" %-3s | ", (line.d~=0 and line.d or "-")) end; if user_config.show_hitstop then r = r .. string.format(" %-3s | ", (line.h~=0 and line.h or "-")) end
-                if user_config.show_status_label then if line.res ~= "" then r = r .. "<<< " .. line.res elseif line.is_h then r = r .. "<<< HIT LANDED" elseif line.is_b then r = r .. "<<< BLOCK LANDED" end end
+                if user_config.show_status_label then if line.res ~= "" then r = r .. "<<< " .. line.res elseif line.is_h then r = r .. "<<< 已命中" elseif line.is_b then r = r .. "<<< 已被防" end end
                 local col = COLORS.White
-                if string.find(line.res, "SUCCESS") then col = COLORS.Green elseif string.find(line.res, "FAIL") then col = COLORS.Red elseif line.is_h then col = COLORS.Yellow elseif line.is_b then col = COLORS.Cyan elseif line.idx == detection.last_head_index then col = COLORS.Orange else if line.idx%2==0 then col = 0xFFDDDDDD else col = 0xFFFFFFFF end end
+                if string.find(line.res, "成功") or string.find(line.res, "确认被防") then col = COLORS.Green elseif string.find(line.res, "失败") then col = COLORS.Red elseif line.is_h then col = COLORS.Yellow elseif line.is_b then col = COLORS.Cyan elseif line.idx == detection.last_head_index then col = COLORS.Orange else if line.idx%2==0 then col = 0xFFDDDDDD else col = 0xFFFFFFFF end end
                 imgui.text_colored(r, col)
             end
             imgui.end_child_window(); imgui.end_window()

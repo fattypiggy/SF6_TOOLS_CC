@@ -3,7 +3,7 @@
     "aa_delay_cancel": true,
     "aa_delay_max": 0,
     "aa_delay_min": 0,
-    "aa_enabled": true,
+    "aa_enabled": false,
     "aa_footwork": false,
     "aa_fw": 10,
     "aa_fw_cr": 5,
@@ -12,29 +12,26 @@
     "aa_fw_mode": "manual",
     "aa_move": "",
     "aa_moves": [
-        "6HP",
-        "5HP",
-        "2HP",
-        "2HK",
+        "623HK",
         "5HK",
-        "4MK",
-        "2MK",
         "5MK",
-        "6MP",
-        "2MP",
+        "2HK",
+        "5HP",
+        "2MK",
         "5LK",
-        "5MP",
+        "2HP",
+        "2MP",
         "2LK",
-        "2LP",
         "5LP",
+        "5MP",
+        "2LP",
         "THROW",
-        "4HP",
         "FORWARD JUMP"
     ],
     "aa_neutral_buffer": 0,
     "aa_subs": null,
     "is_replay": false,
-    "p1_char": "Ingrid",
+    "p1_char": "Zangief",
     "p1_facing_right": true,
     "p1_prefs": {
         "A.K.I.": {
@@ -422,7 +419,7 @@
         }
     },
     "p1_show_all": false,
-    "p2_char": "Ingrid",
+    "p2_char": "Ken",
     "p2_facing_right": false,
     "p2_prefs": {
         "A.K.I.": {
@@ -572,7 +569,6 @@
                 "ar": 221.28121948242188,
                 "input": "6HP"
             },
-            "visibility": null,
             "yellow_offset": 50
         },
         "JP": {
@@ -786,5 +782,5 @@
             "yellow_offset": 50
         }
     },
-    "p2_show_all": false
+    "p2_show_all": true
 }

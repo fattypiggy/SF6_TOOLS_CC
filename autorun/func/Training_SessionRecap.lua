@@ -76,6 +76,28 @@ end
 
 local _close_btn = { x = 0, y = 0, w = 0, h = 0 }
 
+local function text_len(s)
+    s = tostring(s or "")
+    local n = 0
+    for _ in s:gmatch("[%z\1-\127\194-\244][\128-\191]*") do
+        n = n + 1
+    end
+    return n
+end
+
+local function estimate_text_w(s, fh, factor)
+    return text_len(s) * fh * (factor or 0.62)
+end
+
+local function measure_text(font, s, fallback_h, factor)
+    s = tostring(s or "")
+    if font and font.measure then
+        local ok, w, h = pcall(function() return font:measure(s) end)
+        if ok and w then return w, h or fallback_h end
+    end
+    return estimate_text_w(s, fallback_h or 16, factor), fallback_h or 16
+end
+
 local function bar_color(pct)
     if pct < 40 then return COL_BAR_RED
     elseif pct < 60 then return COL_BAR_ORG
@@ -242,7 +264,7 @@ function M.show(mode_name, stats_file, parser_type)
     _mode = parser_type
     local n = #_sessions
     if n == 0 then return end
-    _title = mode_name .. "  -  LAST " .. n .. " SESSION" .. (n > 1 and "S" or "")
+    _title = mode_name .. " - 最近 " .. n .. " 次训练"
     _visible = true
 end
 
@@ -275,10 +297,13 @@ local function draw_header(panel_x, panel_y, panel_w, header_h, fh, pad)
     -- Title — centered horizontally, adjustable vertical bias
     local title_font = _font_title or _font
     local fh_title = _last_font_h_title or fh
-    local title_w = #_title * fh_title * 0.52
     local sw_local, sh_local = d2d.surface_size()
-    local tx = panel_x + (panel_w - title_w) * 0.5 + sw_local * (layout.title_ox or 0)
-    local ty = panel_y + (header_h - fh_title) * (layout.title_y or 0.48) + sh_local * (layout.title_oy or 0)
+    local title_w, title_h = measure_text(title_font, _title, fh_title, 0.72)
+    local close_reserved = sh_local * (layout.btn_size or 0.016) + sw_local * (layout.btn_inset or 0.010) * 2
+    local title_area_x = panel_x + close_reserved
+    local title_area_w = panel_w - close_reserved * 2
+    local tx = title_area_x + (title_area_w - title_w) * 0.5
+    local ty = panel_y + (header_h - title_h) * 0.5
     d2d.text(title_font, _title, tx + 1, ty + 1, COL_SHADOW)
     d2d.text(title_font, _title, tx, ty, COL_HEADER)
 
@@ -286,7 +311,7 @@ local function draw_header(panel_x, panel_y, panel_w, header_h, fh, pad)
     local btn_size = sh_local * (layout.btn_size or 0.016)
     local btn_inset = sw_local * (layout.btn_inset or 0.010)
     local btn_x = panel_x + panel_w - btn_inset - btn_size + sw_local * (layout.btn_ox or 0)
-    local btn_y = panel_y + (header_h - btn_size) * 0.5 + sh_local * (layout.btn_oy or 0)
+    local btn_y = panel_y + (header_h - btn_size) * 0.5
     _close_btn.x = btn_x
     _close_btn.y = btn_y
     _close_btn.w = btn_size
@@ -301,12 +326,13 @@ local function draw_header(panel_x, panel_y, panel_w, header_h, fh, pad)
 
     d2d.fill_rect(btn_x, btn_y, btn_size, btn_size, is_hovered and COL_CLOSE_HOV or COL_CLOSE_BG)
     d2d.outline_rect(btn_x, btn_y, btn_size, btn_size, 1, COL_ACCENT)
-    -- "X" centered in button + offset
-    local x_char_w = fh * 0.55
-    local x_tx = btn_x + (btn_size - x_char_w) * 0.5 + sw_local * (layout.closex_ox or 0)
-    local x_ty = btn_y + (btn_size - fh) * 0.5 + sh_local * (layout.closex_oy or 0)
-    d2d.text(_font, "X", x_tx + 1, x_ty + 1, COL_SHADOW)
-    d2d.text(_font, "X", x_tx, x_ty, is_hovered and 0xFFFFFFFF or COL_CLOSE_TXT)
+    local close_font = _font_small or _font
+    local close_txt = "x"
+    local x_w, x_h = measure_text(close_font, close_txt, _last_font_h_small or fh, 0.55)
+    local x_tx = btn_x + (btn_size - x_w) * 0.5
+    local x_ty = btn_y + (btn_size - x_h) * 0.5 - btn_size * 0.04
+    d2d.text(close_font, close_txt, x_tx + 1, x_ty + 1, COL_SHADOW)
+    d2d.text(close_font, close_txt, x_tx, x_ty, is_hovered and 0xFFFFFFFF or COL_CLOSE_TXT)
 end
 
 -- =========================================================
@@ -360,20 +386,20 @@ local function _rec_draw_xlabel(i, sx, cy, ch, pad, xl_ox, xl_oy, cw_char, fh_s)
     d2d.fill_rect(xi, cy + ch, 1, pad * 0.5, COL_ACCENT)
 
     -- Date
-    d2d.text(_font_small, date_lbl, xi - #date_lbl * cw_char * 0.5, base_y, COL_TEXT_DIM)
+    d2d.text(_font_small, date_lbl, xi - text_len(date_lbl) * cw_char * 0.5, base_y, COL_TEXT_DIM)
 
     -- Time
-    d2d.text(_font_small, time_lbl, xi - #time_lbl * cw_char * 0.5, base_y + fh_s * 1.15, COL_TEXT)
+    d2d.text(_font_small, time_lbl, xi - text_len(time_lbl) * cw_char * 0.5, base_y + fh_s * 1.15, COL_TEXT)
 
     -- Mode tag
     local mode_raw = s.mode or ""
     local mode_tag = ""
     local t_count = mode_raw:match("TRIALS_(%d+)")
     local t_min = mode_raw:match("TIMED_(%d+M)")
-    if t_count then mode_tag = "T" .. t_count
-    elseif t_min then mode_tag = t_min end
+    if t_count then mode_tag = t_count .. "次"
+    elseif t_min then mode_tag = t_min:gsub("M", "分") end
     if mode_tag ~= "" then
-        d2d.text(_font_small, mode_tag, xi - #mode_tag * cw_char * 0.5, base_y + fh_s * 2.3, COL_TEXT_DIM)
+        d2d.text(_font_small, mode_tag, xi - text_len(mode_tag) * cw_char * 0.5, base_y + fh_s * 2.3, COL_TEXT_DIM)
     end
 end
 
@@ -456,10 +482,10 @@ local function draw_chart(sw, sh, fh, fh_s)
     -- Define curve data: dual mode (hit+blk) or single mode (pct)
     local curves = {}
     if dual_mode then
-        curves[#curves + 1] = { key = "hit_pct", ok_key = "hit_ok", tot_key = "hit_tot", label = "HIT", color = COL_HIT, fill = 0x0CF5C832 }
-        curves[#curves + 1] = { key = "blk_pct", ok_key = "blk_ok", tot_key = "blk_tot", label = "BLK", color = COL_BLK, fill = 0x0CEE6644 }
+        curves[#curves + 1] = { key = "hit_pct", ok_key = "hit_ok", tot_key = "hit_tot", label = "命中确认", color = COL_HIT, fill = 0x0CF5C832 }
+        curves[#curves + 1] = { key = "blk_pct", ok_key = "blk_ok", tot_key = "blk_tot", label = "被防确认", color = COL_BLK, fill = 0x0CEE6644 }
     else
-        curves[#curves + 1] = { key = "pct", ok_key = "score", tot_key = "total", label = "SUCCESS", color = COL_SINGLE, fill = 0x0C44DDFF }
+        curves[#curves + 1] = { key = "pct", ok_key = "score", tot_key = "total", label = "成功率", color = COL_SINGLE, fill = 0x0C44DDFF }
     end
 
     -- Area fill under curves
@@ -480,7 +506,7 @@ local function draw_chart(sw, sh, fh, fh_s)
     -- Tooltip
     if tooltip then
         local tt = tooltip
-        local max_len = math.max(#tt.text, #(tt.text2 or ""))
+        local max_len = math.max(text_len(tt.text), text_len(tt.text2 or ""))
         local tt_w = max_len * fh_s * 0.62 + pad * 3
         local tt_h = fh_s * 2.2 + pad * 1.5
         local tt_x = tt.x - tt_w * 0.5
@@ -509,12 +535,14 @@ local function draw_chart(sw, sh, fh, fh_s)
         pcall(_rec_draw_xlabel, i, sx, cy, ch, pad, xl_ox, xl_oy, cw_char, fh_s)
     end
 
-    -- Legend — centered symmetrically, adapts to number of curves
-    local leg_y = cy + ch + axis_h + pad * 0.3 + sh * (L.legend_oy or 0)
-    local leg_cx = cx + cw * 0.5 + sw * (L.legend_ox or 0)
+    -- Footer separator is the anchor for legend and averages. Keeping both tied
+    -- to it avoids old layout offsets pushing Chinese text into the axis labels.
+    local fy_sep = panel_y + panel_h - footer_h
+
+    -- Legend — centered above the footer separator
+    local leg_y = fy_sep - fh_s * 1.75
+    local leg_cx = cx + cw * 0.5
     local dot_sz = fh_s * 0.6
-    local ldot_ox = sw * (L.legdot_ox or 0)
-    local ldot_oy = sh * (L.legdot_oy or 0)
     local leg_gap = cw * 0.08
 
     local leg_labels = {}
@@ -525,24 +553,22 @@ local function draw_chart(sw, sh, fh, fh_s)
     local leg_items_w = {}
     local total_leg = 0
     for i, ll in ipairs(leg_labels) do
-        local w = dot_sz + fh_s * 0.5 + #ll.text * cw_char
+        local label_w = measure_text(_font_small, ll.text, fh_s, 0.55)
+        local w = dot_sz + fh_s * 0.5 + label_w
         leg_items_w[i] = w
         total_leg = total_leg + w
         if i < #leg_labels then total_leg = total_leg + leg_gap end
     end
     local leg_x = leg_cx - total_leg * 0.5
     for i, ll in ipairs(leg_labels) do
-        d2d.fill_rect(leg_x + ldot_ox, leg_y + (fh_s - dot_sz) * 0.5 + ldot_oy, dot_sz, dot_sz, ll.color)
+        local _, label_h = measure_text(_font_small, ll.text, fh_s, 0.55)
+        d2d.fill_rect(leg_x, leg_y + (label_h - dot_sz) * 0.5, dot_sz, dot_sz, ll.color)
         d2d.text(_font_small, ll.text, leg_x + dot_sz + fh_s * 0.4, leg_y, ll.color)
         leg_x = leg_x + leg_items_w[i] + leg_gap
     end
 
     -- Footer: averages with accent separator
-    local ft_ox = sw * (L.footer_ox or 0)
-    local ft_oy = sh * (L.footer_oy or 0)
-    local fy_sep = panel_y + panel_h - footer_h + ft_oy
     d2d.fill_rect(panel_x + pad * 1.5, fy_sep, panel_w - pad * 3, 1, COL_ACCENT)
-    local fy = fy_sep + (footer_h - fh) * 0.5
 
     if dual_mode then
         local sum_hit, sum_blk = 0, 0
@@ -553,16 +579,18 @@ local function draw_chart(sw, sh, fh, fh_s)
         local avg_hit = sum_hit / n
         local avg_blk = sum_blk / n
 
-        local hit_str = string.format("HIT AVG: %d%%", math.floor(avg_hit))
-        local ha_x = panel_x + pad * 1.5 + ft_ox + sw * (L.hitavg_ox or 0)
-        local ha_y = fy + sh * (L.hitavg_oy or 0)
+        local hit_str = string.format("命中平均：%d%%", math.floor(avg_hit))
+        local hit_w, hit_h = measure_text(_font, hit_str, fh, 0.66)
+        local ha_x = panel_x + pad * 1.5
+        local ha_y = fy_sep + (footer_h - hit_h) * 0.5
         d2d.text(_font, hit_str, ha_x + 1, ha_y + 1, COL_SHADOW)
         d2d.text(_font, hit_str, ha_x, ha_y, COL_HIT)
 
-        local blk_str = string.format("BLOCK AVG: %d%%", math.floor(avg_blk))
-        local blk_w = #blk_str * fh * 0.6
-        local ba_x = panel_x + panel_w - pad * 1.5 - blk_w + ft_ox + sw * (L.blkavg_ox or 0)
-        local ba_y = fy + sh * (L.blkavg_oy or 0)
+        local blk_str = string.format("被防平均：%d%%", math.floor(avg_blk))
+        local blk_w, blk_h = measure_text(_font, blk_str, fh, 0.66)
+        local ba_x = panel_x + panel_w - pad * 1.5 - blk_w
+        if ba_x < ha_x + hit_w + pad then ba_x = ha_x + hit_w + pad end
+        local ba_y = fy_sep + (footer_h - blk_h) * 0.5
         d2d.text(_font, blk_str, ba_x + 1, ba_y + 1, COL_SHADOW)
         d2d.text(_font, blk_str, ba_x, ba_y, COL_BLK)
     else
@@ -574,17 +602,20 @@ local function draw_chart(sw, sh, fh, fh_s)
         if n >= 2 then
             local trend = (tonumber(_sessions[n].pct) or 0) - (tonumber(_sessions[1].pct) or 0)
             local trend_str = trend >= 0
-                and string.format("TREND: +%d%%", math.floor(trend))
-                or  string.format("TREND: %d%%", math.floor(trend))
+                and string.format("趋势：+%d%%", math.floor(trend))
+                or  string.format("趋势：%d%%", math.floor(trend))
             local trend_col = trend >= 0 and COL_BAR_GRN or COL_BAR_RED
-            d2d.text(_font, trend_str, panel_x + pad * 1.5 + ft_ox + 1, fy + 1, COL_SHADOW)
-            d2d.text(_font, trend_str, panel_x + pad * 1.5 + ft_ox, fy, trend_col)
+            local _, trend_h = measure_text(_font, trend_str, fh, 0.66)
+            local trend_y = fy_sep + (footer_h - trend_h) * 0.5
+            d2d.text(_font, trend_str, panel_x + pad * 1.5 + 1, trend_y + 1, COL_SHADOW)
+            d2d.text(_font, trend_str, panel_x + pad * 1.5, trend_y, trend_col)
         end
 
-        local avg_str = string.format("AVG: %d%%", math.floor(avg_pct))
-        local avg_w = #avg_str * fh * 0.6
-        d2d.text(_font, avg_str, panel_x + panel_w - pad * 1.5 - avg_w + ft_ox + 1, fy + 1, COL_SHADOW)
-        d2d.text(_font, avg_str, panel_x + panel_w - pad * 1.5 - avg_w + ft_ox, fy, COL_SINGLE)
+        local avg_str = string.format("平均：%d%%", math.floor(avg_pct))
+        local avg_w, avg_h = measure_text(_font, avg_str, fh, 0.66)
+        local avg_y = fy_sep + (footer_h - avg_h) * 0.5
+        d2d.text(_font, avg_str, panel_x + panel_w - pad * 1.5 - avg_w + 1, avg_y + 1, COL_SHADOW)
+        d2d.text(_font, avg_str, panel_x + panel_w - pad * 1.5 - avg_w, avg_y, COL_SINGLE)
     end
 end
 
@@ -623,15 +654,15 @@ local function d2d_draw()
     local fh_s = math.floor(sh * 0.012)
     local fh_t = math.floor(sh * 0.020)
     if fh ~= _last_font_h then
-        _font = d2d.Font.new("capcom_goji-udkakugoc80pro-db.ttf", fh)
+        _font = d2d.Font.new("msyh.ttc", fh)
         _last_font_h = fh
     end
     if fh_s ~= _last_font_h_small then
-        _font_small = d2d.Font.new("capcom_goji-udkakugoc80pro-db.ttf", fh_s)
+        _font_small = d2d.Font.new("msyh.ttc", fh_s)
         _last_font_h_small = fh_s
     end
     if fh_t ~= _last_font_h_title then
-        _font_title = d2d.Font.new("SF6_college.ttf", fh_t)
+        _font_title = d2d.Font.new("msyhbd.ttc", fh_t)
         _last_font_h_title = fh_t
     end
 
