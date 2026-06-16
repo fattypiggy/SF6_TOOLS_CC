@@ -56,11 +56,11 @@
     "hud_show": true,
     "hud_spacing_y": 0.02800000086426735,
     "icon_size": 0.039000000804662704,
-    "idle_max_history": 15,
+    "idle_max_history": 13,
     "idle_mirror_p1": false,
     "idle_mirror_p2": false,
     "idle_pos_p1": {
-        "x": 0.019999999552965164,
+        "x": 0.04500000178813934,
         "y": 0.1770000010728836
     },
     "idle_pos_p2": {
@@ -81,7 +81,7 @@
     "idle_show_p1": true,
     "idle_show_p2": false,
     "ignore_auto": true,
-    "max_history": 15,
+    "max_history": 13,
     "mirror_p1": false,
     "mirror_p2": false,
     "offset_x_arrow": -0.03999999910593033,
@@ -152,9 +152,9 @@
     "show_live_single_p2": true,
     "show_p1": true,
     "show_p2": false,
-    "spacing_x": 0.0,
+    "spacing_x": 0.004999999888241291,
     "spacing_y": 0.04800000041723251,
-    "special_icon_scale": 1.5,
+    "special_icon_scale": 1.0499999523162842,
     "text_y_offset": -0.0010000000474974513,
     "trial_visible_steps": 30
 }

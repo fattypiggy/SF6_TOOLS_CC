@@ -258,6 +258,9 @@ local function parse_motion_to_icons(log_entry, trial_mode, should_flip, reverse
     s = s:gsub("%(REVERSAL%)", "{rev}")
     s = s:gsub("REVERSAL", "{rev}")
 
+    s = s:gsub("%(WHIFF%)", "(空挥)")
+    s = s:gsub("WHIFF", "空挥")
+
     s = s:gsub("DRIVE RUSH CANCEL", "{drc}")
     s = s:gsub("%(DRC%)", "{drc}")
     s = s:gsub("DRC", "{drc}")

@@ -3276,7 +3276,7 @@ local function ct_player_process_actions(p_idx, p_state, actions_to_process)
                             local is_parry = m_str:match("PARRY")
                             local is_dash = m_str:match("DASH") or m_str:match("66") or m_str:match("44") or is_drive_rush_motion(prev_step.motion)
 
-                            if not is_mov and not is_parry and not is_dash and not m_str:match("WHIFF") then
+                            if not is_mov and not is_parry and not is_dash and not m_str:match("空挥") and not m_str:match("WHIFF") then
                                 prev_step.motion = prev_step.motion .. " (空挥)"
                                 -- Update the Live Log for real-time display
                                 if p_state.log and #p_state.log > 0 then
@@ -3787,7 +3787,7 @@ function save_trial_sequence()
                     local is_parry = m_str:match("PARRY")
                     local is_dash = m_str:match("DASH") or m_str:match("66") or m_str:match("44") or is_drive_rush_motion(last_step.motion)
 
-                    if not is_mov and not is_parry and not is_dash and not m_str:match("WHIFF") then
+                    if not is_mov and not is_parry and not is_dash and not m_str:match("空挥") and not m_str:match("WHIFF") then
                         last_step.motion = last_step.motion .. " (空挥)"
                     end
                 end

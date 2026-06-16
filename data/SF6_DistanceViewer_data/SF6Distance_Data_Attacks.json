@@ -13717,12 +13717,12 @@
             },
             "Zangief": {
                 "low": {
-                    "ar": 173.38823,
-                    "input": "6MK"
-                },
-                "red": {
                     "ar": 218.58701,
                     "input": "5HP"
+                },
+                "red": {
+                    "ar": 244.6949,
+                    "input": "5HP (HOLD)"
                 },
                 "yellow_offset": 50
             }
