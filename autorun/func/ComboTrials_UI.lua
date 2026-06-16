@@ -576,12 +576,12 @@ local function draw_single_line_content()
 
         imgui.same_line(0, sp)
         if trial_state.is_playing then
-            if styled_sf6_button("停止 Trial (" .. sc("U") .. ")", true, btn_w, true, false, TRIAL_COLORS) then
+            if styled_sf6_button("停止连段 (" .. sc("U") .. ")", true, btn_w, true, false, TRIAL_COLORS) then
                 trial_state.is_playing = false
             end
         elseif not trial_state.is_recording then
             local is_p1_active = (trial_state.is_playing and trial_state.playing_player == 0)
-            if styled_sf6_button(is_p1_active and "停止 Trial (" .. sc("U") .. ")" or "开始 Trial (" .. sc("U") .. ")", is_p1_active, btn_w, true, false, TRIAL_COLORS) then
+            if styled_sf6_button(is_p1_active and "停止连段 (" .. sc("U") .. ")" or "开始连段 (" .. sc("U") .. ")", is_p1_active, btn_w, true, false, TRIAL_COLORS) then
                 if is_p1_active then trial_state.is_playing = false
                 else load_and_start_trial(0) end
             end
@@ -1122,7 +1122,7 @@ re.on_frame(function()
 
             -- Calculate single-line threshold
             local rec_btn_w_check = get_max_text_width({ "停止并保存 (" .. sc_max("L") .. ")", "取消 (" .. sc_max("R") .. ")", "录制 P1 (" .. sc_max("L") .. ")", "录制 P2 (" .. sc_max("R") .. ")" }, true)
-            local play_btn_w_check = get_max_text_width({ "开始 Trial P1 (" .. sc_max("U") .. ")", "停止 Trial P1 (" .. sc_max("U") .. ")", "开始 Trial P2 (" .. sc_max("U") .. ")", "停止 Trial P2 (" .. sc_max("U") .. ")" }, true)
+            local play_btn_w_check = get_max_text_width({ "开始连段 P1 (" .. sc_max("U") .. ")", "停止连段 P1 (" .. sc_max("U") .. ")", "开始连段 P2 (" .. sc_max("U") .. ")", "停止连段 P2 (" .. sc_max("U") .. ")" }, true)
             local min_single_line_w = 200 + (rec_btn_w_check + play_btn_w_check) * 2 + 150 * (sh / 1080.0)
 
             if w_width >= min_single_line_w then
@@ -1282,7 +1282,7 @@ local function draw_combo_trials_menu_ui()
             end
             imgui.spacing()
 
-            imgui.text_colored("--- 实时日志（录制 / Trial 中）---", COLORS.Cyan)
+            imgui.text_colored("--- 实时日志（录制 / 连段中）---", COLORS.Cyan)
 
             c, v = imgui.checkbox("显示 P1##trial", d2d_cfg.show_p1); if c then d2d_cfg.show_p1 = v; changed = true end
             imgui.same_line()
