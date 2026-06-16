@@ -338,7 +338,7 @@ local function draw_single_line_content()
 
     -- Widths excluding P2 buttons
     local rec_btn_w_base = get_max_text_width({ "停止并保存 (" .. sc_max("L") .. ")", "取消 (" .. sc_max("R") .. ")", "录制 P1 (" .. sc_max("L") .. ")", "录制 P2 (" .. sc_max("R") .. ")", "重置 (" .. sc_max("L") .. ")", "演示 (" .. sc_max("R") .. ")" }, true)
-    local play_btn_w_base = get_max_text_width({ "开始 Trial P1 (" .. sc_max("U") .. ")", "停止 Trial P1 (" .. sc_max("U") .. ")", "镜像位置 (" .. sc_max("D") .. ")" }, true)
+    local play_btn_w_base = get_max_text_width({ "开始连段 P1 (" .. sc_max("U") .. ")", "停止连段 P1 (" .. sc_max("U") .. ")", "镜像位置 (" .. sc_max("D") .. ")" }, true)
 
     local absolute_btn_w = math.max(rec_btn_w_base, play_btn_w_base)
 
@@ -1416,7 +1416,7 @@ local function draw_combo_trials_menu_ui()
             c, v = imgui.drag_float("Bar图片 Y 偏移", d2d_cfg.bar_img_offset_y, 0.001, -0.1, 0.1); if c then
                 d2d_cfg.bar_img_offset_y = v; changed = true
             end
-            c, v = imgui.drag_int("可见 Trial 行数", d2d_cfg.trial_visible_steps, 1, 1, 30); if c then
+            c, v = imgui.drag_int("可见连段行数", d2d_cfg.trial_visible_steps, 1, 1, 30); if c then
                 d2d_cfg.trial_visible_steps = v; changed = true
             end
             if not d2d_cfg.bar_width_pct then d2d_cfg.bar_width_pct = 1.0 end
@@ -1963,7 +1963,7 @@ local function draw_combo_trials_menu_ui()
             -- LIVE POSITIONS
             imgui.text_colored("实时位置（raw sfix）：", 0xFF00FFFF)
             pcall(_ctui_draw_live_positions)
-            imgui.text_colored("已保存的 Trial 位置：", 0xFF00FFFF)
+            imgui.text_colored("已保存的连段位置：", 0xFF00FFFF)
             imgui.indent(20)
             imgui.text(string.format("start_pos_p1_raw: %s", tostring(trial_state.start_pos_p1_raw)))
             imgui.text(string.format("start_pos_p2_raw: %s", tostring(trial_state.start_pos_p2_raw)))
