@@ -627,7 +627,7 @@ local function draw_combo_trials_content(is_floating)
     local w_width = (size.x > 50) and size.x or (sw * 0.44)
 
     local rec_btn_w_base = get_max_text_width({ "停止并保存 (" .. sc_max("L") .. ")", "取消 (" .. sc_max("R") .. ")", "录制 P1 (" .. sc_max("L") .. ")", "录制 P2 (" .. sc_max("R") .. ")", "重置 (" .. sc_max("L") .. ")", "演示 (" .. sc_max("R") .. ")" }, is_floating)
-    local play_btn_w_base = get_max_text_width({ "开始 Trial P1 (" .. sc_max("U") .. ")", "停止 Trial P1 (" .. sc_max("U") .. ")", "镜像位置 (" .. sc_max("D") .. ")" }, is_floating)
+    local play_btn_w_base = get_max_text_width({ "开始连段 P1 (" .. sc_max("U") .. ")", "停止连段 P1 (" .. sc_max("U") .. ")", "镜像位置 (" .. sc_max("D") .. ")" }, is_floating)
 
     local absolute_btn_w = math.max(rec_btn_w_base, play_btn_w_base)
     local spacing_cols = 20 * (sh / 1080.0)
@@ -757,16 +757,16 @@ local function draw_combo_trials_content(is_floating)
     else imgui.same_line(col3_x) end
 
     imgui.begin_group()
-    if not is_floating then imgui.text_colored("3. 播放 Trial", COLORS.White) end
+    if not is_floating then imgui.text_colored("3. 播放连段", COLORS.White) end
 
     if trial_state.is_playing or is_demo_active then
-        if styled_sf6_button("停止 Trial (" .. sc("U") .. ")", true, play_btn_w, is_floating, false, TRIAL_COLORS) then
+        if styled_sf6_button("停止连段 (" .. sc("U") .. ")", true, play_btn_w, is_floating, false, TRIAL_COLORS) then
             trial_state.is_playing = false
             if ctx.stop_demo then ctx.stop_demo() end
         end
     elseif not trial_state.is_recording then
         local is_p1_active = (trial_state.is_playing and trial_state.playing_player == 0)
-        if styled_sf6_button(is_p1_active and "停止 Trial P1 (" .. sc("U") .. ")" or "开始 Trial P1 (" .. sc("U") .. ")", is_p1_active, play_btn_w, is_floating, false, TRIAL_COLORS) then
+        if styled_sf6_button(is_p1_active and "停止连段 P1 (" .. sc("U") .. ")" or "开始连段 P1 (" .. sc("U") .. ")", is_p1_active, play_btn_w, is_floating, false, TRIAL_COLORS) then
             if is_p1_active then trial_state.is_playing = false
             else load_and_start_trial(0) end
         end
@@ -1132,7 +1132,7 @@ re.on_frame(function()
                 -- NORMAL MODE: Header + standard content
                 -- Calculate exact actual width to synchronize header transition with UI layout
                 local rec_btn_w_base = get_max_text_width({ "停止并保存 (" .. sc_max("L") .. ")", "取消 (" .. sc_max("R") .. ")", "录制 P1 (" .. sc_max("L") .. ")", "录制 P2 (" .. sc_max("R") .. ")", "重置 (" .. sc_max("L") .. ")", "演示 (" .. sc_max("R") .. ")" }, true)
-                local play_btn_w_base = get_max_text_width({ "开始 Trial P1 (" .. sc_max("U") .. ")", "停止 Trial P1 (" .. sc_max("U") .. ")", "镜像位置 (" .. sc_max("D") .. ")" }, true)
+                local play_btn_w_base = get_max_text_width({ "开始连段 P1 (" .. sc_max("U") .. ")", "停止连段 P1 (" .. sc_max("U") .. ")", "镜像位置 (" .. sc_max("D") .. ")" }, true)
                 local absolute_btn_w = math.max(rec_btn_w_base, play_btn_w_base)
                 local spacing_cols = 20 * (sh / 1080.0)
 
@@ -1317,7 +1317,7 @@ local function draw_combo_trials_menu_ui()
             end
             imgui.spacing()
 
-            imgui.text_colored("--- 实时日志（空闲 / 无 Trial）---", COLORS.Cyan)
+            imgui.text_colored("--- 实时日志（空闲 / 无连段）---", COLORS.Cyan)
 
             c, v = imgui.checkbox("显示 P1##idle", d2d_cfg.idle_show_p1); if c then d2d_cfg.idle_show_p1 = v; changed = true end
             imgui.same_line()
@@ -1329,7 +1329,7 @@ local function draw_combo_trials_menu_ui()
                 c, v = imgui.drag_float("P1 Y##idle", d2d_cfg.idle_pos_p1.y, 0.005, 0.0, 1.0); if c then d2d_cfg.idle_pos_p1.y = v; changed = true end
                 if d2d_cfg.idle_mirror_p1 then imgui.text_colored("  (镜像: X=" .. string.format("%.3f", 1.0 - d2d_cfg.idle_pos_p1.x) .. ")", 0xFFAAAAAA) end
             else
-                imgui.text_colored("  (位置来自 Trial Raw P1)", 0xFFAAAAAA)
+                imgui.text_colored("  (位置来自连段 Raw P1)", 0xFFAAAAAA)
                 if d2d_cfg.idle_mirror_p1 then
                     local src = d2d_cfg.raw_pos_p1 or d2d_cfg.pos_p1
                     imgui.text_colored("  (镜像: X=" .. string.format("%.3f", 1.0 - (src.x or 0.050)) .. ")", 0xFFAAAAAA)
@@ -1346,7 +1346,7 @@ local function draw_combo_trials_menu_ui()
                 c, v = imgui.drag_float("P2 Y##idle", d2d_cfg.idle_pos_p2.y, 0.005, 0.0, 1.0); if c then d2d_cfg.idle_pos_p2.y = v; changed = true end
                 if d2d_cfg.idle_mirror_p2 then imgui.text_colored("  (镜像: X=" .. string.format("%.3f", 1.0 - d2d_cfg.idle_pos_p2.x) .. ")", 0xFFAAAAAA) end
             else
-                imgui.text_colored("  (位置来自 Trial Raw P2)", 0xFFAAAAAA)
+                imgui.text_colored("  (位置来自连段 Raw P2)", 0xFFAAAAAA)
                 if d2d_cfg.idle_mirror_p2 then
                     local src = d2d_cfg.raw_pos_p2 or d2d_cfg.pos_p2
                     imgui.text_colored("  (镜像: X=" .. string.format("%.3f", 1.0 - (src.x or 0.850)) .. ")", 0xFFAAAAAA)
@@ -1385,23 +1385,23 @@ local function draw_combo_trials_menu_ui()
             -- NEW: Trial Box Position & Height
             imgui.separator()
 
-            imgui.text_colored("--- Trial 框位置与尺寸 ---", COLORS.Cyan)
-            c, v = imgui.drag_float("Trial P1 X", d2d_cfg.pos_trial_p1.x, 0.005, 0.0, 1.0); if c then
+            imgui.text_colored("--- 连段框位置与尺寸 ---", COLORS.Cyan)
+            c, v = imgui.drag_float("连段框 P1 X", d2d_cfg.pos_trial_p1.x, 0.005, 0.0, 1.0); if c then
                 d2d_cfg.pos_trial_p1.x = v; changed = true
             end
-            c, v = imgui.drag_float("Trial P1 Y", d2d_cfg.pos_trial_p1.y, 0.005, 0.0, 1.0); if c then
+            c, v = imgui.drag_float("连段框 P1 Y", d2d_cfg.pos_trial_p1.y, 0.005, 0.0, 1.0); if c then
                 d2d_cfg.pos_trial_p1.y = v; changed = true
             end
-            c, v = imgui.drag_float("Trial P2 X", d2d_cfg.pos_trial_p2.x, 0.005, 0.0, 1.0); if c then
+            c, v = imgui.drag_float("连段框 P2 X", d2d_cfg.pos_trial_p2.x, 0.005, 0.0, 1.0); if c then
                 d2d_cfg.pos_trial_p2.x = v; changed = true
             end
-            c, v = imgui.drag_float("Trial P2 Y", d2d_cfg.pos_trial_p2.y, 0.005, 0.0, 1.0); if c then
+            c, v = imgui.drag_float("连段框 P2 Y", d2d_cfg.pos_trial_p2.y, 0.005, 0.0, 1.0); if c then
                 d2d_cfg.pos_trial_p2.y = v; changed = true
             end
-            c, v = imgui.drag_float("Trial 框高度", d2d_cfg.cartouche_height, 0.01, 0.1, 3.0); if c then
+            c, v = imgui.drag_float("连段框高度", d2d_cfg.cartouche_height, 0.01, 0.1, 3.0); if c then
                 d2d_cfg.cartouche_height = v; changed = true
             end
-            c, v = imgui.drag_float("Trial 框宽度", d2d_cfg.cartouche_width, 0.005, 0.1, 1.0); if c then
+            c, v = imgui.drag_float("连段框宽度", d2d_cfg.cartouche_width, 0.005, 0.1, 1.0); if c then
                 d2d_cfg.cartouche_width = v; changed = true
             end
             c, v = imgui.drag_float("框偏移 X", d2d_cfg.cartouche_offset_x, 0.001, -0.1, 0.1); if c then
@@ -1522,7 +1522,7 @@ local function draw_combo_trials_menu_ui()
                     imgui.indent(20)
 
                     if p_state.edit_hold_partial_check == nil then p_state.edit_hold_partial_check = true end
-                    local chpc, nhpc = imgui.checkbox("Trial 中验证 Partial", p_state.edit_hold_partial_check)
+                    local chpc, nhpc = imgui.checkbox("连段中验证 Partial", p_state.edit_hold_partial_check)
                     if chpc then p_state.edit_hold_partial_check = nhpc end
                     if imgui.is_item_hovered() then
                         imgui.set_tooltip("关闭后，Instant 和 Partial 的差异会被容忍。\nMaxed / PERFECT / FAKE / LATE 始终严格验证。")
