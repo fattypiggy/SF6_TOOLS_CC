@@ -10,63 +10,6 @@
         "Ken_Cheepz.json"
     ],
     "selected_file": "",
-    "slots": [
-        {
-            "active": false,
-            "frames": 222,
-            "name": "",
-            "valid": true,
-            "weight": 1
-        },
-        {
-            "active": false,
-            "frames": 908,
-            "name": "",
-            "valid": true,
-            "weight": 1
-        },
-        {
-            "active": false,
-            "frames": 0,
-            "name": "",
-            "valid": false,
-            "weight": 1
-        },
-        {
-            "active": false,
-            "frames": 0,
-            "name": "",
-            "valid": false,
-            "weight": 1
-        },
-        {
-            "active": false,
-            "frames": 0,
-            "name": "",
-            "valid": false,
-            "weight": 1
-        },
-        {
-            "active": false,
-            "frames": 0,
-            "name": "",
-            "valid": false,
-            "weight": 1
-        },
-        {
-            "active": false,
-            "frames": 0,
-            "name": "",
-            "valid": false,
-            "weight": 1
-        },
-        {
-            "active": false,
-            "frames": 0,
-            "name": "",
-            "valid": false,
-            "weight": 1
-        }
-    ],
+    "slots": null,
     "status_msg": "角色已选择 : Ken"
 }

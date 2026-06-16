@@ -115,7 +115,7 @@ local function apply_teleport_exact(distance, is_retry)
         pending_tp.expected_c2c = total_center_dist
         pending_tp.attempts = 0
 
-        status_msg = string.format("APPLIED: %.5f (P1:%s P2:%s)", distance, tp_p1_border and "B" or "C", tp_p2_border and "B" or "C")
+        status_msg = string.format("已应用: %.5f (P1:%s P2:%s)", distance, tp_p1_border and "边缘" or "中心", tp_p2_border and "边缘" or "中心")
         status_timer = 150
     end
 end
@@ -159,9 +159,9 @@ re.on_frame(function()
 end)
 
 local modes = {
-    { label = "P1 Center - P2 Center", p1b = false, p2b = false, dist_key = "cc" },
-    { label = "P1 Center - P2 Border", p1b = false, p2b = true,  dist_key = "cb" },
-    { label = "P1 Border - P2 Center", p1b = true,  p2b = false, dist_key = "bc" },
+    { label = "P1 中心 - P2 中心", p1b = false, p2b = false, dist_key = "cc" },
+    { label = "P1 中心 - P2 边缘", p1b = false, p2b = true,  dist_key = "cb" },
+    { label = "P1 边缘 - P2 中心", p1b = true,  p2b = false, dist_key = "bc" },
 }
 
 local function draw_teleport_ui(suffix)
@@ -190,7 +190,7 @@ local function draw_teleport_ui(suffix)
 
     imgui.text_colored(dist_str, COL_ACTIVE)
     imgui.same_line()
-    if imgui.button("COPY##tp_copy" .. sf) then
+    if imgui.button("复制##tp_copy" .. sf) then
         teleport_target_dist = tonumber(dist_str) or teleport_target_dist
         copied_timer = 90
     end
@@ -201,11 +201,11 @@ local function draw_teleport_ui(suffix)
 
     local t_str = tostring(teleport_target_dist)
     imgui.push_item_width(120)
-    local changed, new_t = imgui.input_text("Target##" .. sf, t_str)
+    local changed, new_t = imgui.input_text("目标距离##" .. sf, t_str)
     imgui.pop_item_width()
     if changed then local n = tonumber(new_t); if n then teleport_target_dist = n end end
     imgui.same_line()
-    if imgui.button("TELEPORT##tp_apply" .. sf) then apply_teleport_exact(teleport_target_dist) end
+    if imgui.button("传送##tp_apply" .. sf) then apply_teleport_exact(teleport_target_dist) end
 
     if status_timer > 0 then
         imgui.text_colored(status_msg, 0xFFFFFF00)
@@ -213,8 +213,8 @@ local function draw_teleport_ui(suffix)
 end
 
 re.on_draw_ui(function()
-    if imgui.tree_node("SF6 TELEPORT") then
-        local c_fl, v_fl = imgui.checkbox("Floating Window##tp_float", show_floating)
+    if imgui.tree_node("SF6 瞬移") then
+        local c_fl, v_fl = imgui.checkbox("浮动窗口##tp_float", show_floating)
         if c_fl then show_floating = v_fl end
         imgui.separator()
         draw_teleport_ui("ref")
@@ -224,8 +224,8 @@ end)
 
 re.on_frame(function()
     if show_floating then
-        if imgui.begin_window("SF6 TELEPORT##float", true, 64) then
-            local c_fl, v_fl = imgui.checkbox("Floating Window##tp_float2", show_floating)
+        if imgui.begin_window("SF6 瞬移##float", true, 64) then
+            local c_fl, v_fl = imgui.checkbox("浮动窗口##tp_float2", show_floating)
             if c_fl then show_floating = v_fl end
             imgui.separator()
             draw_teleport_ui("float")
