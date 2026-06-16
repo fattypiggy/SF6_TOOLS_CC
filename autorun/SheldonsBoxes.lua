@@ -451,7 +451,7 @@ local function draw_dynamic_charge_bars(p_data, pi, display_w, display_h, y_offs
                     draw.outline_rect(meter_x, y_off, bar_w, bar_h, colors.VisualChargeMeterOutline)
                     
                     local font_sz = math.floor(charge_meter_frame_font_size * (display_h / 1080))
-                    local central_text = can_show_ok and "CHARGE OK" or string.format("%d/%s", cur, limit_text)
+                    local central_text = can_show_ok and "蓄力就绪" or string.format("%d/%s", cur, limit_text)
                     local t_w, t_h = get_real_text_size(central_text)
                     draw_text_safe(central_text, meter_x + (bar_w/2) - (t_w/2), (y_off + bar_h/2) - (t_h/2), colors.VisualChargeMeterText, font_sz)
                     
