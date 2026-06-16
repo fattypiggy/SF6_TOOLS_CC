@@ -20,8 +20,8 @@
     ],
     "trial_playing": false,
     "trial_position": 3,
-    "trial_recording": false,
+    "trial_recording": true,
     "trial_step": 1,
-    "trial_total": 0,
+    "trial_total": 5,
     "trials": 30
 }
