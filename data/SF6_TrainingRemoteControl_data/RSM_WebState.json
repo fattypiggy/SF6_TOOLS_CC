@@ -9,7 +9,7 @@
         "Ken_Base.json",
         "Ken_Cheepz.json"
     ],
-    "selected_file": "",
+    "selected_file": "Ken_Cheepz.json",
     "slots": [
         {
             "active": false,
@@ -19,7 +19,7 @@
             "weight": 1
         },
         {
-            "active": false,
+            "active": true,
             "frames": 908,
             "name": "",
             "valid": true,
