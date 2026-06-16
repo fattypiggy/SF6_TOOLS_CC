@@ -13,16 +13,16 @@
     "slots": [
         {
             "active": false,
-            "frames": 222,
+            "frames": 241,
             "name": "",
             "valid": true,
             "weight": 1
         },
         {
-            "active": true,
-            "frames": 908,
+            "active": false,
+            "frames": 0,
             "name": "",
-            "valid": true,
+            "valid": false,
             "weight": 1
         },
         {
@@ -68,5 +68,5 @@
             "weight": 1
         }
     ],
-    "status_msg": "角色已选择 : Ken"
+    "status_msg": "Custom Saved: Ken_Cheepz.json"
 }
