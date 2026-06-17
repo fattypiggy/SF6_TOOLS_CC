@@ -923,7 +923,7 @@ local function d2d_draw_inner()
             local is_fail_state = (trial_state.fail_timer and trial_state.fail_timer > 0)
             local bar_img = nil
             if mode == "recording" then
-                -- no bar image for recording; falls through to fill_rect below
+                bar_img = assets.imgs["success_bar"]
             elseif is_succ then
                 bar_img = assets.imgs["success_bar"]
             elseif is_fail_state then
@@ -976,11 +976,11 @@ local function d2d_draw_inner()
             -- Smart overlay removed — bar images (done/fail/success) handle all visual states
         end
 
-        -- Arrow on top (only when recording; bar images have arrow built-in)
+        -- Arrow on top (bar images have arrow built-in)
         if trial_state.is_playing and d2d_anim.active_y then
-            -- Bar images (active/fail/success) all have arrows built-in.
-            -- Only draw standalone arrow when recording or bar images unavailable.
-            if mode == "recording" or (not assets.imgs["active_bar"] and not assets.imgs["fail_bar"] and not assets.imgs["success_bar"]) then
+            -- Bar images (recording/success/fail/active) all have arrows built-in.
+            -- Only draw standalone arrow when bar images are unavailable.
+            if not assets.imgs["active_bar"] and not assets.imgs["fail_bar"] and not assets.imgs["success_bar"] then
                 local arrow_tex = "arrow"
                 local is_fail_state = (trial_state.fail_timer and trial_state.fail_timer > 0)
                 if trial_state.success_timer > 0 then

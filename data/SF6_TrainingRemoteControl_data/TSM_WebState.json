@@ -3,25 +3,22 @@
     "is_paused": false,
     "is_running": false,
     "mode": 4,
-    "session_mode": 1,
+    "session_mode": 2,
     "sf6_running": true,
-    "timer": 1,
+    "timer": 0,
     "training_active": true,
     "trial_demo": false,
-    "trial_file": "Ingrid_COMBO_7913_D0_SA0.json",
-    "trial_file_idx": 1,
+    "trial_file": "Ingrid_COMBO_7733_D6_SA3_20260617_051540_timeline1f.json",
+    "trial_file_idx": 3,
     "trial_files": [
-        "Ingrid_COMBO_7913_D0_SA0.json",
-        "Ingrid_COMBO_7686_D6_SA3.json",
-        "Ingrid_COMBO_7401_D6_SA3.json",
-        "Ingrid_COMBO_4879_D4.8_SA0.json",
-        "Ingrid_COMBO_3045_D0_SA2.json",
-        "Ingrid_COMBO_1440_D0_SA0.json"
+        "Ingrid_COMBO_7733_D6_SA3.json",
+        "Ingrid_COMBO_7733_D6_SA3_20260617_051540.json",
+        "Ingrid_COMBO_7733_D6_SA3_20260617_051540_timeline1f.json"
     ],
-    "trial_playing": false,
-    "trial_position": 3,
-    "trial_recording": true,
+    "trial_playing": true,
+    "trial_position": 2,
+    "trial_recording": false,
     "trial_step": 1,
-    "trial_total": 5,
-    "trials": 30
+    "trial_total": 13,
+    "trials": 0
 }

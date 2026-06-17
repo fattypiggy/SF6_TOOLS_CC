@@ -9,7 +9,7 @@
         "Ken_Base.json",
         "Ken_Cheepz.json"
     ],
-    "selected_file": "Ken_Cheepz.json",
+    "selected_file": "",
     "slots": [
         {
             "active": false,
@@ -68,5 +68,5 @@
             "weight": 1
         }
     ],
-    "status_msg": "Custom Saved: Ken_Cheepz.json"
+    "status_msg": "角色已选择 : Ken"
 }
