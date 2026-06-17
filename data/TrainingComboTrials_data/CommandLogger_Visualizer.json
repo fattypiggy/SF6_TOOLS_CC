@@ -78,7 +78,7 @@
         "x": 0.85,
         "y": 0.35
     },
-    "idle_show_p1": true,
+    "idle_show_p1": false,
     "idle_show_p2": false,
     "ignore_auto": true,
     "max_history": 13,

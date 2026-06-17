@@ -246,14 +246,17 @@ end
 local _tsm_last_mode = _G.CurrentTrainerMode
 local TSM_MODE_NAMES = {
     [0] = "已关闭",
-    [1] = "反应训练",
     [2] = "确认训练",
-    [3] = "防后训练",
     [4] = "连段训练",
 }
 
--- Cycling order: DISABLED → HIT CONFIRM → REACTION DRILLS → POST GUARD → CUSTOM COMBO TRIALS → DISABLED
-local MODE_CYCLE = { 0, 2, 1, 3, 4 }
+local ENABLED_TRAINER_MODES = { [0] = true, [2] = true, [4] = true }
+local function is_enabled_trainer_mode(mode)
+    return ENABLED_TRAINER_MODES[mode or 0] == true
+end
+
+-- Cycling order: DISABLED → HIT CONFIRM → CUSTOM COMBO TRIALS → DISABLED
+local MODE_CYCLE = { 0, 2, 4 }
 local MODE_CYCLE_INDEX = {} -- reverse lookup: mode_id → position in cycle
 for i, m in ipairs(MODE_CYCLE) do MODE_CYCLE_INDEX[m] = i end
 
@@ -474,7 +477,7 @@ re.on_pre_gui_draw_element(function(element, context)
         _G.CurrentHudSuffix = suffix
         
         -- 2. Manage infinite symbol visibility (Never hidden in mode 4)
-        local hide_infinite = (_G.CurrentTrainerMode == 1 or _G.CurrentTrainerMode == 2 or _G.CurrentTrainerMode == 3)
+        local hide_infinite = (_G.CurrentTrainerMode == 2)
         
         local view = element:call("get_View")
         apply_infinite_visibility(view, hide_infinite)
@@ -493,14 +496,12 @@ local SWITCH_COLOR  = build_sc_color(config.top_colors.switch, config.top_alphas
 local MODE_ACTIVE   = build_sc_color(config.top_colors.active, config.top_alphas.active)
 local MODE_INACTIVE = build_sc_color(config.top_colors.inactive, config.top_alphas.inactive)
 
-local top_bar_width = 0.74
+local top_bar_width = 0.52
 local top_bar_height = 0.0444
 
 local MODE_BUTTONS = {
     { id = 0, label = "关闭" },
     { id = 2, label = "确认训练" },
-    { id = 1, label = "反应训练" },
-    { id = 3, label = "防后训练" },
     { id = 4, label = "连段训练" },
 }
 
@@ -552,7 +553,7 @@ local function draw_top_floating_bar()
         switch_label = "切换 (" .. fn .. " + SQUARE/X)"
     end
 
-    -- Calculate button widths: all 6 buttons equal width
+    -- Calculate button widths: all buttons equal width
     local total_buttons = 1 + #MODE_BUTTONS
     local btn_w = (content_w - sp * (total_buttons - 1)) / total_buttons
 
@@ -664,7 +665,7 @@ local function _tsm_web_bridge_tick()
             b.cmd = nil
             json.dump_file("SF6_TrainingRemoteControl_data/TSM_WebBridge.json", b)
         end
-        if _G.TrainingModeActive and b.mode ~= nil then _G.CurrentTrainerMode = b.mode end
+        if _G.TrainingModeActive and b.mode ~= nil and is_enabled_trainer_mode(b.mode) then _G.CurrentTrainerMode = b.mode end
         if _G.TrainingModeActive and b.cmd then
             if b.cmd == "hide_ui" then
                 _G._tsm_hide_ui = not _G._tsm_hide_ui
@@ -770,6 +771,10 @@ re.on_frame(function()
     end
     _G.TrainingModeActive = true
 
+    if not is_enabled_trainer_mode(_G.CurrentTrainerMode or 0) then
+        _G.CurrentTrainerMode = 0
+    end
+
     handle_input()
 
     -- Clear D2D floating bar when no training mode is active
@@ -825,7 +830,7 @@ re.on_frame(function()
     end
 
 
-    local scripts_active = (_G.CurrentTrainerMode == 1 or _G.CurrentTrainerMode == 2 or _G.CurrentTrainerMode == 3 or (_G.CurrentTrainerMode == 4 and _G.ComboTrials_HideNativeHUD))
+    local scripts_active = (_G.CurrentTrainerMode == 2 or (_G.CurrentTrainerMode == 4 and _G.ComboTrials_HideNativeHUD))
     manage_ui_visibility(scripts_active)
 
     if not _G._tsm_web_counter then
@@ -919,12 +924,6 @@ re.on_draw_ui(function()
 
             local c2, v2 = imgui.checkbox("确认训练", _G.CurrentTrainerMode == 2)
             if c2 and v2 then _G.CurrentTrainerMode = 2 end
-
-            local c1, v1 = imgui.checkbox("反应训练", _G.CurrentTrainerMode == 1)
-            if c1 and v1 then _G.CurrentTrainerMode = 1 end
-
-            local c3, v3 = imgui.checkbox("防后训练", _G.CurrentTrainerMode == 3)
-            if c3 and v3 then _G.CurrentTrainerMode = 3 end
 
             local c4, v4 = imgui.checkbox("连段训练", _G.CurrentTrainerMode == 4)
             if c4 and v4 then _G.CurrentTrainerMode = 4 end
@@ -1057,7 +1056,7 @@ re.on_draw_ui(function()
             imgui.spacing()
 
             imgui.separator()
-            imgui.text_colored("通用快捷键（反应 / 确认 / 防后）", 0xFF00FFFF)
+            imgui.text_colored("确认训练快捷键", 0xFF00FFFF)
             imgui.text("  键盘 1 : 计时 -")
             imgui.text("  键盘 2 : 计时 +")
             imgui.text("  键盘 3 : 重置（空闲）/ 停止（运行中）")
@@ -1088,22 +1087,10 @@ re.on_draw_ui(function()
             imgui.text_colored("各模式说明", 0xFF00FFFF)
             imgui.spacing()
 
-            imgui.text_colored("反应训练", 0xFF00FF00)
-            imgui.text("  木人随机播放录制动作。")
-            imgui.text("  根据看到的动作进行反应和惩罚。")
-            imgui.text("  按时间统计成功率。")
-            imgui.spacing()
-
             imgui.text_colored("确认训练", 0xFF00FF00)
             imgui.text("  练习命中确认接连段。")
             imgui.text("  木人随机防御；命中就继续连段。")
             imgui.text("  被防则停止保持安全，并统计准确率。")
-            imgui.spacing()
-
-            imgui.text_colored("防后训练", 0xFF00FF00)
-            imgui.text("  你攻击木人的防御。")
-            imgui.text("  木人格挡后进行反应。")
-            imgui.text("  练习处理被防后的局面。")
             imgui.spacing()
 
             imgui.text_colored("连段训练", 0xFF00FF00)
