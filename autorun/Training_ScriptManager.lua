@@ -788,15 +788,6 @@ re.on_frame(function()
                     local m1 = rec:get_type_definition():get_method("SetPlay")
                     if m1 then m1:call(rec, false) end
                 end
-                local p2_id = _G._rsm_p2_id or -1
-                if p2_id ~= -1 and rec then
-                    local fl = rec:get_field("_tData"):get_field("RecordSetting"):get_field("FighterDataList")
-                    local slots = fl:call("get_Item", p2_id):get_field("RecordSlots")
-                    for i = 0, 7 do
-                        local s = slots:call("get_Item", i)
-                        if s then s:set_field("IsActive", false) end
-                    end
-                end
             end)
         end
     end

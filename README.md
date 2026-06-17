@@ -9,14 +9,10 @@
 - **Script Manager**：顶部菜单和训练模式总开关
 - **Combo Trials**：自定义连段 Trial
 - **Hit Confirm**：确认训练
-- **Reaction Drills**：反应训练
-- **Post Guard**：防后训练
 
 辅助显示和被动功能：
 
 - **Distance Viewer**：距离显示和区域提示
-- **Recording Slot Manager**：假人录制槽导入、导出和权重管理
-- **Training Remote Control**：手机网页远程控制
 - **Sheldon's Boxes**：碰撞框、受击框、打击框显示
 
 ## 快速开始
@@ -26,9 +22,7 @@
 3. 按 `Insert` 打开 REFramework 菜单
 4. 在训练工具顶部菜单中切换功能：
    - 确认训练
-   - 反应训练
-   - 防后训练
-   - 连段 Trial
+   - 连段训练
 5. 需要自定义连段时，把 Trial JSON 放入对应角色目录
 
 如果 REFramework 已生效但菜单呼不出来，可以尝试：
@@ -47,10 +41,6 @@
 | [02_Training_ScriptManager.md](guides/02_Training_ScriptManager.md) | 顶部菜单和模式切换 |
 | [03_CustomComboTrials.md](guides/03_CustomComboTrials.md) | 自定义连段 Trial |
 | [04_HitConfirm.md](guides/04_HitConfirm.md) | 确认训练 |
-| [05_PostGuard.md](guides/05_PostGuard.md) | 防后训练 |
-| [06_ReactionDrills.md](guides/06_ReactionDrills.md) | 反应训练 |
-| [07_RecordingSlotManager.md](guides/07_RecordingSlotManager.md) | 录制槽管理 |
-| [08_TrainingRemoteControl.md](guides/08_TrainingRemoteControl.md) | 手机远程控制 |
 
 ## 目录说明
 
