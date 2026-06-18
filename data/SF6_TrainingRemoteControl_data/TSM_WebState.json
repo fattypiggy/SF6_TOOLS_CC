@@ -7,7 +7,7 @@
     "sf6_running": true,
     "timer": 0,
     "training_active": true,
-    "trial_demo": true,
+    "trial_demo": false,
     "trial_file": "Akuma_COMBO_7064_D6_SA3.json",
     "trial_file_idx": 1,
     "trial_files": [
@@ -22,7 +22,7 @@
     "trial_playing": true,
     "trial_position": 2,
     "trial_recording": false,
-    "trial_step": 15,
+    "trial_step": 10,
     "trial_total": 15,
     "trials": 0
 }
