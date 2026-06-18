@@ -12,7 +12,7 @@ local M = {}
 -- Shared context (set by init)
 local ctx -- { d2d_cfg, trial_state, players, sf6_menu_state }
 
-local assets = { font = nil, last_pixel_size = -1, imgs = {} }
+local assets = { font = nil, last_pixel_size = -1, title_font = nil, last_title_pixel_size = -1, imgs = {} }
 local d2d_anim = { active_y = nil }
 
 local image_files = {
@@ -823,7 +823,32 @@ local function d2d_draw_inner()
         end
     end
 
-    -- TRIAL HEADER (Removed as it's now handled by the UI HUD Overlay)
+    local function draw_trial_title()
+        if d2d_cfg.trial_title_show == false then return end
+        if not trial_state.sequence or not trial_state.sequence[1] then return end
+
+        local first = trial_state.sequence[1]
+        local title = first.display_name or first.title
+        if type(title) ~= "string" or title == "" then return end
+
+        local title_px = math.floor((d2d_cfg.trial_title_font_size or 0.030) * sh)
+        if title_px < 10 then title_px = 10 end
+        if math.abs((assets.last_title_pixel_size or -1) - title_px) > 1.0 or assets.title_font == nil then
+            assets.title_font = d2d.Font.new("msyhbd.ttc", title_px)
+            assets.last_title_pixel_size = title_px
+        end
+        if not assets.title_font then return end
+
+        local pos = d2d_cfg.pos_trial_header or { x = 0.5, y = 0.05 }
+        local tw, th = assets.title_font:measure(title)
+        local x = (pos.x * sw) - ((tw or 0) * 0.5)
+        local y = (pos.y * sh) - ((th or title_px) * 0.5)
+
+        d2d.text(assets.title_font, title, x + 2, y + 2, 0xFF000000)
+        d2d.text(assets.title_font, title, x, y, 0xFFFFFFFF)
+    end
+
+    draw_trial_title()
 
     -- TRIAL CARTOUCHE (Scrolling sequence display)
     if target_trial_p ~= -1 then

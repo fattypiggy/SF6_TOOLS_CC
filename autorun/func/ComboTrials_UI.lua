@@ -1426,6 +1426,13 @@ local function draw_combo_trials_menu_ui()
             imgui.separator()
 
 
+            if d2d_cfg.trial_title_show == nil then d2d_cfg.trial_title_show = true end
+            c, v = imgui.checkbox("显示连段中文标题", d2d_cfg.trial_title_show); if c then
+                d2d_cfg.trial_title_show = v; changed = true
+            end
+            c, v = imgui.drag_float("标题字体大小", d2d_cfg.trial_title_font_size or 0.030, 0.001, 0.010, 0.080, "%.3f"); if c then
+                d2d_cfg.trial_title_font_size = v; changed = true
+            end
             c, v = imgui.drag_float("标题 X 坐标", d2d_cfg.pos_trial_header.x, 0.005, 0.0, 1.0); if c then
                 d2d_cfg.pos_trial_header.x = v; changed = true
             end

@@ -1,6 +1,7 @@
 [
     {
         "actual_combo": 0,
+        "display_name": "7913 最大伤害 连段",
         "combo_stats": {
             "damage": 7913,
             "drive_used": 60000,

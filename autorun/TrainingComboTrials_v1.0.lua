@@ -316,6 +316,8 @@ local file_system = {
     auto_load = true,
     forced_position_options = { "OFF", "FORCED", "MIRROR" }
 }
+local COMBO_LIST_AUTO_REFRESH_FRAMES = 60
+local combo_list_auto_refresh_counter = 0
 
 -- =========================================================
 -- D2D VISUALIZER CONFIGURATION
@@ -345,6 +347,8 @@ local d2d_cfg = {
     cartouche_offset_y = 0.000,
     icon_size = 0.035,
     font_size = 0.028,
+    trial_title_show = true,
+    trial_title_font_size = 0.030,
     spacing_y = 0.045,
     spacing_x = 0.005,
     text_y_offset = 0.000,
@@ -1631,49 +1635,93 @@ local function reset_trial_steps()
     trial_state._pending_reinject_settings = true
 end
 
-local function refresh_combo_list(recent_saved_player)
-    file_system.saved_combos_display_p1, file_system.saved_combos_paths_p1 = {}, {}
-    file_system.saved_combos_display_p2, file_system.saved_combos_paths_p2 = {}, {}
+local function scan_combo_files(player_idx)
+    local display_list, path_list = {}, {}
+    if not players[player_idx] then return display_list, path_list end
 
-    local function load_files(player_idx, display_list, path_list)
-        if not players[player_idx] then return end
-        local char_name = players[player_idx].profile_name
-        if char_name == "Unknown" then return end
+    local char_name = players[player_idx].profile_name
+    if char_name == "Unknown" then return display_list, path_list end
 
-        if fs.create_dir then
-            pcall(fs.create_dir, "TrainingComboTrials_data/CustomCombos"); pcall(fs.create_dir, "TrainingComboTrials_data/CustomCombos/" .. char_name)
+    if fs.create_dir then
+        pcall(fs.create_dir, "TrainingComboTrials_data/CustomCombos")
+        pcall(fs.create_dir, "TrainingComboTrials_data/CustomCombos/" .. char_name)
+    end
+
+    local files = fs.glob("TrainingComboTrials_data\\\\CustomCombos\\\\" .. char_name .. "\\\\.*json")
+    if files then
+        -- Parse filename to extract sort keys: type (COMBO/OKI), damage, drive, SA
+        local function parse_sort_keys(filepath)
+            local fname = filepath:match("([^/\\]+)$") or ""
+            local is_oki = fname:find("_OKI_") and 1 or 0
+            local dmg = tonumber(fname:match("_(%d+)_D")) or 0
+            local drive = tonumber(fname:match("_D([%d%.]+)_SA")) or 0
+            local sa = tonumber(fname:match("_SA([%d%.]+)")) or 0
+            return is_oki, dmg, drive, sa
         end
-
-        local files = fs.glob("TrainingComboTrials_data\\\\CustomCombos\\\\" .. char_name .. "\\\\.*json")
-        if files then
-            -- Parse filename to extract sort keys: type (COMBO/OKI), damage, drive, SA
-            local function parse_sort_keys(filepath)
-                local fname = filepath:match("([^/\\]+)$") or ""
-                local is_oki = fname:find("_OKI_") and 1 or 0
-                local dmg = tonumber(fname:match("_(%d+)_D")) or 0
-                local drive = tonumber(fname:match("_D([%d%.]+)_SA")) or 0
-                local sa = tonumber(fname:match("_SA([%d%.]+)")) or 0
-                return is_oki, dmg, drive, sa
-            end
-            -- Sort: COMBO first, then by damage desc, drive desc, SA desc
-            table.sort(files, function(a, b)
-                local a_oki, a_dmg, a_dr, a_sa = parse_sort_keys(a)
-                local b_oki, b_dmg, b_dr, b_sa = parse_sort_keys(b)
-                if a_oki ~= b_oki then return a_oki < b_oki end
-                if a_dmg ~= b_dmg then return a_dmg > b_dmg end
-                if a_dr ~= b_dr then return a_dr > b_dr end
-                if a_sa ~= b_sa then return a_sa > b_sa end
-                return a < b
-            end)
-            for _, filepath in ipairs(files) do
+        -- Sort: COMBO first, then by damage desc, drive desc, SA desc
+        table.sort(files, function(a, b)
+            local a_oki, a_dmg, a_dr, a_sa = parse_sort_keys(a)
+            local b_oki, b_dmg, b_dr, b_sa = parse_sort_keys(b)
+            if a_oki ~= b_oki then return a_oki < b_oki end
+            if a_dmg ~= b_dmg then return a_dmg > b_dmg end
+            if a_dr ~= b_dr then return a_dr > b_dr end
+            if a_sa ~= b_sa then return a_sa > b_sa end
+            return a < b
+        end)
+        for _, filepath in ipairs(files) do
+            if not tostring(filepath):find("_FAIL_") then
                 table.insert(path_list, filepath)
                 table.insert(display_list, filepath:match("([^/\\]+)$") or filepath)
             end
         end
     end
 
-    load_files(0, file_system.saved_combos_display_p1, file_system.saved_combos_paths_p1)
-    load_files(1, file_system.saved_combos_display_p2, file_system.saved_combos_paths_p2)
+    return display_list, path_list
+end
+
+local function find_combo_path_index(paths, old_path, old_idx)
+    if old_path then
+        for idx, path in ipairs(paths) do
+            if path == old_path then return idx end
+        end
+    end
+    if #paths == 0 then return 1 end
+    return math.min(old_idx or 1, #paths)
+end
+
+local function reload_selected_combo_if_idle()
+    if trial_state.is_playing or trial_state.is_recording or (demo_state and demo_state.is_playing) then return end
+
+    local player_idx = ui_state.viewed_player or trial_state.playing_player or 0
+    local paths = (player_idx == 0) and file_system.saved_combos_paths_p1 or file_system.saved_combos_paths_p2
+    local idx = (player_idx == 0) and (file_system.selected_file_idx_p1 or 1) or (file_system.selected_file_idx_p2 or 1)
+    local path_to_load = paths and paths[idx]
+
+    if path_to_load then
+        load_combo_from_file(path_to_load)
+    end
+end
+
+local function refresh_combo_list_preserve_selection(reload_current_file)
+    local old_p1_path = file_system.saved_combos_paths_p1[file_system.selected_file_idx_p1 or 1]
+    local old_p2_path = file_system.saved_combos_paths_p2[file_system.selected_file_idx_p2 or 1]
+    local old_p1_idx = file_system.selected_file_idx_p1 or 1
+    local old_p2_idx = file_system.selected_file_idx_p2 or 1
+
+    file_system.saved_combos_display_p1, file_system.saved_combos_paths_p1 = scan_combo_files(0)
+    file_system.saved_combos_display_p2, file_system.saved_combos_paths_p2 = scan_combo_files(1)
+
+    file_system.selected_file_idx_p1 = find_combo_path_index(file_system.saved_combos_paths_p1, old_p1_path, old_p1_idx)
+    file_system.selected_file_idx_p2 = find_combo_path_index(file_system.saved_combos_paths_p2, old_p2_path, old_p2_idx)
+
+    if reload_current_file then
+        reload_selected_combo_if_idle()
+    end
+end
+
+local function refresh_combo_list(recent_saved_player)
+    file_system.saved_combos_display_p1, file_system.saved_combos_paths_p1 = scan_combo_files(0)
+    file_system.saved_combos_display_p2, file_system.saved_combos_paths_p2 = scan_combo_files(1)
 
     local target_player = recent_saved_player or 0
     if target_player == 1 and #file_system.saved_combos_paths_p2 == 0 then target_player = 0 end
@@ -2260,6 +2308,19 @@ local function ct_handle_web_commands()
             end
         end
     end
+end
+
+local function ct_auto_refresh_combo_list()
+    if _G.CurrentTrainerMode ~= 4 then
+        combo_list_auto_refresh_counter = 0
+        return
+    end
+
+    combo_list_auto_refresh_counter = combo_list_auto_refresh_counter + 1
+    if combo_list_auto_refresh_counter < COMBO_LIST_AUTO_REFRESH_FRAMES then return end
+    combo_list_auto_refresh_counter = 0
+
+    refresh_combo_list_preserve_selection(true)
 end
 
 local function ct_handle_replay_cleanup(_in_replay)
@@ -3694,6 +3755,7 @@ re.on_frame(function()
 
     if _G.CurrentTrainerMode ~= 4 then ct_handle_mode_exit(); return end
 
+    ct_auto_refresh_combo_list()
     ct_handle_first_frame_init()
     _G.ComboTrials_HideNativeHUD = (trial_state.is_recording or trial_state.is_playing)
     handle_combo_shortcuts()
