@@ -49,11 +49,11 @@
         "w": 0.8197916666666667
     },
     "font_size": 0.02500000037252903,
-    "forced_position_idx": 3,
+    "forced_position_idx": 2,
     "ghost_filter_frames": 4,
     "hud_font_size": 21.0,
     "hud_global_y": -0.33799999952316284,
-    "hud_show": false,
+    "hud_show": true,
     "hud_spacing_y": 0.02800000086426735,
     "icon_size": 0.039000000804662704,
     "idle_max_history": 13,

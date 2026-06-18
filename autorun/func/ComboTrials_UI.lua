@@ -319,7 +319,7 @@ end
 -- =========================================================
 -- SWITCH POS LABEL (shows current state → next state)
 -- =========================================================
-local POS_LABELS = { "任意位置", "固定位置", "镜像位置" }
+local POS_LABELS = { "游戏设置", "固定位置", "镜像位置" }
 local function switch_pos_label()
     local cur = d2d_cfg.forced_position_idx or 1
     return POS_LABELS[cur] or "不重置"
@@ -615,6 +615,9 @@ local function draw_single_line_content()
                 d2d_cfg.forced_position_idx = d2d_cfg.forced_position_idx + 1
                 if d2d_cfg.forced_position_idx > 3 then d2d_cfg.forced_position_idx = 1 end
                 ctx.save_d2d_config()
+                if d2d_cfg.forced_position_idx == 1 and ctx.apply_forced_position then
+                    ctx.apply_forced_position()
+                end
             end
         end
 
@@ -783,11 +786,11 @@ local function draw_combo_trials_content(is_floating)
             
             local is_demo_active = (ctx.demo_state and ctx.demo_state.is_playing)
             -- Only physically apply position if a trial or demo is active
-            if is_demo_active or trial_state.is_playing then
+            if d2d_cfg.forced_position_idx == 1 or is_demo_active or trial_state.is_playing then
                 ctx.apply_forced_position()
                 if is_demo_active then
                     if ctx.start_demo then ctx.start_demo() end
-                else
+                elseif trial_state.is_playing then
                     if ctx.reset_trial_steps_and_load then ctx.reset_trial_steps_and_load(trial_state.playing_player) end
                 end
                 if ctx.reset_visuals then ctx.reset_visuals() end

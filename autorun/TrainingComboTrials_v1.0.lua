@@ -314,10 +314,21 @@ local file_system = {
 
     last_p1_id = -1,
     auto_load = true,
-    forced_position_options = { "OFF", "FORCED", "MIRROR" }
+    forced_position_options = { "GAME SETTINGS", "FORCED", "MIRROR" }
 }
 local COMBO_LIST_AUTO_REFRESH_FRAMES = 60
 local combo_list_auto_refresh_counter = 0
+
+local function clear_pending_position_injection()
+    trial_state.exact_inject_r1 = nil
+    trial_state.exact_inject_r2 = nil
+    trial_state.override_inject_r1 = nil
+    trial_state.override_inject_r2 = nil
+    trial_state.pending_exact_pos = nil
+    trial_state._pause_live_r1 = nil
+    trial_state._pause_live_r2 = nil
+    trial_state._unpause_delay = nil
+end
 
 -- =========================================================
 -- D2D VISUALIZER CONFIGURATION
@@ -1245,6 +1256,44 @@ local function capture_current_positions()
     return p1_pos, p2_pos, p1_raw, p2_raw
 end
 
+local function save_native_position_settings(sm)
+    if trial_state._native_position_settings or not sm or not sm.PlayerDatas then return end
+    local p1d = sm.PlayerDatas[0]
+    local p2d = sm.PlayerDatas[1]
+    trial_state._native_position_settings = {
+        StartLocation = sm.StartLocation,
+        P1ManualPosX = p1d and p1d.ManualPosX,
+        P2ManualPosX = p2d and p2d.ManualPosX,
+    }
+end
+
+local function restore_native_position_settings(request_refresh)
+    clear_pending_position_injection()
+    local saved = trial_state._native_position_settings
+    if not saved then return end
+
+    pcall(function()
+        local tm = sdk.get_managed_singleton("app.training.TrainingManager")
+        if not tm then return end
+        local tData = tm:get_field("_tData")
+        if not tData then return end
+        local sm = tData:get_field("SelectMenu")
+        if not sm then return end
+
+        if saved.StartLocation ~= nil then sm.StartLocation = saved.StartLocation end
+        if sm.PlayerDatas then
+            local p1d = sm.PlayerDatas[0]
+            local p2d = sm.PlayerDatas[1]
+            if p1d and saved.P1ManualPosX ~= nil then p1d.ManualPosX = saved.P1ManualPosX end
+            if p2d and saved.P2ManualPosX ~= nil then p2d.ManualPosX = saved.P2ManualPosX end
+        end
+
+        if request_refresh then tm._IsReqRefresh = true end
+    end)
+
+    trial_state._native_position_settings = nil
+end
+
 -- Calculate the facing direction of the active player at trial start
 local function update_trial_flip_state(skip_mirror)
     local r1, r2
@@ -1309,6 +1358,11 @@ local function apply_forced_position(skip_mirror)
     -- SYNCHRONIZATION: Always update visual flip state before injecting position
     update_trial_flip_state(skip_mirror)
 
+    if d2d_cfg.forced_position_idx == 1 then
+        restore_native_position_settings(true)
+        return
+    end
+
     local tm = sdk.get_managed_singleton("app.training.TrainingManager")
     if not tm then return end
 
@@ -1318,54 +1372,39 @@ local function apply_forced_position(skip_mirror)
     local sm = tData:get_field("SelectMenu")
     if not sm then return end
 
+    save_native_position_settings(sm)
+
     local pos1, pos2, raw1, raw2
 
-    if d2d_cfg.forced_position_idx == 1 then
-        if trial_state.is_playing and trial_state.live_start_pos_p1 then
-            pos1 = trial_state.live_start_pos_p1
-            pos2 = trial_state.live_start_pos_p2
-            raw1 = trial_state.live_start_pos_p1_raw
-            raw2 = trial_state.live_start_pos_p2_raw
-        else
-            local p1, p2, r1, r2 = capture_current_positions()
-            if not r1 or not r2 then return end
-            pos1, pos2, raw1, raw2 = p1, p2, r1, r2
-            trial_state.start_pos_p1 = p1
-            trial_state.start_pos_p2 = p2
-            trial_state.start_pos_p1_raw = r1
-            trial_state.start_pos_p2_raw = r2
-        end
-    else
-        if not trial_state.start_pos_p1 or not trial_state.start_pos_p2 then return end
+    if not trial_state.start_pos_p1 or not trial_state.start_pos_p2 then return end
 
-        local recorded_by = 0
-        if trial_state.sequence and trial_state.sequence[1] and trial_state.sequence[1].recorded_by then
-            recorded_by = trial_state.sequence[1].recorded_by
-        end
+    local recorded_by = 0
+    if trial_state.sequence and trial_state.sequence[1] and trial_state.sequence[1].recorded_by then
+        recorded_by = trial_state.sequence[1].recorded_by
+    end
 
-        local p1_pos = trial_state.start_pos_p1
-        local p2_pos = trial_state.start_pos_p2
-        local p1_raw = trial_state.start_pos_p1_raw
-        local p2_raw = trial_state.start_pos_p2_raw
+    local p1_pos = trial_state.start_pos_p1
+    local p2_pos = trial_state.start_pos_p2
+    local p1_raw = trial_state.start_pos_p1_raw
+    local p2_raw = trial_state.start_pos_p2_raw
 
-        if trial_state.is_playing and trial_state.playing_player ~= recorded_by then
-            p1_pos = trial_state.start_pos_p2
-            p2_pos = trial_state.start_pos_p1
-            p1_raw = trial_state.start_pos_p2_raw
-            p2_raw = trial_state.start_pos_p1_raw
-        end
+    if trial_state.is_playing and trial_state.playing_player ~= recorded_by then
+        p1_pos = trial_state.start_pos_p2
+        p2_pos = trial_state.start_pos_p1
+        p1_raw = trial_state.start_pos_p2_raw
+        p2_raw = trial_state.start_pos_p1_raw
+    end
 
-        pos1 = p1_pos
-        pos2 = p2_pos
-        raw1 = p1_raw
-        raw2 = p2_raw
+    pos1 = p1_pos
+    pos2 = p2_pos
+    raw1 = p1_raw
+    raw2 = p2_raw
 
-        if d2d_cfg.forced_position_idx == 3 and not skip_mirror then
-            pos1 = -pos1
-            pos2 = -pos2
-            raw1 = -raw1
-            raw2 = -raw2
-        end
+    if d2d_cfg.forced_position_idx == 3 and not skip_mirror then
+        pos1 = -pos1
+        pos2 = -pos2
+        raw1 = -raw1
+        raw2 = -raw2
     end
 
     sm.StartLocation = 3
@@ -1384,43 +1423,12 @@ end
 
 local function reset_positions_to_default()
     if _G.IsInReplay or _G.FlowMapID == 10 then return end
-    pcall(function()
-        local tm = sdk.get_managed_singleton("app.training.TrainingManager")
-        if not tm then return end
-        local tData = tm:get_field("_tData")
-        if not tData then return end
-        local sm = tData:get_field("SelectMenu")
-        if not sm then return end
-        sm.StartLocation = 3
-        sm.PlayerDatas[0].ManualPosX = -150
-        sm.PlayerDatas[1].ManualPosX = 150
-        tm._IsReqRefresh = true
-    end)
+    restore_native_position_settings(true)
 end
 
 local function apply_current_position_refresh()
     if _G.IsInReplay or _G.FlowMapID == 10 then return end
-    local tm = sdk.get_managed_singleton("app.training.TrainingManager")
-    if not tm then return end
-    local tData = tm:get_field("_tData")
-    if not tData then return end
-    local sm = tData:get_field("SelectMenu")
-    if not sm then return end
-
-    local p1, p2, r1, r2 = capture_current_positions()
-    if not r1 or not r2 then return end
-
-    trial_state.override_inject_r1 = r1
-    trial_state.override_inject_r2 = r2
-    trial_state.exact_inject_r1 = r1
-    trial_state.exact_inject_r2 = r2
-
-    sm.StartLocation = 3
-    sm.PlayerDatas[0].ManualPosX = math.floor((p1 * 100) + 0.5)
-    sm.PlayerDatas[1].ManualPosX = math.floor((p2 * 100) + 0.5)
-
-    tm._IsReqRefresh = true
-    trial_state.pending_exact_pos = 10
+    restore_native_position_settings(true)
 end
 
 
@@ -1790,7 +1798,7 @@ local function is_kb_down(vk)
     return ok and result
 end
 
-local POS_TICKER_NAMES = { "ANY POSITION", "EXACT POSITION", "MIRROR POSITION" }
+local POS_TICKER_NAMES = { "游戏设置", "固定位置", "镜像位置" }
 local function ct_ticker(msg)
     if _G.show_custom_ticker then _G.show_custom_ticker(msg, 0.3) end
 end
@@ -1969,6 +1977,7 @@ local function handle_combo_shortcuts()
                 d2d_cfg.forced_position_idx = d2d_cfg.forced_position_idx + 1
                 if d2d_cfg.forced_position_idx > 3 then d2d_cfg.forced_position_idx = 1 end
                 save_d2d_config()
+                if d2d_cfg.forced_position_idx == 1 then apply_forced_position() end
                 ct_ticker("POSITION: " .. (POS_TICKER_NAMES[d2d_cfg.forced_position_idx] or ""))
             end
         end
@@ -2401,6 +2410,17 @@ local function ct_handle_first_frame_init()
 end
 
 local function ct_handle_pause_positions(is_game_paused, _in_replay)
+    local should_restore_pause_position = (d2d_cfg.forced_position_idx ~= 1) and
+        (trial_state.is_playing or (demo_state and demo_state.is_playing))
+
+    if not should_restore_pause_position then
+        trial_state._pause_live_r1 = nil
+        trial_state._pause_live_r2 = nil
+        trial_state._unpause_delay = nil
+        trial_state._was_game_paused = is_game_paused
+        return
+    end
+
     -- Entering pause → capture live positions
     if is_game_paused and not trial_state._was_game_paused then
         pcall(function()
@@ -2462,6 +2482,10 @@ local function ct_handle_playing_transition()
 end
 
 local function ct_handle_position_correction(_in_replay)
+    if d2d_cfg.forced_position_idx == 1 then
+        clear_pending_position_injection()
+    end
+
     -- POST-REFRESH EXACT POSITION CORRECTION (skip in replay)
     if not _in_replay and trial_state.pending_exact_pos and trial_state.pending_exact_pos > 0 then
         local tm_check = sdk.get_managed_singleton("app.training.TrainingManager")
