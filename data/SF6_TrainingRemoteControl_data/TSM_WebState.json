@@ -8,21 +8,23 @@
     "timer": 0,
     "training_active": true,
     "trial_demo": false,
-    "trial_file": "Akuma_COMBO_7064_D6_SA3.json",
+    "trial_file": "Akuma_COMBO_214+HP_900_D0_SA0.json",
     "trial_file_idx": 1,
     "trial_files": [
-        "Akuma_COMBO_7064_D6_SA3.json",
-        "Akuma_COMBO_7064_D6_SA3_20260618_102811.json",
-        "Akuma_COMBO_6814_D6_SA3.json",
-        "Akuma_COMBO_5614_D6_SA3.json",
-        "Akuma_COMBO_4250_D0_SA3.json",
+        "Akuma_COMBO_214+HP_900_D0_SA0.json",
+        "Akuma_COMBO_214+HP_900_D2_SA0.json",
+        "Akuma_COMBO_960_D0_SA0.json",
         "Akuma_COMBO_1100_D0_SA0.json",
-        "Akuma_COMBO_960_D0_SA0.json"
+        "Akuma_COMBO_4250_D0_SA3.json",
+        "Akuma_COMBO_5614_D6_SA3.json",
+        "Akuma_COMBO_6814_D6_SA3.json",
+        "Akuma_COMBO_7064_D6_SA3.json",
+        "Akuma_COMBO_7064_D6_SA3_20260618_102811.json"
     ],
-    "trial_playing": true,
+    "trial_playing": false,
     "trial_position": 2,
     "trial_recording": false,
-    "trial_step": 10,
-    "trial_total": 15,
+    "trial_step": 1,
+    "trial_total": 3,
     "trials": 0
 }

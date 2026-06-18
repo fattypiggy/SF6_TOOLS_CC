@@ -1657,24 +1657,47 @@ local function scan_combo_files(player_idx)
 
     local files = fs.glob("TrainingComboTrials_data\\\\CustomCombos\\\\" .. char_name .. "\\\\.*json")
     if files then
-        -- Parse filename to extract sort keys: type (COMBO/OKI), damage, drive, SA
-        local function parse_sort_keys(filepath)
-            local fname = filepath:match("([^/\\]+)$") or ""
-            local is_oki = fname:find("_OKI_") and 1 or 0
-            local dmg = tonumber(fname:match("_(%d+)_D")) or 0
-            local drive = tonumber(fname:match("_D([%d%.]+)_SA")) or 0
-            local sa = tonumber(fname:match("_SA([%d%.]+)")) or 0
-            return is_oki, dmg, drive, sa
+        local function filename_only(filepath)
+            return (filepath:match("([^/\\]+)$") or filepath):lower()
         end
-        -- Sort: COMBO first, then by damage desc, drive desc, SA desc
+
+        local function next_sort_token(s, pos)
+            local c = s:sub(pos, pos)
+            local is_num = c:match("%d") ~= nil
+            local start_pos = pos
+            while pos <= #s do
+                local ch = s:sub(pos, pos)
+                if (ch:match("%d") ~= nil) ~= is_num then break end
+                pos = pos + 1
+            end
+            local raw = s:sub(start_pos, pos - 1)
+            return is_num, raw, tonumber(raw) or 0, pos
+        end
+
+        local function windows_filename_less(a, b)
+            local sa = filename_only(a)
+            local sb = filename_only(b)
+            local ia, ib = 1, 1
+
+            while ia <= #sa and ib <= #sb do
+                local a_num, a_raw, a_val, next_a = next_sort_token(sa, ia)
+                local b_num, b_raw, b_val, next_b = next_sort_token(sb, ib)
+
+                if a_num and b_num then
+                    if a_val ~= b_val then return a_val < b_val end
+                    if #a_raw ~= #b_raw then return #a_raw < #b_raw end
+                elseif a_raw ~= b_raw then
+                    return a_raw < b_raw
+                end
+
+                ia, ib = next_a, next_b
+            end
+
+            return #sa < #sb
+        end
+
         table.sort(files, function(a, b)
-            local a_oki, a_dmg, a_dr, a_sa = parse_sort_keys(a)
-            local b_oki, b_dmg, b_dr, b_sa = parse_sort_keys(b)
-            if a_oki ~= b_oki then return a_oki < b_oki end
-            if a_dmg ~= b_dmg then return a_dmg > b_dmg end
-            if a_dr ~= b_dr then return a_dr > b_dr end
-            if a_sa ~= b_sa then return a_sa > b_sa end
-            return a < b
+            return windows_filename_less(a, b)
         end)
         for _, filepath in ipairs(files) do
             if not tostring(filepath):find("_FAIL_") then
@@ -1747,6 +1770,22 @@ local function refresh_combo_list(recent_saved_player)
     if not load_combo_from_file(path_to_load) then
         clear_combo_state()
     end
+end
+
+local function get_safe_filename_motion(sequence)
+    local motion = sequence and sequence[1] and sequence[1].motion or ""
+    motion = tostring(motion):match("^%s*(.-)%s*$") or ""
+    if motion == "" then return "UNKNOWN" end
+
+    motion = motion:gsub("^>%s*", "")
+    motion = motion:gsub("%s+", "")
+    motion = motion:gsub("[<>:\"/\\|%?%*]", "_")
+    motion = motion:gsub("[%c]", "")
+    motion = motion:gsub("_+", "_")
+    motion = motion:gsub("^_+", ""):gsub("_+$", "")
+
+    if motion == "" then motion = "UNKNOWN" end
+    return motion
 end
 
 -- =========================================================
@@ -3918,7 +3957,7 @@ function save_trial_sequence()
         pcall(fs.create_dir, "TrainingComboTrials_data/CustomCombos"); pcall(fs.create_dir, "TrainingComboTrials_data/CustomCombos/" .. char_name)
     end
 
-    -- Filename: CharName_Damage_DriveBarSpent_SABarSpent[_OKI].json
+    -- Filename: CharName_COMBO_Motion_Damage_DriveBarSpent_SABarSpent.json
     local cs = trial_state.sequence[1] and trial_state.sequence[1].combo_stats
     local dmg = (cs and cs.damage) or 0
     local drive_spent = (cs and cs.drive_used) or 0
@@ -3939,14 +3978,15 @@ function save_trial_sequence()
     end
 
     local type_tag = has_oki and "_OKI" or "_COMBO"
-    local fname = char_name .. type_tag .. "_" .. dmg .. "_D" .. drive_bars .. "_SA" .. sa_bars .. ".json"
+    local starter_motion = get_safe_filename_motion(trial_state.sequence)
+    local fname = char_name .. type_tag .. "_" .. starter_motion .. "_" .. dmg .. "_D" .. drive_bars .. "_SA" .. sa_bars .. ".json"
     local path = "TrainingComboTrials_data/CustomCombos/" .. char_name .. "/" .. fname
 
     -- Avoid overwriting: append timestamp if file exists
     local existing = json.load_file(path)
     if existing then
         local ts = os.date("%Y%m%d_%H%M%S")
-        fname = char_name .. type_tag .. "_" .. dmg .. "_D" .. drive_bars .. "_SA" .. sa_bars .. "_" .. ts .. ".json"
+        fname = char_name .. type_tag .. "_" .. starter_motion .. "_" .. dmg .. "_D" .. drive_bars .. "_SA" .. sa_bars .. "_" .. ts .. ".json"
         path = "TrainingComboTrials_data/CustomCombos/" .. char_name .. "/" .. fname
     end
 

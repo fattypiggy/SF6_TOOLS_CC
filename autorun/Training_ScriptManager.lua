@@ -273,6 +273,8 @@ local last_input_mask = 0
 local is_binding_mode = false
 local is_kb_binding_mode = false
 local last_kb_0_state = false
+local last_kb_hide_state = false
+local HIDE_UI_KEY = 0x39 -- 9
 
 -- CORRECTED: 64 = X (Xbox) / Square (PS)
 local BTN_SQUARE = 64
@@ -315,6 +317,29 @@ local function _tsm_check_kb_switch(switch_vk, switch_mods)
         if not _tsm_vk_in_list(switch_mods, m) and reframework:is_key_down(m) then return false end
     end
     return true
+end
+
+local function toggle_global_ui_visibility()
+    _G._tsm_hide_ui = not _G._tsm_hide_ui
+    _G._tsm_hide_flash = 10
+    _G._tsm_hide_cooldown = 3
+    if _G.show_custom_ticker then
+        _G.show_custom_ticker(_G._tsm_hide_ui and "UI 已隐藏" or "UI 已显示", 0.3)
+    end
+end
+
+local function handle_hide_ui_hotkey()
+    if is_kb_binding_mode then
+        last_kb_hide_state = false
+        return
+    end
+
+    local ok, down = pcall(reframework.is_key_down, reframework, HIDE_UI_KEY)
+    local is_down = ok and down == true
+    if is_down and not last_kb_hide_state then
+        toggle_global_ui_visibility()
+    end
+    last_kb_hide_state = is_down
 end
 
 local function handle_input()
@@ -709,14 +734,13 @@ re.on_frame(function()
     pcall(_tsm_update_hide_rect)
     if not _G._tsm_hide_cooldown then _G._tsm_hide_cooldown = 0 end
     if _G._tsm_hide_cooldown > 0 then _G._tsm_hide_cooldown = _G._tsm_hide_cooldown - 1 end
+    handle_hide_ui_hotkey()
     if not _G.IsInBattleHub and _G._tsm_hide_cooldown == 0 and imgui.is_mouse_clicked(0) then
         local m = imgui.get_mouse()
         if m then
             local r = _G._tsm_hide_rect
             if r.w > 0 and m.x >= r.x and m.x <= r.x + r.w and m.y >= r.y and m.y <= r.y + r.h then
-                _G._tsm_hide_ui = not _G._tsm_hide_ui
-                _G._tsm_hide_flash = 10
-                _G._tsm_hide_cooldown = 3
+                toggle_global_ui_visibility()
             end
         end
     end
@@ -1041,6 +1065,7 @@ re.on_draw_ui(function()
             imgui.text_colored("如何切换模式", 0xFF00FFFF)
             imgui.text("  顶部栏：点击切换或任意模式按钮")
             imgui.text("  键盘：按 [0]")
+            imgui.text("  键盘：按 [9] 隐藏/显示顶部栏和模式控制栏")
             if fn then
                 imgui.text("  手柄：[" .. fn .. "] + [Square / X]")
             end

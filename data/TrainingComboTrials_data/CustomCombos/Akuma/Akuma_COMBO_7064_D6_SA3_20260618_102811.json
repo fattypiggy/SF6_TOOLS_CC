@@ -309,7 +309,7 @@
         "hold_partial_check": true,
         "id": 985,
         "is_holdable": false,
-        "is_projectile_hit": false,
+        "is_projectile_hit": true,
         "motion": ">6+P"
     },
     {
