@@ -81,6 +81,8 @@ local config = {
     top_colors = { switch = 0xFF0066FF, active = 0xFF019D00, inactive = 0xFF666666 },
     top_alphas = { switch = 170, active = 170, inactive = 120 },
     hide_btn = { x_pct = 0.4625, y_pct = 0.05, w_pct = 0.075, h_pct = 0.075 },
+    distance_viewer_enabled = false,
+    sheldons_boxes_enabled = false,
 }
 
 -- ARGB -> ABGR conversion
@@ -108,6 +110,11 @@ local function publish_button_colors()
     }
 end
 
+local function publish_passive_plugin_flags()
+    _G.SF6_DistanceViewer_Enabled = config.distance_viewer_enabled == true
+    _G.SheldonsBoxes_Enabled = config.sheldons_boxes_enabled == true
+end
+
 -- Load config
 local function load_config()
     local data = _G.safe_load_json(CONFIG_FILE)
@@ -126,18 +133,44 @@ local function load_config()
         if data.top_alphas and type(data.top_alphas) == "table" then
             for k, v in pairs(data.top_alphas) do config.top_alphas[k] = v end
         end
+        if data.distance_viewer_enabled ~= nil then config.distance_viewer_enabled = data.distance_viewer_enabled == true end
+        if data.sheldons_boxes_enabled ~= nil then config.sheldons_boxes_enabled = data.sheldons_boxes_enabled == true end
     end
     _G.TrainingFuncButton = config.func_button
     publish_button_colors()
+    publish_passive_plugin_flags()
 end
 
 local function save_config()
     json.dump_file(CONFIG_FILE, config)
     _G.TrainingFuncButton = config.func_button
     publish_button_colors()
+    publish_passive_plugin_flags()
 end
 
 load_config()
+
+local _tsm_hide_ref_menu_frames = 90
+local function _tsm_force_hide_reframework_menu()
+    if _tsm_hide_ref_menu_frames <= 0 then return end
+    _tsm_hide_ref_menu_frames = _tsm_hide_ref_menu_frames - 1
+
+    pcall(function()
+        if reframework and reframework.set_draw_ui then
+            reframework:set_draw_ui(false)
+        end
+    end)
+    pcall(function()
+        if reframework and reframework.draw_ui then
+            reframework:draw_ui(false)
+        end
+    end)
+    pcall(function()
+        if reframework and reframework.set_menu_open then
+            reframework:set_menu_open(false)
+        end
+    end)
+end
 
 -- ==========================================
 -- 0.5. SCENE DETECTION (ABSOLUTE KILLSWITCH)
@@ -521,7 +554,7 @@ local SWITCH_COLOR  = build_sc_color(config.top_colors.switch, config.top_alphas
 local MODE_ACTIVE   = build_sc_color(config.top_colors.active, config.top_alphas.active)
 local MODE_INACTIVE = build_sc_color(config.top_colors.inactive, config.top_alphas.inactive)
 
-local top_bar_width = 0.52
+local top_bar_width = 0.96
 local top_bar_height = 0.0444
 
 local MODE_BUTTONS = {
@@ -578,9 +611,12 @@ local function draw_top_floating_bar()
         switch_label = "切换训练模式 (" .. fn .. " + 方块/X)"
     end
 
-    -- Calculate button widths: all buttons equal width
-    local total_buttons = 1 + #MODE_BUTTONS
-    local btn_w = (content_w - sp * (total_buttons - 1)) / total_buttons
+    local train_count = 1 + #MODE_BUTTONS
+    local train_group_w = content_w * 0.66
+    local feature_group_w = content_w * 0.22
+    local btn_w = (train_group_w - sp * (train_count - 1)) / train_count
+    local passive_w = (feature_group_w - sp) / 2
+    if passive_w < 110 * (sh / 1080.0) then passive_w = 110 * (sh / 1080.0) end
 
     imgui.set_cursor_pos(Vector2f.new(sw * 0.0075, sh * 0.01))
     if SharedUI.sf6_button(switch_label .. "##sw_top", SWITCH_COLOR, btn_w) then
@@ -594,6 +630,23 @@ local function draw_top_floating_bar()
         if SharedUI.sf6_button(btn.label .. "##top_" .. btn.id, colors, btn_w) then
             _G.CurrentTrainerMode = btn.id
         end
+    end
+
+    local feature_start_x = imgui.get_window_size().x - (passive_w * 2) - sp - (sw * 0.0125)
+    imgui.set_cursor_pos(Vector2f.new(feature_start_x, sh * 0.01))
+    local dv_colors = (config.distance_viewer_enabled == true) and MODE_ACTIVE or MODE_INACTIVE
+    if SharedUI.sf6_button("距离显示##top_distance_viewer", dv_colors, passive_w) then
+        config.distance_viewer_enabled = not config.distance_viewer_enabled
+        save_config()
+        if _G.show_custom_ticker then _G.show_custom_ticker(config.distance_viewer_enabled and "距离显示已开启" or "距离显示已关闭", 0.3) end
+    end
+
+    imgui.same_line(0, sp)
+    local sb_colors = (config.sheldons_boxes_enabled == true) and MODE_ACTIVE or MODE_INACTIVE
+    if SharedUI.sf6_button("碰撞显示##top_sheldons_boxes", sb_colors, passive_w) then
+        config.sheldons_boxes_enabled = not config.sheldons_boxes_enabled
+        save_config()
+        if _G.show_custom_ticker then _G.show_custom_ticker(config.sheldons_boxes_enabled and "碰撞显示已开启" or "碰撞显示已关闭", 0.3) end
     end
 
     SharedUI.end_floating_window_top()
@@ -709,6 +762,8 @@ local function _tsm_web_bridge_tick()
 end
 
 re.on_frame(function()
+    _tsm_force_hide_reframework_menu()
+
     SharedUI.clear_rects()
     _G.TrainingBarsDrawn = false
 
@@ -876,6 +931,122 @@ local styled_header = UIKit.styled_header
 local tsm_ui_font = nil
 local tsm_ui_font_size = 0
 
+local function _tsm_value_to_text(v)
+    if v == nil then return "nil" end
+    if type(v) == "boolean" then return v and "true" or "false" end
+    return tostring(v)
+end
+
+local function _tsm_guess_control_label(name, value)
+    local n = tostring(name or ""):lower()
+    local num = tonumber(tostring(value))
+
+    if n == "inputtype" or n == "input_type" then
+        if num == 0 then return "经典" end
+        if num == 1 then return "现代" end
+    end
+
+    if n:find("modern") then
+        if value == true or num == 1 then return "现代" end
+        if value == false or num == 0 then return "经典" end
+    end
+
+    if n:find("classic") then
+        if value == true or num == 1 then return "经典" end
+        if value == false or num == 0 then return "现代" end
+    end
+
+    if n:find("control") or n:find("operation") or n:find("style") or n:find("input") then
+        if num == 0 then return "经典" end
+        if num == 1 then return "现代" end
+    end
+
+    return nil
+end
+
+local function _tsm_get_field_value(obj, field_name)
+    if not obj or not field_name then return nil, false end
+    local ok, v = pcall(function()
+        local td = obj:get_type_definition()
+        local f = td and td:get_field(field_name)
+        if not f then return nil end
+        return f:get_data(obj)
+    end)
+    if ok and v ~= nil then return v, true end
+    return nil, false
+end
+
+local function _tsm_collect_control_candidates(player_idx)
+    local out = { label = "未知", source = "", fields = {}, seen = {} }
+    pcall(function()
+        local tm = sdk.get_managed_singleton("app.training.TrainingManager")
+        local tData = tm and tm:get_field("_tData")
+        if not tData then return end
+
+        local containers = {
+            { name = "ParameterSetting", obj = tData:get_field("ParameterSetting") },
+            { name = "SelectMenu", obj = tData:get_field("SelectMenu") },
+        }
+        local candidate_names = {
+            "ControlType", "controlType", "Control_Type",
+            "OperationType", "operationType", "Operation_Type",
+            "InputType", "inputType", "Input_Type",
+            "BattleInputType", "CommandType", "StyleType",
+            "IsModern", "isModern", "IsClassic", "isClassic",
+        }
+
+        for _, c in ipairs(containers) do
+            local pd = c.obj and c.obj.PlayerDatas and c.obj.PlayerDatas[player_idx]
+            if pd then
+                for _, fname in ipairs(candidate_names) do
+                    local v, ok = _tsm_get_field_value(pd, fname)
+                    if ok then
+                        local text = c.name .. "." .. fname .. "=" .. _tsm_value_to_text(v)
+                        if not out.seen[text] then
+                            table.insert(out.fields, text)
+                            out.seen[text] = true
+                        end
+                        local guessed = _tsm_guess_control_label(fname, v)
+                        if guessed and out.label == "未知" then
+                            out.label = guessed
+                            out.source = text
+                        end
+                    end
+                end
+
+                local td = pd:get_type_definition()
+                if td then
+                    for _, f in ipairs(td:get_fields()) do
+                        local fname = f:get_name()
+                        local lower = fname and fname:lower() or ""
+                        local looks_related =
+                            lower:find("control") or lower:find("operation") or
+                            lower:find("input") or lower:find("style") or
+                            lower:find("modern") or lower:find("classic") or
+                            lower:find("assist")
+                        if looks_related then
+                            local ok, v = pcall(function() return f:get_data(pd) end)
+                            if ok and v ~= nil then
+                                local text = c.name .. "." .. fname .. "=" .. _tsm_value_to_text(v)
+                                if not out.seen[text] then
+                                    table.insert(out.fields, text)
+                                    out.seen[text] = true
+                                end
+                                local guessed = _tsm_guess_control_label(fname, v)
+                                if guessed and out.label == "未知" then
+                                    out.label = guessed
+                                    out.source = text
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end)
+    return out
+end
+
 re.on_draw_ui(function()
     local target_font_size = 18
     if not tsm_ui_font or tsm_ui_font_size ~= target_font_size then
@@ -942,6 +1113,35 @@ re.on_draw_ui(function()
 
             local c4, v4 = imgui.checkbox("连段训练", _G.CurrentTrainerMode == 4)
             if c4 and v4 then _G.CurrentTrainerMode = 4 end
+        end
+
+        if styled_header("--- 操作模式诊断 ---", UI_THEME.hdr_config) then
+            local p1_mode = _tsm_collect_control_candidates(0)
+            local p2_mode = _tsm_collect_control_candidates(1)
+            imgui.text("P1 操作模式: " .. p1_mode.label)
+            if p1_mode.source ~= "" then imgui.text_colored("  " .. p1_mode.source, 0xFF888888) end
+            imgui.text("P2 操作模式: " .. p2_mode.label)
+            if p2_mode.source ~= "" then imgui.text_colored("  " .. p2_mode.source, 0xFF888888) end
+
+            if imgui.tree_node("候选字段##tsm_control_mode_fields") then
+                imgui.text_colored("切换经典/现代后，观察下面哪个字段发生变化。", 0xFF00FFFF)
+                imgui.text_colored("如果 P1/P2 仍显示未知，把这里的字段值发给我。", 0xFF888888)
+                imgui.separator()
+                imgui.text_colored("P1", 0xFF00FF00)
+                if #p1_mode.fields == 0 then
+                    imgui.text("  未找到相关字段")
+                else
+                    for _, line in ipairs(p1_mode.fields) do imgui.text("  " .. line) end
+                end
+                imgui.separator()
+                imgui.text_colored("P2", 0xFF00FF00)
+                if #p2_mode.fields == 0 then
+                    imgui.text("  未找到相关字段")
+                else
+                    for _, line in ipairs(p2_mode.fields) do imgui.text("  " .. line) end
+                end
+                imgui.tree_pop()
+            end
         end
 
         -- ==========================================

@@ -1,4 +1,35 @@
 {
+    "btn_alphas": {
+        "c1": 200,
+        "c2": 200,
+        "c3": 200,
+        "c4": 200
+    },
+    "btn_colors": {
+        "c1": 4294901760,
+        "c2": 4278295808,
+        "c3": 4278190335,
+        "c4": 4292608255
+    },
+    "distance_viewer_enabled": false,
     "func_button": 16384,
-    "switch_key": 48
+    "hide_btn": {
+        "h_pct": 0.075,
+        "w_pct": 0.075,
+        "x_pct": 0.4625,
+        "y_pct": 0.05
+    },
+    "sheldons_boxes_enabled": false,
+    "switch_key": 48,
+    "switch_modifiers": null,
+    "top_alphas": {
+        "active": 170,
+        "inactive": 120,
+        "switch": 170
+    },
+    "top_colors": {
+        "active": 4278295808,
+        "inactive": 4284900966,
+        "switch": 4278216447
+    }
 }

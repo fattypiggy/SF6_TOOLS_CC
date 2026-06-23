@@ -81,6 +81,8 @@ local config = {
     top_colors = { switch = 0xFF0066FF, active = 0xFF019D00, inactive = 0xFF666666 },
     top_alphas = { switch = 170, active = 170, inactive = 120 },
     hide_btn = { x_pct = 0.4625, y_pct = 0.05, w_pct = 0.075, h_pct = 0.075 },
+    distance_viewer_enabled = false,
+    sheldons_boxes_enabled = false,
 }
 
 -- ARGB -> ABGR conversion
@@ -108,6 +110,11 @@ local function publish_button_colors()
     }
 end
 
+local function publish_passive_plugin_flags()
+    _G.SF6_DistanceViewer_Enabled = config.distance_viewer_enabled == true
+    _G.SheldonsBoxes_Enabled = config.sheldons_boxes_enabled == true
+end
+
 -- Load config
 local function load_config()
     local data = _G.safe_load_json(CONFIG_FILE)
@@ -126,18 +133,44 @@ local function load_config()
         if data.top_alphas and type(data.top_alphas) == "table" then
             for k, v in pairs(data.top_alphas) do config.top_alphas[k] = v end
         end
+        if data.distance_viewer_enabled ~= nil then config.distance_viewer_enabled = data.distance_viewer_enabled == true end
+        if data.sheldons_boxes_enabled ~= nil then config.sheldons_boxes_enabled = data.sheldons_boxes_enabled == true end
     end
     _G.TrainingFuncButton = config.func_button
     publish_button_colors()
+    publish_passive_plugin_flags()
 end
 
 local function save_config()
     json.dump_file(CONFIG_FILE, config)
     _G.TrainingFuncButton = config.func_button
     publish_button_colors()
+    publish_passive_plugin_flags()
 end
 
 load_config()
+
+local _tsm_hide_ref_menu_frames = 90
+local function _tsm_force_hide_reframework_menu()
+    if _tsm_hide_ref_menu_frames <= 0 then return end
+    _tsm_hide_ref_menu_frames = _tsm_hide_ref_menu_frames - 1
+
+    pcall(function()
+        if reframework and reframework.set_draw_ui then
+            reframework:set_draw_ui(false)
+        end
+    end)
+    pcall(function()
+        if reframework and reframework.draw_ui then
+            reframework:draw_ui(false)
+        end
+    end)
+    pcall(function()
+        if reframework and reframework.set_menu_open then
+            reframework:set_menu_open(false)
+        end
+    end)
+end
 
 -- ==========================================
 -- 0.5. SCENE DETECTION (ABSOLUTE KILLSWITCH)
@@ -521,7 +554,7 @@ local SWITCH_COLOR  = build_sc_color(config.top_colors.switch, config.top_alphas
 local MODE_ACTIVE   = build_sc_color(config.top_colors.active, config.top_alphas.active)
 local MODE_INACTIVE = build_sc_color(config.top_colors.inactive, config.top_alphas.inactive)
 
-local top_bar_width = 0.52
+local top_bar_width = 1.0
 local top_bar_height = 0.0444
 
 local MODE_BUTTONS = {
@@ -565,8 +598,8 @@ local function draw_top_floating_bar()
     end
     SharedUI.draw_floating_bg_top()
 
-    local sp = 4 * (sh / 1080.0)
-    local content_w = imgui.get_window_size().x - sw * 0.02  -- subtract WindowPadding (left+right)
+    local scale = sh / 1080.0
+    local sp = 4 * scale
 
     -- Build switch label with dynamic shortcut (keyboard vs controller)
     local switch_label
@@ -578,11 +611,17 @@ local function draw_top_floating_bar()
         switch_label = "切换训练模式 (" .. fn .. " + 方块/X)"
     end
 
-    -- Calculate button widths: all buttons equal width
-    local total_buttons = 1 + #MODE_BUTTONS
-    local btn_w = (content_w - sp * (total_buttons - 1)) / total_buttons
+    local train_count = 1 + #MODE_BUTTONS
+    local train_x = sw * 0.125
+    local train_group_w = sw * 0.345
+    local btn_w = (train_group_w - sp * (train_count - 1)) / train_count
+    if btn_w < 145 * scale then btn_w = 145 * scale end
 
-    imgui.set_cursor_pos(Vector2f.new(sw * 0.0075, sh * 0.01))
+    local passive_w = math.max(112 * scale, sw * 0.06)
+    local feature_start_x = sw * 0.665
+    local top_y = sh * 0.01
+
+    imgui.set_cursor_pos(Vector2f.new(train_x, top_y))
     if SharedUI.sf6_button(switch_label .. "##sw_top", SWITCH_COLOR, btn_w) then
         cycle_next_mode()
     end
@@ -594,6 +633,22 @@ local function draw_top_floating_bar()
         if SharedUI.sf6_button(btn.label .. "##top_" .. btn.id, colors, btn_w) then
             _G.CurrentTrainerMode = btn.id
         end
+    end
+
+    imgui.set_cursor_pos(Vector2f.new(feature_start_x, top_y))
+    local dv_colors = (config.distance_viewer_enabled == true) and MODE_ACTIVE or MODE_INACTIVE
+    if SharedUI.sf6_button("距离显示##top_distance_viewer", dv_colors, passive_w) then
+        config.distance_viewer_enabled = not config.distance_viewer_enabled
+        save_config()
+        if _G.show_custom_ticker then _G.show_custom_ticker(config.distance_viewer_enabled and "距离显示已开启" or "距离显示已关闭", 0.3) end
+    end
+
+    imgui.same_line(0, sp)
+    local sb_colors = (config.sheldons_boxes_enabled == true) and MODE_ACTIVE or MODE_INACTIVE
+    if SharedUI.sf6_button("碰撞显示##top_sheldons_boxes", sb_colors, passive_w) then
+        config.sheldons_boxes_enabled = not config.sheldons_boxes_enabled
+        save_config()
+        if _G.show_custom_ticker then _G.show_custom_ticker(config.sheldons_boxes_enabled and "碰撞显示已开启" or "碰撞显示已关闭", 0.3) end
     end
 
     SharedUI.end_floating_window_top()
@@ -709,8 +764,11 @@ local function _tsm_web_bridge_tick()
 end
 
 re.on_frame(function()
+    _tsm_force_hide_reframework_menu()
+
     SharedUI.clear_rects()
     _G.TrainingBarsDrawn = false
+    _G.TrainingScriptManagerActiveThisFrame = false
 
     -- Mode change ticker
     local cur_mode = _G.CurrentTrainerMode or 0
@@ -750,6 +808,9 @@ re.on_frame(function()
         if _G.CurrentTrainerMode ~= 0 then _G.CurrentTrainerMode = 0 end
         _G.TrainingModeActive = false
         _G.TrainingGamePaused = true
+        _G.ComboTrialsD2DEnabled = false
+        _G.ComboTrials_HideNativeHUD = false
+        _G._ct_bar_geometry = nil
         pcall(_tsm_dump_webstate_inactive)
         return
     end
@@ -790,10 +851,16 @@ re.on_frame(function()
         end
         _G.TrainingModeActive = false
         _G.TrainingGamePaused = true
+        _G.TrainingFloatingBar = nil
+        _G.TrainingFloatingBarTop = nil
+        _G.ComboTrialsD2DEnabled = false
+        _G.ComboTrials_HideNativeHUD = false
+        _G._ct_bar_geometry = nil
         pcall(_tsm_dump_webstate_inactive)
         return
     end
     _G.TrainingModeActive = true
+    _G.TrainingScriptManagerActiveThisFrame = true
 
     if not is_enabled_trainer_mode(_G.CurrentTrainerMode or 0) then
         _G.CurrentTrainerMode = 0

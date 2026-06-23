@@ -10,6 +10,8 @@ require("func/SharedHooks")
 local GS = require("func/GameState")
 local UIKit = require("func/UIKit")
 
+if _G.SF6_DistanceViewer_Enabled == nil then _G.SF6_DistanceViewer_Enabled = false end
+
 -- Numpad to Unicode arrow conversion
 local _numpad_arrows = { ["1"]="↙", ["2"]="↓", ["3"]="↘", ["4"]="←", ["6"]="→", ["7"]="↖", ["8"]="↑", ["9"]="↗" }
 local function input_to_arrows(str)
@@ -891,6 +893,10 @@ local function init_d2d_icons()
 end
 
 local function draw_d2d_icons()
+    if _G.SF6_DistanceViewer_Enabled ~= true then
+        d2d_queue = {}
+        return
+    end
     if not d2d_initialized then init_d2d_icons() end
     for _, item in ipairs(d2d_queue) do
         local img = d2d_icons[item.key]
@@ -3431,6 +3437,13 @@ end
    
 
 re.on_frame(function()
+    if _G.SF6_DistanceViewer_Enabled ~= true then
+        d2d_queue = {}
+        _dv_last_window_rect = nil
+        _G._dv_aa_p2_mask = 0
+        if auto_activate and auto_activate.is_firing then aa_stop_fire() end
+        return
+    end
     if p2_cache and p2_cache.valid and p2_cache.real_name then
         local p2_name = p2_cache.real_name
         if _G._dv_last_p2_char and _G._dv_last_p2_char ~= p2_name then
@@ -4108,6 +4121,12 @@ end)
 
 local function draw_distance_viewer_menu_ui()
     if imgui.tree_node("SF6 距离查看器") then
+        if _G.SF6_DistanceViewer_Enabled ~= true then
+            imgui.text_colored("当前已由顶部菜单关闭。", COL_GREY)
+            imgui.text_colored("勾选顶部栏“距离显示”后生效。", COL_GREY)
+            imgui.tree_pop()
+            return
+        end
         local changed_ov, new_ov = imgui.checkbox("浮动窗口", config.show_debug_window)
         if changed_ov then
             config.show_debug_window = new_ov

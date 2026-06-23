@@ -17,6 +17,8 @@ local GS = require("func/GameState")
 local UIKit = require("func/UIKit")
 local Vector3f = Vector3f
 
+if _G.SheldonsBoxes_Enabled == nil then _G.SheldonsBoxes_Enabled = false end
+
 -- =========================================================
 -- [OPTIMIZATION GLOBALS]
 -- =========================================================
@@ -611,6 +613,11 @@ end
 -- [6. MAIN LOOP]
 -- =========================================================
 re.on_frame(function()
+    if _G.SheldonsBoxes_Enabled ~= true then
+        _G._vr_queue = nil
+        click_flash_frames = 0
+        return
+    end
     try_load_font()
     if not GS.valid then return end
     if GS.in_pause_menu then return end
@@ -1114,6 +1121,10 @@ end
 
 if d2d and d2d.register then
     d2d.register(function() end, function()
+        if _G.SheldonsBoxes_Enabled ~= true then
+            _G._vr_queue = nil
+            return
+        end
         -- Consume queue (pushed by re.on_frame — stops when script is disabled)
         local vr_data = _G._vr_queue
         _G._vr_queue = nil
@@ -1212,6 +1223,12 @@ end
 
 re.on_draw_ui(function()
     if imgui.tree_node("Sheldon's 碰撞框") then
+        if _G.SheldonsBoxes_Enabled ~= true then
+            imgui.text_colored("当前已由顶部菜单关闭。", COL_GREY)
+            imgui.text_colored("勾选顶部栏“碰撞显示”后生效。", COL_GREY)
+            imgui.tree_pop()
+            return
+        end
 
         imgui.push_style_color(21, 0xFF005500)
         imgui.push_style_color(22, 0xFF007700)

@@ -648,12 +648,14 @@ local function d2d_draw_inner()
     local players = ctx and ctx.players
 
     local should_draw = d2d_cfg and d2d_cfg.enabled and (_G.ComboTrialsD2DEnabled == true)
+    local is_replay_context = (_G.FlowMapID == 10) or (_G.IsInReplay == true) or (_G.IsInBattleHub == true)
+    local has_training_context = is_replay_context or (_G.TrainingScriptManagerActiveThisFrame == true)
 
     local sw, sh = d2d.surface_size()
 
     -- Use TrainingBarsDrawn from SharedUI D2D + mode check
     -- ALL content gated by this condition — NO early returns
-    if should_draw and _G.TrainingBarsDrawn and _G.CurrentTrainerMode == 4 then
+    if should_draw and has_training_context and _G.TrainingBarsDrawn and _G.CurrentTrainerMode == 4 then
 
     ctx.cached_sw, ctx.cached_sh = sw, sh
 
