@@ -525,7 +525,7 @@ local top_bar_width = 0.52
 local top_bar_height = 0.0444
 
 local MODE_BUTTONS = {
-    { id = 0, label = "关闭" },
+    { id = 0, label = "关闭训练" },
     { id = 2, label = "确认训练" },
     { id = 4, label = "连段训练" },
 }
@@ -573,9 +573,9 @@ local function draw_top_floating_bar()
     local fn = SharedUI.get_func_name()
     local key_label = combo_name(config.switch_key or 0x30, config.switch_modifiers)
     if SharedUI.is_keyboard_mode() or not fn then
-        switch_label = "切换 (" .. key_label .. ")"
+        switch_label = "切换训练模式 (" .. key_label .. ")"
     else
-        switch_label = "切换 (" .. fn .. " + SQUARE/X)"
+        switch_label = "切换训练模式 (" .. fn .. " + 方块/X)"
     end
 
     -- Calculate button widths: all buttons equal width
@@ -717,7 +717,7 @@ re.on_frame(function()
     if cur_mode ~= _tsm_last_mode then
         local name = TSM_MODE_NAMES[cur_mode]
         if name and cur_mode ~= 0 and _G.show_custom_ticker then
-            _G.show_custom_ticker(name .. " STARTED", 0.3)
+            _G.show_custom_ticker(name .. "已启动", 0.3)
         end
         _tsm_last_mode = cur_mode
     end
@@ -919,7 +919,7 @@ re.on_draw_ui(function()
 
     local _has_errors = _errs and _errs.count > 0
     if _has_errors then imgui.push_style_color(0, 0xFF0000FF) end
-    local _tsm_open = imgui.tree_node("训练脚本管理器" .. (_has_errors and " [!]" or ""))
+    local _tsm_open = imgui.tree_node("小吞 Street Fighter 6 全能训练MOD包 v0.8b" .. (_has_errors and " [!]" or ""))
     if _has_errors then imgui.pop_style_color(1) end
     if _tsm_open then
 
@@ -1067,7 +1067,7 @@ re.on_draw_ui(function()
             imgui.text("  键盘：按 [0]")
             imgui.text("  键盘：按 [9] 隐藏/显示顶部栏和模式控制栏")
             if fn then
-                imgui.text("  手柄：[" .. fn .. "] + [Square / X]")
+                imgui.text("  手柄：[" .. fn .. "] + [方块 / X]")
             end
             imgui.spacing()
 
@@ -1088,12 +1088,12 @@ re.on_draw_ui(function()
             imgui.separator()
             imgui.text_colored("连段训练快捷键", 0xFF00FFFF)
             imgui.text("  键盘 1 : 录制 P1 / 停止并保存")
-            imgui.text("  键盘 2 : 开始 Trial P1 / 停止 Trial")
+            imgui.text("  键盘 2 : 开始 P1 连段训练 / 停止连段训练")
             imgui.text("  键盘 3 : 录制 P2")
             imgui.text("  键盘 4 : 切换位置模式")
             if fn then
                 imgui.text("  " .. fn .. "+LEFT  : 录制 P1 / 停止并保存")
-                imgui.text("  " .. fn .. "+UP    : 开始 Trial P1 / 停止 Trial")
+                imgui.text("  " .. fn .. "+UP    : 开始 P1 连段训练 / 停止连段训练")
                 imgui.text("  " .. fn .. "+DOWN  : 录制 P2")
                 imgui.text("  " .. fn .. "+RIGHT : 切换位置模式")
             end
@@ -1111,14 +1111,14 @@ re.on_draw_ui(function()
 
             imgui.text_colored("连段训练", 0xFF00FF00)
             imgui.text("  录制并练习自己的连段。")
-            imgui.text("  保存连段的伤害、Drive、SA 统计。")
-            imgui.text("  支持固定位置、镜像位置或自由位置回放。")
+            imgui.text("  保存连段的伤害、斗气、SA 统计。")
+            imgui.text("  支持连段位、镜像位或自由位回放。")
         end
 
 
         imgui.separator()
         if not _G._hc_logging then
-            if imgui.button("开始 Hit Confirm 日志") then _G._hc_logging = true; _G._hc_log_lines = {} end
+            if imgui.button("开始确认训练日志") then _G._hc_logging = true; _G._hc_log_lines = {} end
         else
             if imgui.button("停止并保存日志") then
                 _G._hc_logging = false

@@ -1981,7 +1981,7 @@ local function is_kb_down(vk)
     return ok and result
 end
 
-local POS_TICKER_NAMES = { "游戏设置", "固定位置", "镜像位置" }
+local POS_TICKER_NAMES = { "自由位", "连段位", "镜像位" }
 local function ct_ticker(msg)
     if _G.show_custom_ticker then _G.show_custom_ticker(msg, 0.3) end
 end
@@ -2080,35 +2080,13 @@ local function handle_combo_shortcuts()
             local paths = (curr_player == 0) and file_system.saved_combos_paths_p1 or file_system.saved_combos_paths_p2
             local idx = (curr_player == 0) and (file_system.selected_file_idx_p1 or 1) or (file_system.selected_file_idx_p2 or 1)
             if #paths > 0 then
-                local loaded = json.load_file(paths[idx])
-                if loaded then
-                    trial_state.sequence = loaded
-                    assign_groups(trial_state.sequence)
-                end
+                load_combo_from_file(paths[idx], true)
+                start_trial(curr_player)
+            elseif #trial_state.sequence > 0 then
+                trial_state.is_playing = true
+                trial_state.playing_player = curr_player
+                reset_trial_steps()
             end
-            trial_state.is_playing = true
-            trial_state.current_step = 1
-            trial_state._step1_wrong_pending = false
-            trial_state.success_timer = 0
-            trial_state.fail_timer = 0
-            trial_state.fail_reason = nil
-            trial_state.active_universal_hold = nil
-            for _, item in ipairs(trial_state.sequence) do
-                item.actual_combo = 0
-                item.has_hit = false
-                item.last_frame_diff = nil
-            end
-
-            players[curr_player].log = {}
-            players[curr_player].input_history_queue = {}
-
-            trial_state._first_hit_landed = false
-            trial_state._reset_grace = 15
-            reinject_trial_vital()
-            apply_forced_position()
-            trial_state._pending_reinject_settings = true
-            ComboTrials_D2D.reset_anim()
-            ComboTrials_D2D.reset_raw()
         end
         if is_pressed(BTN_UP) or kb_pressed(KB_2) then
             trial_state.is_playing = false
@@ -2118,19 +2096,9 @@ local function handle_combo_shortcuts()
             if d2d_cfg.forced_position_idx > 3 then d2d_cfg.forced_position_idx = 1 end
             save_d2d_config()
             apply_forced_position()
-            ct_ticker("POSITION: " .. (POS_TICKER_NAMES[d2d_cfg.forced_position_idx] or ""))
+            ct_ticker("位置模式：" .. (POS_TICKER_NAMES[d2d_cfg.forced_position_idx] or ""))
             -- Mini-reset to properly reposition after switching pos
-            trial_state.current_step = 1
-            trial_state._step1_wrong_pending = false
-            trial_state.success_timer = 0
-            trial_state.fail_timer = 0
-            trial_state.fail_reason = nil
-            trial_state.active_universal_hold = nil
-            for _, item in ipairs(trial_state.sequence) do
-                item.actual_combo = 0
-                item.has_hit = false
-                item.last_frame_diff = nil
-            end
+            reset_trial_steps()
             if ctx.reset_visuals then ctx.reset_visuals() end
         end
         if is_pressed(BTN_DOWN) or kb_pressed(KB_4) then
@@ -2151,17 +2119,17 @@ local function handle_combo_shortcuts()
         else
             -- ===== IDLE: 3 buttons (LEFT/1=record, UP/2=start trial, RIGHT/3=switch pos) =====
             if is_pressed(BTN_LEFT) or kb_pressed(KB_1) then
-                start_recording(0); ct_ticker("RECORDING")
+                start_recording(0); ct_ticker("录制中")
             end
             if is_pressed(BTN_UP) or kb_pressed(KB_2) then
-                load_and_start_trial(0); ct_ticker("TRIAL STARTED")
+                load_and_start_trial(0); ct_ticker("连段训练已启动")
             end
             if is_pressed(BTN_RIGHT) or kb_pressed(KB_3) then
                 d2d_cfg.forced_position_idx = d2d_cfg.forced_position_idx + 1
                 if d2d_cfg.forced_position_idx > 3 then d2d_cfg.forced_position_idx = 1 end
                 save_d2d_config()
                 if d2d_cfg.forced_position_idx == 1 then apply_forced_position() end
-                ct_ticker("POSITION: " .. (POS_TICKER_NAMES[d2d_cfg.forced_position_idx] or ""))
+                ct_ticker("位置模式：" .. (POS_TICKER_NAMES[d2d_cfg.forced_position_idx] or ""))
             end
         end
     end
@@ -2254,7 +2222,7 @@ local function build_fail_dump()
             delay_from_prev = step.delay_from_prev
         }
         if i == trial_state.current_step then
-            s.STATUS = "<-- FAILED HERE"
+            s.STATUS = "<-- 失败位置"
             if trial_state.active_universal_hold then
                 s.hold_error_details = {
                     expected_status = trial_state.active_universal_hold.expected_status,
@@ -2429,16 +2397,16 @@ local _replay_cleaned = false
 local function ct_handle_web_commands()
     if _G.CurrentTrainerMode == 4 and _G._tsm_web_cmd then
         local cmd = _G._tsm_web_cmd; _G._tsm_web_cmd = nil
-        if cmd == "record" then start_recording(0); ct_ticker("RECORDING") end
-        if cmd == "start_trial" then load_and_start_trial(0); ct_ticker("TRIAL STARTED") end
+        if cmd == "record" then start_recording(0); ct_ticker("录制中") end
+        if cmd == "start_trial" then load_and_start_trial(0); ct_ticker("连段训练已启动") end
         if cmd == "stop_trial" then
-            trial_state.is_playing = false; ct_ticker("TRIAL STOPPED")
+            trial_state.is_playing = false; ct_ticker("连段训练已停止")
         end
         if cmd == "toggle_position" then
             d2d_cfg.forced_position_idx = (d2d_cfg.forced_position_idx or 1) + 1
             if d2d_cfg.forced_position_idx > 3 then d2d_cfg.forced_position_idx = 1 end
             apply_forced_position()
-            ct_ticker("POSITION: " .. (POS_TICKER_NAMES[d2d_cfg.forced_position_idx] or ""))
+            ct_ticker("位置模式：" .. (POS_TICKER_NAMES[d2d_cfg.forced_position_idx] or ""))
         end
         if cmd == "cancel_record" then
             _G.ComboTrials_ReplayCancelPlayer = trial_state.recording_player or 0
@@ -2452,20 +2420,15 @@ local function ct_handle_web_commands()
                 local paths = (curr_player == 0) and file_system.saved_combos_paths_p1 or file_system.saved_combos_paths_p2
                 local idx = (curr_player == 0) and (file_system.selected_file_idx_p1 or 1) or (file_system.selected_file_idx_p2 or 1)
                 if #paths > 0 then
-                    local loaded = json.load_file(paths[idx])
-                    if loaded then trial_state.sequence = loaded; assign_groups(trial_state.sequence) end
+                    load_combo_from_file(paths[idx], true)
+                    start_trial(curr_player)
+                    return
                 end
-                trial_state.current_step = 1; trial_state.success_timer = 0; trial_state.fail_timer = 0
-                trial_state.fail_reason = nil; trial_state._step1_wrong_pending = false
-                trial_state.active_universal_hold = nil
-                for _, item in ipairs(trial_state.sequence) do
-                    item.actual_combo = 0; item.has_hit = false; item.last_frame_diff = nil
+                if #trial_state.sequence > 0 then
+                    trial_state.is_playing = true
+                    trial_state.playing_player = curr_player
+                    reset_trial_steps()
                 end
-                trial_state._first_hit_landed = false
-                trial_state._reset_grace = 15
-                reinject_trial_vital()
-                apply_forced_position()
-                trial_state._pending_reinject_settings = true
             end)
         end
         if cmd == "demo" then
@@ -3407,7 +3370,7 @@ local function ct_player_process_actions(p_idx, p_state, actions_to_process)
             if is_trackable then
                 if exc and exc.ignore then
                     is_ignored = true
-                    ignore_reason = "[Exception: IGNORE]"
+                    ignore_reason = "[例外：忽略]"
                 end
 
                 -- Check ignore_prev_id condition (supports single number or table of numbers)
@@ -3421,7 +3384,7 @@ local function ct_player_process_actions(p_idx, p_state, actions_to_process)
                                 if frames_since <= (exc.ignore_prev_frames or 5) then
                                     is_ignored = true
                                     local id_disp = type(exc.ignore_prev_id) == "table" and table.concat(exc.ignore_prev_id, ",") or tostring(exc.ignore_prev_id)
-                                    ignore_reason = "[Exception: Ignored after ID " .. id_disp .. "]"
+                                    ignore_reason = "[例外：在 ID " .. id_disp .. " 后忽略]"
                                     break
                                 end
                             end
@@ -4282,32 +4245,16 @@ ctx.reset_trial_steps_and_load = function(player_idx)
     local paths = (player_idx == 0) and file_system.saved_combos_paths_p1 or file_system.saved_combos_paths_p2
     local idx = (player_idx == 0) and (file_system.selected_file_idx_p1 or 1) or (file_system.selected_file_idx_p2 or 1)
     if #paths > 0 then
-        local loaded = json.load_file(paths[idx])
-        if loaded then
-            trial_state.sequence = loaded
-            assign_groups(trial_state.sequence)
-        end
+        load_combo_from_file(paths[idx], true)
+        start_trial(player_idx)
+        return
     end
-    trial_state.is_playing = true
-    trial_state.current_step = 1
-    trial_state._step1_wrong_pending = false
-    trial_state.success_timer = 0
-    trial_state.fail_timer = 0
-    trial_state.fail_reason = nil
-    trial_state.active_universal_hold = nil
-    for _, item in ipairs(trial_state.sequence) do
-            item.actual_combo = 0
-            item.has_hit = false
-            item.last_frame_diff = nil
-        end
-        
-        -- Memory purge so non-raw display truly disappears
-        players[player_idx].log = {}
-        players[player_idx].input_history_queue = {}
-
-        ComboTrials_D2D.reset_anim()
-        ComboTrials_D2D.reset_raw()
+    if #trial_state.sequence > 0 then
+        trial_state.is_playing = true
+        trial_state.playing_player = player_idx
+        reset_trial_steps()
     end
+end
 -- =========================================================
 -- DEMO ENGINE LOGIC & EXPORTS
 -- =========================================================

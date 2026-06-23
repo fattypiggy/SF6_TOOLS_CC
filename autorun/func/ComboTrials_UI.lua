@@ -76,6 +76,14 @@ local function zh_status_text(text)
     if n then return "早了 " .. n .. " 帧" end
     n = s:match("^(%d+) frames too late$")
     if n then return "晚了 " .. n .. " 帧" end
+    n = s:match("^SETUP TOO EARLY %((%d+)f%)$")
+    if n then return "Setup 过早 (" .. n .. "f)" end
+    n = s:match("^SETUP TOO LATE %((%d+)f%)$")
+    if n then return "Setup 过晚 (" .. n .. "f)" end
+    n = s:match("^HOLD TIMING%s*(%[[^%]]+%])%s*%(Combo Drop%)$")
+    if n then return "按住时机错误 " .. n .. "（连段断开）" end
+    local got, exp, diff = s:match("^WRONG HOLD %(Got: (.-), Exp: (.-)%)(.*)$")
+    if got then return "按住状态错误（实际：" .. got .. "，期望：" .. exp .. "）" .. (diff or "") end
 
     local map = {
         ["FAILED"] = "失败",
@@ -319,7 +327,7 @@ end
 -- =========================================================
 -- SWITCH POS LABEL (shows current state → next state)
 -- =========================================================
-local POS_LABELS = { "游戏设置", "固定位置", "镜像位置" }
+local POS_LABELS = { "自由位", "连段位", "镜像位" }
 local function switch_pos_label()
     local cur = d2d_cfg.forced_position_idx or 1
     return POS_LABELS[cur] or "不重置"
@@ -337,8 +345,8 @@ local function draw_single_line_content()
     local pad_y = sh * 0.01
 
     -- Widths excluding P2 buttons
-    local rec_btn_w_base = get_max_text_width({ "停止并保存 (" .. sc_max("L") .. ")", "取消 (" .. sc_max("R") .. ")", "录制 P1 (" .. sc_max("L") .. ")", "录制 P2 (" .. sc_max("R") .. ")", "重置 (" .. sc_max("L") .. ")", "演示 (" .. sc_max("R") .. ")" }, true)
-    local play_btn_w_base = get_max_text_width({ "开始连段 P1 (" .. sc_max("U") .. ")", "停止连段 P1 (" .. sc_max("U") .. ")", "镜像位置 (" .. sc_max("D") .. ")" }, true)
+    local rec_btn_w_base = get_max_text_width({ "停止并保存 (" .. sc_max("L") .. ")", "取消 (" .. sc_max("R") .. ")", "录制 P1 (" .. sc_max("L") .. ")", "录制 P2 (" .. sc_max("R") .. ")", "重置连段 (" .. sc_max("L") .. ")", "自动演示连段 (" .. sc_max("R") .. ")" }, true)
+    local play_btn_w_base = get_max_text_width({ "开始训练 (" .. sc_max("U") .. ")", "停止训练 (" .. sc_max("U") .. ")", "镜像位 (" .. sc_max("D") .. ")" }, true)
 
     local absolute_btn_w = math.max(rec_btn_w_base, play_btn_w_base)
 
@@ -572,22 +580,21 @@ local function draw_single_line_content()
         imgui.same_line(0, sp)
         local btn_w = trial_state.is_playing and actual_btn_w or training_btn_w
         if trial_state.is_playing then
-            if styled_sf6_button("重置 (" .. sc("L") .. ")", false, btn_w, true, false, P1_COLORS) then
+            if styled_sf6_button("重置连段 (" .. sc("L") .. ")", false, btn_w, true, false, P1_COLORS) then
                 ctx.reset_trial_steps_and_load(trial_state.playing_player)
-                ctx.apply_forced_position()
             end
         else
-            if styled_sf6_button("录制 (" .. sc("L") .. ")", false, btn_w, true, false, P1_COLORS) then start_recording(0) end
+            if styled_sf6_button("录制连段 (" .. sc("L") .. ")", false, btn_w, true, false, P1_COLORS) then start_recording(0) end
         end
 
         imgui.same_line(0, sp)
         if trial_state.is_playing then
-            if styled_sf6_button("停止连段 (" .. sc("U") .. ")", true, btn_w, true, false, TRIAL_COLORS) then
+            if styled_sf6_button("停止训练 (" .. sc("U") .. ")", true, btn_w, true, false, TRIAL_COLORS) then
                 trial_state.is_playing = false
             end
         elseif not trial_state.is_recording then
             local is_p1_active = (trial_state.is_playing and trial_state.playing_player == 0)
-            if styled_sf6_button(is_p1_active and "停止连段 (" .. sc("U") .. ")" or "开始连段 (" .. sc("U") .. ")", is_p1_active, btn_w, true, false, TRIAL_COLORS) then
+            if styled_sf6_button(is_p1_active and "停止训练 (" .. sc("U") .. ")" or "开始训练 (" .. sc("U") .. ")", is_p1_active, btn_w, true, false, TRIAL_COLORS) then
                 if is_p1_active then trial_state.is_playing = false
                 else load_and_start_trial(0) end
             end
@@ -612,7 +619,7 @@ local function draw_single_line_content()
                 styled_sf6_button("演示(晕厥)", false, btn_w, true, false, { base = 0x78444444, hover = 0x78444444, active = 0x78444444, text = 0xFF888888, border = 0xFF666666 })
                 imgui.pop_style_color(3)
             else
-                if styled_sf6_button("演示 (" .. sc("D") .. ")", false, btn_w, true, false, P2_COLORS) then
+                if styled_sf6_button("自动演示连段 (" .. sc("D") .. ")", false, btn_w, true, false, P2_COLORS) then
                     if ctx.start_demo then ctx.start_demo() end
                 end
             end
@@ -635,8 +642,8 @@ local function draw_combo_trials_content(is_floating)
     local size = imgui.get_window_size()
     local w_width = (size.x > 50) and size.x or (sw * 0.44)
 
-    local rec_btn_w_base = get_max_text_width({ "停止并保存 (" .. sc_max("L") .. ")", "取消 (" .. sc_max("R") .. ")", "录制 P1 (" .. sc_max("L") .. ")", "录制 P2 (" .. sc_max("R") .. ")", "重置 (" .. sc_max("L") .. ")", "演示 (" .. sc_max("R") .. ")" }, is_floating)
-    local play_btn_w_base = get_max_text_width({ "开始连段 P1 (" .. sc_max("U") .. ")", "停止连段 P1 (" .. sc_max("U") .. ")", "镜像位置 (" .. sc_max("D") .. ")" }, is_floating)
+    local rec_btn_w_base = get_max_text_width({ "停止并保存 (" .. sc_max("L") .. ")", "取消 (" .. sc_max("R") .. ")", "录制 P1 (" .. sc_max("L") .. ")", "录制 P2 (" .. sc_max("R") .. ")", "重置连段 (" .. sc_max("L") .. ")", "自动演示连段 (" .. sc_max("R") .. ")" }, is_floating)
+    local play_btn_w_base = get_max_text_width({ "开始训练 (" .. sc_max("U") .. ")", "停止训练 (" .. sc_max("U") .. ")", "镜像位 (" .. sc_max("D") .. ")" }, is_floating)
 
     local absolute_btn_w = math.max(rec_btn_w_base, play_btn_w_base)
     local spacing_cols = 20 * (sh / 1080.0)
@@ -713,12 +720,11 @@ local function draw_combo_trials_content(is_floating)
     
     local is_demo_active = (ctx.demo_state and ctx.demo_state.is_playing)
     if trial_state.is_playing or is_demo_active then
-        if styled_sf6_button("重置 (" .. sc("L") .. ")", false, rec_btn_w, is_floating) then
+        if styled_sf6_button("重置连段 (" .. sc("L") .. ")", false, rec_btn_w, is_floating) then
             if is_demo_active then
                 if ctx.start_demo then ctx.start_demo() end
             else
                 ctx.reset_trial_steps_and_load(trial_state.playing_player)
-                ctx.apply_forced_position()
             end
         end
         if mode_all_stacked then imgui.spacing() end
@@ -729,7 +735,7 @@ local function draw_combo_trials_content(is_floating)
             imgui.push_style_color(23, 0xFF444444)
             styled_sf6_button("演示(晕厥)", false, rec_btn_w, is_floating, false, { base = 0x78444444, hover = 0x78444444, active = 0x78444444, text = 0xFF888888, border = 0xFF666666 })
             imgui.pop_style_color(3)
-        elseif styled_sf6_button("演示 (" .. sc("R") .. ")", is_demo_active, rec_btn_w, is_floating, false, P2_COLORS) then
+        elseif styled_sf6_button("自动演示连段 (" .. sc("R") .. ")", is_demo_active, rec_btn_w, is_floating, false, P2_COLORS) then
             if is_demo_active then
                 if ctx.stop_demo then ctx.stop_demo() end
             else
@@ -769,13 +775,13 @@ local function draw_combo_trials_content(is_floating)
     if not is_floating then imgui.text_colored("3. 播放连段", COLORS.White) end
 
     if trial_state.is_playing or is_demo_active then
-        if styled_sf6_button("停止连段 (" .. sc("U") .. ")", true, play_btn_w, is_floating, false, TRIAL_COLORS) then
+        if styled_sf6_button("停止训练 (" .. sc("U") .. ")", true, play_btn_w, is_floating, false, TRIAL_COLORS) then
             trial_state.is_playing = false
             if ctx.stop_demo then ctx.stop_demo() end
         end
     elseif not trial_state.is_recording then
         local is_p1_active = (trial_state.is_playing and trial_state.playing_player == 0)
-        if styled_sf6_button(is_p1_active and "停止连段 P1 (" .. sc("U") .. ")" or "开始连段 P1 (" .. sc("U") .. ")", is_p1_active, play_btn_w, is_floating, false, TRIAL_COLORS) then
+        if styled_sf6_button(is_p1_active and "停止训练 (" .. sc("U") .. ")" or "开始训练 (" .. sc("U") .. ")", is_p1_active, play_btn_w, is_floating, false, TRIAL_COLORS) then
             if is_p1_active then trial_state.is_playing = false
             else load_and_start_trial(0) end
         end
@@ -964,7 +970,7 @@ re.on_frame(function()
                     local current = math.min(display_step, total_steps)
                     line1 = string.format("[ 动作 %d / %d ]", current, total_steps)
                 else
-                    line1 = "[ P" .. tostring(trial_state.playing_player + 1) .. " Trial ]"
+                    line1 = "[ P" .. tostring(trial_state.playing_player + 1) .. " 连段训练 ]"
                 end
 
                 if trial_state.floating_info then
@@ -989,7 +995,7 @@ re.on_frame(function()
 
             -- Line 3: Live drive & super
             local parts = {}
-            if dr > 0 then table.insert(parts, string.format("Drive: -%.1f", dr / 10000)) end
+            if dr > 0 then table.insert(parts, string.format("斗气: -%.1f", dr / 10000)) end
             if sa > 0 then table.insert(parts, string.format("SA: -%.1f", sa / 10000)) end
             line3 = #parts > 0 and table.concat(parts, "     ") or ""
         elseif trial_state.is_playing and #trial_state.sequence > 0 and trial_state.sequence[1] then
@@ -1001,7 +1007,7 @@ re.on_frame(function()
 
                 local parts = {}
                 if cs.drive_used and cs.drive_used > 0 then
-                    table.insert(parts, string.format("Drive: -%.1f", cs.drive_used / 10000))
+                    table.insert(parts, string.format("斗气: -%.1f", cs.drive_used / 10000))
                 end
                 if cs.super_used and cs.super_used > 0 then
                     table.insert(parts, string.format("SA: -%.1f", cs.super_used / 10000))
@@ -1150,7 +1156,7 @@ re.on_frame(function()
 
             -- Calculate single-line threshold
             local rec_btn_w_check = get_max_text_width({ "停止并保存 (" .. sc_max("L") .. ")", "取消 (" .. sc_max("R") .. ")", "录制 P1 (" .. sc_max("L") .. ")", "录制 P2 (" .. sc_max("R") .. ")" }, true)
-            local play_btn_w_check = get_max_text_width({ "开始连段 P1 (" .. sc_max("U") .. ")", "停止连段 P1 (" .. sc_max("U") .. ")", "开始连段 P2 (" .. sc_max("U") .. ")", "停止连段 P2 (" .. sc_max("U") .. ")" }, true)
+            local play_btn_w_check = get_max_text_width({ "开始训练 (" .. sc_max("U") .. ")", "停止训练 (" .. sc_max("U") .. ")" }, true)
             local min_single_line_w = 200 + (rec_btn_w_check + play_btn_w_check) * 2 + 150 * (sh / 1080.0)
 
             if w_width >= min_single_line_w then
@@ -1159,8 +1165,8 @@ re.on_frame(function()
             else
                 -- NORMAL MODE: Header + standard content
                 -- Calculate exact actual width to synchronize header transition with UI layout
-                local rec_btn_w_base = get_max_text_width({ "停止并保存 (" .. sc_max("L") .. ")", "取消 (" .. sc_max("R") .. ")", "录制 P1 (" .. sc_max("L") .. ")", "录制 P2 (" .. sc_max("R") .. ")", "重置 (" .. sc_max("L") .. ")", "演示 (" .. sc_max("R") .. ")" }, true)
-                local play_btn_w_base = get_max_text_width({ "开始连段 P1 (" .. sc_max("U") .. ")", "停止连段 P1 (" .. sc_max("U") .. ")", "镜像位置 (" .. sc_max("D") .. ")" }, true)
+                local rec_btn_w_base = get_max_text_width({ "停止并保存 (" .. sc_max("L") .. ")", "取消 (" .. sc_max("R") .. ")", "录制 P1 (" .. sc_max("L") .. ")", "录制 P2 (" .. sc_max("R") .. ")", "重置连段 (" .. sc_max("L") .. ")", "自动演示连段 (" .. sc_max("R") .. ")" }, true)
+                local play_btn_w_base = get_max_text_width({ "开始训练 (" .. sc_max("U") .. ")", "停止训练 (" .. sc_max("U") .. ")", "镜像位 (" .. sc_max("D") .. ")" }, true)
                 local absolute_btn_w = math.max(rec_btn_w_base, play_btn_w_base)
                 local spacing_cols = 20 * (sh / 1080.0)
 
@@ -1256,7 +1262,7 @@ local function draw_combo_trials_menu_ui()
         imgui.push_font(custom_ui_font)
         pushed_font = true
     end
-    if imgui.tree_node("连段训练") then
+    if imgui.tree_node("连段训练设置v0.8b") then
         local ok, err = pcall(function()
         local p_state = players[ui_state.viewed_player]
         imgui.spacing()
@@ -1284,11 +1290,11 @@ local function draw_combo_trials_menu_ui()
         -- ==========================================
         -- TAB 2: D2D VISUALIZER
         -- ==========================================
-        if styled_header("--- D2D 可视化设置（Overlay）---", UI_THEME.hdr_matrix) then
+        if styled_header("--- D2D 可视化设置（覆盖层）---", UI_THEME.hdr_matrix) then
             local changed = false
             local c, v
 
-            c, v = imgui.checkbox("启用 D2D Overlay", d2d_cfg.enabled); if c then
+            c, v = imgui.checkbox("启用 D2D 覆盖层", d2d_cfg.enabled); if c then
                 d2d_cfg.enabled = v; changed = true
             end
             c, v = imgui.checkbox("忽略自动动作（灰色）", d2d_cfg.ignore_auto); if c then
@@ -1305,7 +1311,7 @@ local function draw_combo_trials_menu_ui()
             end
 
 
-            c, v = imgui.checkbox("显示 Combo 计数", d2d_cfg.show_combo_count); if c then
+            c, v = imgui.checkbox("显示连段计数", d2d_cfg.show_combo_count); if c then
                 d2d_cfg.show_combo_count = v; changed = true
             end
             imgui.spacing()
@@ -1314,31 +1320,31 @@ local function draw_combo_trials_menu_ui()
 
             c, v = imgui.checkbox("显示 P1##trial", d2d_cfg.show_p1); if c then d2d_cfg.show_p1 = v; changed = true end
             imgui.same_line()
-            c, v = imgui.checkbox("Raw Input##trial_p1", d2d_cfg.raw_p1 or false); if c then d2d_cfg.raw_p1 = v; changed = true end
+            c, v = imgui.checkbox("原始输入##trial_p1", d2d_cfg.raw_p1 or false); if c then d2d_cfg.raw_p1 = v; changed = true end
             imgui.same_line()
             c, v = imgui.checkbox("镜像##trial_p1", d2d_cfg.mirror_p1 or false); if c then d2d_cfg.mirror_p1 = v; changed = true end
             if not d2d_cfg.raw_pos_p1 then d2d_cfg.raw_pos_p1 = { x = 0.050, y = 0.350 } end
             local tp1 = d2d_cfg.raw_p1 and d2d_cfg.raw_pos_p1 or d2d_cfg.pos_p1
-            local tp1_lbl = d2d_cfg.raw_p1 and "Raw " or ""
+            local tp1_lbl = d2d_cfg.raw_p1 and "原始 " or ""
             c, v = imgui.drag_float(tp1_lbl .. "P1 X##trial", tp1.x, 0.005, 0.0, 1.0); if c then tp1.x = v; changed = true end
             c, v = imgui.drag_float(tp1_lbl .. "P1 Y##trial", tp1.y, 0.005, 0.0, 1.0); if c then tp1.y = v; changed = true end
             if d2d_cfg.mirror_p1 then imgui.text_colored("  (镜像: X=" .. string.format("%.3f", 1.0 - tp1.x) .. ")", 0xFFAAAAAA) end
 
             c, v = imgui.checkbox("显示 P2##trial", d2d_cfg.show_p2); if c then d2d_cfg.show_p2 = v; changed = true end
             imgui.same_line()
-            c, v = imgui.checkbox("Raw Input##trial_p2", d2d_cfg.raw_p2 or false); if c then d2d_cfg.raw_p2 = v; changed = true end
+            c, v = imgui.checkbox("原始输入##trial_p2", d2d_cfg.raw_p2 or false); if c then d2d_cfg.raw_p2 = v; changed = true end
             imgui.same_line()
             c, v = imgui.checkbox("镜像##trial_p2", d2d_cfg.mirror_p2 or false); if c then d2d_cfg.mirror_p2 = v; changed = true end
             if not d2d_cfg.raw_pos_p2 then d2d_cfg.raw_pos_p2 = { x = 0.850, y = 0.350 } end
             local tp2 = d2d_cfg.raw_p2 and d2d_cfg.raw_pos_p2 or d2d_cfg.pos_p2
-            local tp2_lbl = d2d_cfg.raw_p2 and "Raw " or ""
+            local tp2_lbl = d2d_cfg.raw_p2 and "原始 " or ""
             c, v = imgui.drag_float(tp2_lbl .. "P2 X##trial", tp2.x, 0.005, 0.0, 1.0); if c then tp2.x = v; changed = true end
             c, v = imgui.drag_float(tp2_lbl .. "P2 Y##trial", tp2.y, 0.005, 0.0, 1.0); if c then tp2.y = v; changed = true end
             if d2d_cfg.mirror_p2 then imgui.text_colored("  (镜像: X=" .. string.format("%.3f", 1.0 - tp2.x) .. ")", 0xFFAAAAAA) end
 
             local t_raw_any = d2d_cfg.raw_p1 or d2d_cfg.raw_p2
             local t_max_key = t_raw_any and "raw_max_history" or "max_history"
-            local t_max_lbl = t_raw_any and "Raw 最大历史##trial" or "最大历史##trial"
+            local t_max_lbl = t_raw_any and "原始输入最大历史##trial" or "最大历史##trial"
             if not d2d_cfg.raw_max_history then d2d_cfg.raw_max_history = 19 end
             local c_max, v_max = imgui.drag_int(t_max_lbl, d2d_cfg[t_max_key] or 10, 1, 1, 30); if c_max then
                 d2d_cfg[t_max_key] = v_max; changed = true
@@ -1349,7 +1355,7 @@ local function draw_combo_trials_menu_ui()
 
             c, v = imgui.checkbox("显示 P1##idle", d2d_cfg.idle_show_p1); if c then d2d_cfg.idle_show_p1 = v; changed = true end
             imgui.same_line()
-            c, v = imgui.checkbox("Raw Input##idle_p1", d2d_cfg.idle_raw_p1 or false); if c then d2d_cfg.idle_raw_p1 = v; changed = true end
+            c, v = imgui.checkbox("原始输入##idle_p1", d2d_cfg.idle_raw_p1 or false); if c then d2d_cfg.idle_raw_p1 = v; changed = true end
             imgui.same_line()
             c, v = imgui.checkbox("镜像##idle_p1", d2d_cfg.idle_mirror_p1 or false); if c then d2d_cfg.idle_mirror_p1 = v; changed = true end
             if not d2d_cfg.idle_raw_p1 then
@@ -1357,7 +1363,7 @@ local function draw_combo_trials_menu_ui()
                 c, v = imgui.drag_float("P1 Y##idle", d2d_cfg.idle_pos_p1.y, 0.005, 0.0, 1.0); if c then d2d_cfg.idle_pos_p1.y = v; changed = true end
                 if d2d_cfg.idle_mirror_p1 then imgui.text_colored("  (镜像: X=" .. string.format("%.3f", 1.0 - d2d_cfg.idle_pos_p1.x) .. ")", 0xFFAAAAAA) end
             else
-                imgui.text_colored("  (位置来自连段 Raw P1)", 0xFFAAAAAA)
+                imgui.text_colored("  (位置来自连段原始输入 P1)", 0xFFAAAAAA)
                 if d2d_cfg.idle_mirror_p1 then
                     local src = d2d_cfg.raw_pos_p1 or d2d_cfg.pos_p1
                     imgui.text_colored("  (镜像: X=" .. string.format("%.3f", 1.0 - (src.x or 0.050)) .. ")", 0xFFAAAAAA)
@@ -1366,7 +1372,7 @@ local function draw_combo_trials_menu_ui()
 
             c, v = imgui.checkbox("显示 P2##idle", d2d_cfg.idle_show_p2); if c then d2d_cfg.idle_show_p2 = v; changed = true end
             imgui.same_line()
-            c, v = imgui.checkbox("Raw Input##idle_p2", d2d_cfg.idle_raw_p2 or false); if c then d2d_cfg.idle_raw_p2 = v; changed = true end
+            c, v = imgui.checkbox("原始输入##idle_p2", d2d_cfg.idle_raw_p2 or false); if c then d2d_cfg.idle_raw_p2 = v; changed = true end
             imgui.same_line()
             c, v = imgui.checkbox("镜像##idle_p2", d2d_cfg.idle_mirror_p2 or false); if c then d2d_cfg.idle_mirror_p2 = v; changed = true end
             if not d2d_cfg.idle_raw_p2 then
@@ -1374,7 +1380,7 @@ local function draw_combo_trials_menu_ui()
                 c, v = imgui.drag_float("P2 Y##idle", d2d_cfg.idle_pos_p2.y, 0.005, 0.0, 1.0); if c then d2d_cfg.idle_pos_p2.y = v; changed = true end
                 if d2d_cfg.idle_mirror_p2 then imgui.text_colored("  (镜像: X=" .. string.format("%.3f", 1.0 - d2d_cfg.idle_pos_p2.x) .. ")", 0xFFAAAAAA) end
             else
-                imgui.text_colored("  (位置来自连段 Raw P2)", 0xFFAAAAAA)
+                imgui.text_colored("  (位置来自连段原始输入 P2)", 0xFFAAAAAA)
                 if d2d_cfg.idle_mirror_p2 then
                     local src = d2d_cfg.raw_pos_p2 or d2d_cfg.pos_p2
                     imgui.text_colored("  (镜像: X=" .. string.format("%.3f", 1.0 - (src.x or 0.850)) .. ")", 0xFFAAAAAA)
@@ -1383,7 +1389,7 @@ local function draw_combo_trials_menu_ui()
 
             local i_raw_any = d2d_cfg.idle_raw_p1 or d2d_cfg.idle_raw_p2
             local i_max_key = i_raw_any and "idle_raw_max_history" or "idle_max_history"
-            local i_max_lbl = i_raw_any and "Raw 最大历史##idle" or "最大历史##idle"
+            local i_max_lbl = i_raw_any and "原始输入最大历史##idle" or "最大历史##idle"
             if not d2d_cfg.idle_raw_max_history then d2d_cfg.idle_raw_max_history = 19 end
             local c_imax, v_imax = imgui.drag_int(i_max_lbl, d2d_cfg[i_max_key] or 10, 1, 1, 30); if c_imax then
                 d2d_cfg[i_max_key] = v_imax; changed = true
@@ -1393,21 +1399,21 @@ local function draw_combo_trials_menu_ui()
             local any_raw = (d2d_cfg.raw_p1 or d2d_cfg.raw_p2 or d2d_cfg.idle_raw_p1 or d2d_cfg.idle_raw_p2)
             if any_raw then
                 imgui.spacing()
-                imgui.text_colored("--- Raw Input 显示设置 ---", COLORS.Cyan)
+                imgui.text_colored("--- 原始输入显示设置 ---", COLORS.Cyan)
                 if not d2d_cfg.raw then d2d_cfg.raw = {} end
                 local rc = d2d_cfg.raw
-                c, v = imgui.drag_float("Raw 图标大小", rc.icon_size or 0.030, 0.001, 0.01, 0.1, "%.3f"); if c then rc.icon_size = v; changed = true end
-                c, v = imgui.drag_float("Raw 字体大小", rc.font_size or 0.028, 0.001, 0.01, 0.1, "%.3f"); if c then rc.font_size = v; changed = true end
-                c, v = imgui.drag_float("Raw 行间距", rc.spacing_y or 0.040, 0.001, 0.01, 0.1, "%.3f"); if c then rc.spacing_y = v; changed = true end
-                c, v = imgui.drag_float("Raw 文字 Y 偏移", rc.text_y_offset or 0.002, 0.0005, -0.02, 0.02, "%.4f"); if c then rc.text_y_offset = v; changed = true end
-                c, v = imgui.drag_float("Raw 帧数列", rc.col_frame or 0.000, 0.005, -0.2, 0.5, "%.3f"); if c then rc.col_frame = v; changed = true end
-                c, v = imgui.drag_float("Raw 方向列", rc.col_dir or 0.050, 0.005, -0.2, 0.5, "%.3f"); if c then rc.col_dir = v; changed = true end
-                c, v = imgui.drag_float("Raw 槽位 1", rc.slot1 or 0.100, 0.005, 0.0, 0.5, "%.3f"); if c then rc.slot1 = v; changed = true end
-                c, v = imgui.drag_float("Raw 槽位 2", rc.slot2 or 0.140, 0.005, 0.0, 0.5, "%.3f"); if c then rc.slot2 = v; changed = true end
-                c, v = imgui.drag_float("Raw 槽位 3", rc.slot3 or 0.180, 0.005, 0.0, 0.5, "%.3f"); if c then rc.slot3 = v; changed = true end
-                c, v = imgui.drag_float("Raw 槽位 4", rc.slot4 or 0.220, 0.005, 0.0, 0.5, "%.3f"); if c then rc.slot4 = v; changed = true end
-                c, v = imgui.drag_float("Raw 槽位 5", rc.slot5 or 0.260, 0.005, 0.0, 0.5, "%.3f"); if c then rc.slot5 = v; changed = true end
-                c, v = imgui.drag_float("Raw 槽位 6", rc.slot6 or 0.300, 0.005, 0.0, 0.5, "%.3f"); if c then rc.slot6 = v; changed = true end
+                c, v = imgui.drag_float("原始输入图标大小", rc.icon_size or 0.030, 0.001, 0.01, 0.1, "%.3f"); if c then rc.icon_size = v; changed = true end
+                c, v = imgui.drag_float("原始输入字体大小", rc.font_size or 0.028, 0.001, 0.01, 0.1, "%.3f"); if c then rc.font_size = v; changed = true end
+                c, v = imgui.drag_float("原始输入行间距", rc.spacing_y or 0.040, 0.001, 0.01, 0.1, "%.3f"); if c then rc.spacing_y = v; changed = true end
+                c, v = imgui.drag_float("原始输入文字 Y 偏移", rc.text_y_offset or 0.002, 0.0005, -0.02, 0.02, "%.4f"); if c then rc.text_y_offset = v; changed = true end
+                c, v = imgui.drag_float("原始输入帧数列", rc.col_frame or 0.000, 0.005, -0.2, 0.5, "%.3f"); if c then rc.col_frame = v; changed = true end
+                c, v = imgui.drag_float("原始输入方向列", rc.col_dir or 0.050, 0.005, -0.2, 0.5, "%.3f"); if c then rc.col_dir = v; changed = true end
+                c, v = imgui.drag_float("原始输入槽位 1", rc.slot1 or 0.100, 0.005, 0.0, 0.5, "%.3f"); if c then rc.slot1 = v; changed = true end
+                c, v = imgui.drag_float("原始输入槽位 2", rc.slot2 or 0.140, 0.005, 0.0, 0.5, "%.3f"); if c then rc.slot2 = v; changed = true end
+                c, v = imgui.drag_float("原始输入槽位 3", rc.slot3 or 0.180, 0.005, 0.0, 0.5, "%.3f"); if c then rc.slot3 = v; changed = true end
+                c, v = imgui.drag_float("原始输入槽位 4", rc.slot4 or 0.220, 0.005, 0.0, 0.5, "%.3f"); if c then rc.slot4 = v; changed = true end
+                c, v = imgui.drag_float("原始输入槽位 5", rc.slot5 or 0.260, 0.005, 0.0, 0.5, "%.3f"); if c then rc.slot5 = v; changed = true end
+                c, v = imgui.drag_float("原始输入槽位 6", rc.slot6 or 0.300, 0.005, 0.0, 0.5, "%.3f"); if c then rc.slot6 = v; changed = true end
             end
 
             -- NEW: Trial Box Position & Height
@@ -1438,10 +1444,10 @@ local function draw_combo_trials_menu_ui()
             c, v = imgui.drag_float("框偏移 Y", d2d_cfg.cartouche_offset_y, 0.001, -0.1, 0.1); if c then
                 d2d_cfg.cartouche_offset_y = v; changed = true
             end
-            c, v = imgui.drag_float("Bar图片 X 偏移", d2d_cfg.bar_img_offset_x, 0.001, -0.1, 0.1); if c then
+            c, v = imgui.drag_float("底栏图片 X 偏移", d2d_cfg.bar_img_offset_x, 0.001, -0.1, 0.1); if c then
                 d2d_cfg.bar_img_offset_x = v; changed = true
             end
-            c, v = imgui.drag_float("Bar图片 Y 偏移", d2d_cfg.bar_img_offset_y, 0.001, -0.1, 0.1); if c then
+            c, v = imgui.drag_float("底栏图片 Y 偏移", d2d_cfg.bar_img_offset_y, 0.001, -0.1, 0.1); if c then
                 d2d_cfg.bar_img_offset_y = v; changed = true
             end
             c, v = imgui.drag_int("可见连段行数", d2d_cfg.trial_visible_steps, 1, 1, 30); if c then
@@ -1492,7 +1498,7 @@ local function draw_combo_trials_menu_ui()
             c, v = imgui.drag_float("图标大小", d2d_cfg.icon_size, 0.001, 0.01, 0.1); if c then
                 d2d_cfg.icon_size = v; changed = true
             end
-            c, v = imgui.drag_float("Symbol 缩放 (DR/DI...)", d2d_cfg.special_icon_scale, 0.01, 1.0, 3.0, "x%.2f"); if c then
+            c, v = imgui.drag_float("特殊图标缩放 (DR/DI...)", d2d_cfg.special_icon_scale, 0.01, 1.0, 3.0, "x%.2f"); if c then
                 d2d_cfg.special_icon_scale = v; changed = true
             end
             c, v = imgui.drag_float("字体大小", d2d_cfg.font_size, 0.001, 0.01, 0.1); if c then
@@ -1532,10 +1538,10 @@ local function draw_combo_trials_menu_ui()
         -- ==========================================
         -- TAB 3: EXCEPTION EDITOR MENU
         -- ==========================================
-        if styled_header("--- Exception 管理 ---", UI_THEME.hdr_session) then
+        if styled_header("--- 例外管理 ---", UI_THEME.hdr_session) then
             -- THE EDITOR ONLY APPEARS WHEN "MANAGE" IS CLICKED
             if p_state.editing_id ~= -1 then
-                imgui.text_colored("=== Exception 设置：ID " .. p_state.editing_id .. " ===", COLORS.Cyan)
+                imgui.text_colored("=== 例外设置：ID " .. p_state.editing_id .. " ===", COLORS.Cyan)
                 imgui.text_colored("（设置会立即应用到游戏内，便于测试）", COLORS.DarkGrey)
                 imgui.spacing()
 
@@ -1609,7 +1615,7 @@ local function draw_combo_trials_menu_ui()
                 if ct then p_state.edit_text = nt end
 
                 imgui.spacing()
-                local cc, nc = imgui.checkbox("应用到所有角色（Common）", p_state.edit_is_common)
+                local cc, nc = imgui.checkbox("应用到所有角色（通用）", p_state.edit_is_common)
                 if cc then p_state.edit_is_common = nc end
 
                 imgui.text_colored("--- 特殊条件 ---", COLORS.Blue)
@@ -1662,7 +1668,7 @@ local function draw_combo_trials_menu_ui()
                         local s2 = json.dump_file(get_exc_filename(p_state.profile_name), p_state.exceptions)
 
                         if s1 and s2 then
-                            exc_status = "通用 Exception 已保存。"
+                            exc_status = "通用例外已保存。"
                         else
                             exc_status = "严重错误：无法写入文件。"
                         end
@@ -1672,7 +1678,7 @@ local function draw_combo_trials_menu_ui()
                         local s1 = json.dump_file(get_exc_filename(p_state.profile_name), p_state.exceptions)
 
                         if s1 then
-                            exc_status = "角色专用 Exception 已保存。"
+                            exc_status = "角色专用例外已保存。"
                         else
                             exc_status = "严重错误：无法写入文件。"
                         end
@@ -1828,7 +1834,7 @@ local function draw_combo_trials_menu_ui()
                             common_exceptions[id_str] = nil
                             pcall(function() if fs and fs.create_dir then fs.create_dir("TrainingComboTrials_data/exceptions") end end)
                             json.dump_file("TrainingComboTrials_data/exceptions/Common.json", common_exceptions)
-                            exc_status = "通用 Exception 已从磁盘删除。"
+                            exc_status = "通用例外已从磁盘删除。"
                         end
                     end
                 end
@@ -2014,8 +2020,8 @@ local function draw_combo_trials_menu_ui()
             if ctx.trial_state and ctx.trial_state.last_fail_dump then
                 imgui.separator()
                 imgui.spacing()
-                imgui.text_colored("Last Failed Trial!", COLORS.Red)
-                if styled_button("Dump Fail Data to JSON", UI_THEME.btn_red) then
+                imgui.text_colored("上次失败连段", COLORS.Red)
+                if styled_button("导出失败数据 JSON", UI_THEME.btn_red) then
                     if ctx.dump_last_fail then
                         local path = ctx.dump_last_fail()
                         if path then
@@ -2043,7 +2049,7 @@ end
 
 -- Register in floating window hub + keep standard menu entry
 if _G.FloatingScriptUI then
-    _G.FloatingScriptUI.register("连段训练", draw_combo_trials_menu_ui)
+_G.FloatingScriptUI.register("连段训练设置v0.8b", draw_combo_trials_menu_ui)
 end
 re.on_draw_ui(draw_combo_trials_menu_ui)
 

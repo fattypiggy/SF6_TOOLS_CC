@@ -2,21 +2,19 @@
     "hide_ui": false,
     "is_paused": false,
     "is_running": false,
-    "mode": 4,
+    "mode": 0,
     "session_mode": "trials",
     "sf6_running": true,
     "timer": 2,
     "training_active": true,
     "trial_demo": false,
-    "trial_file": "Akuma_COMBO_7064_D6_SA3.json",
+    "trial_file": "",
     "trial_file_idx": 1,
-    "trial_files": [
-        "Akuma_COMBO_7064_D6_SA3.json 距离限定连"
-    ],
+    "trial_files": null,
     "trial_playing": false,
-    "trial_position": 2,
+    "trial_position": 3,
     "trial_recording": false,
     "trial_step": 1,
-    "trial_total": 15,
+    "trial_total": 0,
     "trials": 10
 }
