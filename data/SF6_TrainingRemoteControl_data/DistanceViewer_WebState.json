@@ -10,7 +10,7 @@
     "aa_fw_cr_max": 15,
     "aa_fw_cr_min": 5,
     "aa_fw_mode": "manual",
-    "aa_move": "",
+    "aa_move": "5HK",
     "aa_moves": [
         "5HK",
         "6HP",
@@ -32,9 +32,18 @@
         "FORWARD JUMP"
     ],
     "aa_neutral_buffer": 0,
-    "aa_subs": null,
+    "aa_subs": [
+        {
+            "input": "6HP",
+            "weight": 1
+        },
+        {
+            "input": "5HK",
+            "weight": 1
+        }
+    ],
     "is_replay": false,
-    "p1_char": "Akuma",
+    "p1_char": "JP",
     "p1_facing_right": true,
     "p1_prefs": {
         "A.K.I.": {
@@ -421,7 +430,7 @@
             "yellow_offset": 50
         }
     },
-    "p1_show_all": true,
+    "p1_show_all": false,
     "p2_char": "Akuma",
     "p2_facing_right": false,
     "p2_prefs": {
@@ -445,6 +454,7 @@
                 "ar": 148.341,
                 "input": "5HP"
             },
+            "visibility": null,
             "yellow_offset": 50
         },
         "Alex": {
@@ -785,5 +795,5 @@
             "yellow_offset": 50
         }
     },
-    "p2_show_all": true
+    "p2_show_all": false
 }
