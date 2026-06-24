@@ -1,5 +1,4 @@
 {
-  "version": 1,
-  "action": "training_updated",
-  "time": 1782212552
+  "reason": "training_updated",
+  "timestamp": "2026-06-24T13:18:07+08:00"
 }

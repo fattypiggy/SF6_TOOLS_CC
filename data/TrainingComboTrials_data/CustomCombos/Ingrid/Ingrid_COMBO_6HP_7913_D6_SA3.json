@@ -3,11 +3,10 @@
     "_xt_meta": {
       "schema": "xt.combo_trial.meta.v1",
       "character": "Ingrid",
-      "title": "板边最大伤害",
+      "title": "最大伤害（需版边）",
       "author": "小吞",
       "note": "",
-      "version": 1,
-      "updated_at": "2026-06-23T02:35:49.851Z"
+      "version": 1
     },
     "actual_combo": 0,
     "combo_stats": {

@@ -1511,7 +1511,41 @@ local function normalize_sequence_counter_types(sequence)
     end
     for _, step in ipairs(sequence) do
         if step.counter_type == nil then step.counter_type = 0 end
+        step.motion_aliases = step.motion_aliases or {}
+        local motion = tostring(step.motion or ""):upper():gsub("%s+", "")
+        local dirs, btns = motion:match("^(%d+)%+?(.*)$")
+        if dirs == "236236" or dirs == "214214" then
+            local tail = dirs:sub(4)
+            local short = tail .. (btns ~= "" and "+" .. btns or "")
+            local one_qcf = dirs:sub(1, 3) .. (btns ~= "" and "+" .. btns or "")
+            local seen = {}
+            for _, alias in ipairs(step.motion_aliases) do seen[tostring(alias):upper():gsub("%s+", "")] = true end
+            if not seen[short] then table.insert(step.motion_aliases, short) end
+            if not seen[one_qcf] then table.insert(step.motion_aliases, one_qcf) end
+        end
     end
+end
+
+local function normalize_motion_token(value)
+    local s = tostring(value or ""):upper():gsub("%s+", "")
+    s = s:gsub("^>%s*", "")
+    return s
+end
+
+local function motion_matches_expected(actual_motion, actual_input, expected)
+    if not expected then return false end
+    local actual_m = normalize_motion_token(actual_motion)
+    local actual_i = normalize_motion_token(actual_input)
+    local expected_m = normalize_motion_token(expected.motion)
+    if actual_m ~= "" and actual_m == expected_m then return true end
+    if actual_i ~= "" and actual_i == expected_m then return true end
+    if type(expected.motion_aliases) == "table" then
+        for _, alias in ipairs(expected.motion_aliases) do
+            local a = normalize_motion_token(alias)
+            if a ~= "" and (actual_m == a or actual_i == a) then return true end
+        end
+    end
+    return false
 end
 
 local function load_combo_from_file(path, force)
@@ -2188,7 +2222,7 @@ setup_hook("app.battle.bBattleFlow", "updateKO", nil, function(retval)
     if trial_state.is_playing or trial_state.is_recording or (demo_state and demo_state.is_playing) then
         -- Force automatic reset (reposition) as soon as K.O. is detected
         if trial_state.is_playing and trial_state.success_timer == 0 then
-            trial_state.success_timer = 1 
+            trial_state.success_timer = d2d_cfg.fail_display_frames or 120
         end
         return sdk.to_ptr(2) -- 2 = Skip animation
     end
@@ -2961,7 +2995,7 @@ local function ct_player_validation(p_idx, p_state)
 
         if #trial_state.sequence > 0 and trial_state.current_step > #trial_state.sequence then
             local last_step = trial_state.sequence[#trial_state.sequence]
-            if trial_state.success_timer == 0 and not is_hold_pending and not (trial_state.fail_timer and trial_state.fail_timer > 0) and (not last_step.expected_combo or last_step.expected_combo == 0 or (_pf.current_combo or 0) >= last_step.expected_combo) then
+            if trial_state.success_timer == 0 and not is_hold_pending and not (trial_state.fail_timer and trial_state.fail_timer > 0) and (not last_step.expected_combo or last_step.expected_combo == 0 or (_pf.current_combo or 0) >= last_step.expected_combo or last_step.has_hit) then
                 trial_state.success_timer = d2d_cfg.fail_display_frames or 120
             end
         end
@@ -3638,7 +3672,7 @@ local function ct_player_process_actions(p_idx, p_state, actions_to_process)
                         end
 
                         if allow_input then
-                            if expected and act_id == expected.id then
+                            if expected and (act_id == expected.id or motion_matches_expected(motion_str, real_input_str, expected)) then
                                 trial_state._step1_wrong_pending = false
                                 local actual_delay = 0
                                 local last_played = trial_state.last_played_frame or engine_frame_count

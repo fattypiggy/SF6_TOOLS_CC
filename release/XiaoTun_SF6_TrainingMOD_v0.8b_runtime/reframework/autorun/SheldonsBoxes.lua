@@ -494,27 +494,37 @@ local draw_boxes = function(w, aP, p1)
 
     if aP == nil or aP.Collision == nil then return end
     local col = aP.Collision
+    local root_x = 0.0
+    local root_y = 0.0
+    if w and w.pos and w.pos.x and w.pos.x.v and w.pos.y and w.pos.y.v then
+        root_x = w.pos.x.v / 6553600.0
+        root_y = w.pos.y.v / 6553600.0
+    end
 
     for j, r in pairs(col.Infos._items) do
         if r ~= nil then
             if not (r.OffsetX and r.OffsetX.v and r.OffsetY and r.OffsetY.v and r.SizeX and r.SizeX.v and r.SizeY and r.SizeY.v) then goto continue_rect_loop end
 
-            local pX = r.OffsetX.v / 6553600; local pY = r.OffsetY.v / 6553600
-            local sX = r.SizeX.v / 6553600 * 2; local sY = r.SizeY.v / 6553600 * 2
-            pX = pX - sX / 2; pY = pY - sY / 2
-            local acx = r.OffsetX.v / 6553600 - sX / 2; local acy = r.OffsetY.v / 6553600 - sY / 2
+            local box_x = r.OffsetX.v / 6553600.0
+            local box_y = r.OffsetY.v / 6553600.0
+            local half_x = r.SizeX.v / 6553600.0
+            local half_y = r.SizeY.v / 6553600.0
+            local center_x = root_x + box_x
+            local center_y = root_y + box_y
 
-            v_tl.x = acx - sX / 2; v_tl.y = acy + sY / 2; v_tl.z = 0
-            v_tr.x = acx + sX / 2; v_tr.y = acy + sY / 2; v_tr.z = 0
-            v_bl.x = acx - sX / 2; v_bl.y = acy - sY / 2; v_bl.z = 0
-            v_br.x = acx + sX / 2; v_br.y = acy - sY / 2; v_br.z = 0
+            v_tl.x = center_x - half_x; v_tl.y = center_y + half_y; v_tl.z = 0
+            v_tr.x = center_x + half_x; v_tr.y = center_y + half_y; v_tr.z = 0
+            v_bl.x = center_x - half_x; v_bl.y = center_y - half_y; v_bl.z = 0
+            v_br.x = center_x + half_x; v_br.y = center_y - half_y; v_br.z = 0
 
             local sTL = draw.world_to_screen(v_tl); local sTR = draw.world_to_screen(v_tr)
             local sBL = draw.world_to_screen(v_bl); local sBR = draw.world_to_screen(v_br)
 
             if sTL and sTR and sBL and sBR then
-                local fX = (sTL.x + sTR.x) / 2; local fY = (sBL.y + sTL.y) / 2
-                local fSX = (sTR.x - sTL.x); local fSY = (sTL.y - sBL.y)
+                local fX = math.min(sTL.x, sTR.x, sBL.x, sBR.x)
+                local fY = math.min(sTL.y, sTR.y, sBL.y, sBR.y)
+                local fSX = math.max(sTL.x, sTR.x, sBL.x, sBR.x) - fX
+                local fSY = math.max(sTL.y, sTR.y, sBL.y, sBR.y) - fY
 
                 if r:get_field("HitPos") ~= nil then
                     if r.TypeFlag > 0 and dh then

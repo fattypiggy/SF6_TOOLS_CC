@@ -554,7 +554,7 @@ local SWITCH_COLOR  = build_sc_color(config.top_colors.switch, config.top_alphas
 local MODE_ACTIVE   = build_sc_color(config.top_colors.active, config.top_alphas.active)
 local MODE_INACTIVE = build_sc_color(config.top_colors.inactive, config.top_alphas.inactive)
 
-local top_bar_width = 0.96
+local top_bar_width = 1.0
 local top_bar_height = 0.0444
 
 local MODE_BUTTONS = {
@@ -598,8 +598,8 @@ local function draw_top_floating_bar()
     end
     SharedUI.draw_floating_bg_top()
 
-    local sp = 4 * (sh / 1080.0)
-    local content_w = imgui.get_window_size().x - sw * 0.02  -- subtract WindowPadding (left+right)
+    local scale = sh / 1080.0
+    local sp = 4 * scale
 
     -- Build switch label with dynamic shortcut (keyboard vs controller)
     local switch_label
@@ -612,13 +612,16 @@ local function draw_top_floating_bar()
     end
 
     local train_count = 1 + #MODE_BUTTONS
-    local train_group_w = content_w * 0.66
-    local feature_group_w = content_w * 0.22
+    local train_x = sw * 0.125
+    local train_group_w = sw * 0.345
     local btn_w = (train_group_w - sp * (train_count - 1)) / train_count
-    local passive_w = (feature_group_w - sp) / 2
-    if passive_w < 110 * (sh / 1080.0) then passive_w = 110 * (sh / 1080.0) end
+    if btn_w < 145 * scale then btn_w = 145 * scale end
 
-    imgui.set_cursor_pos(Vector2f.new(sw * 0.0075, sh * 0.01))
+    local passive_w = math.max(112 * scale, sw * 0.06)
+    local feature_start_x = sw * 0.665
+    local top_y = sh * 0.01
+
+    imgui.set_cursor_pos(Vector2f.new(train_x, top_y))
     if SharedUI.sf6_button(switch_label .. "##sw_top", SWITCH_COLOR, btn_w) then
         cycle_next_mode()
     end
@@ -632,8 +635,7 @@ local function draw_top_floating_bar()
         end
     end
 
-    local feature_start_x = imgui.get_window_size().x - (passive_w * 2) - sp - (sw * 0.0125)
-    imgui.set_cursor_pos(Vector2f.new(feature_start_x, sh * 0.01))
+    imgui.set_cursor_pos(Vector2f.new(feature_start_x, top_y))
     local dv_colors = (config.distance_viewer_enabled == true) and MODE_ACTIVE or MODE_INACTIVE
     if SharedUI.sf6_button("距离显示##top_distance_viewer", dv_colors, passive_w) then
         config.distance_viewer_enabled = not config.distance_viewer_enabled
@@ -766,6 +768,7 @@ re.on_frame(function()
 
     SharedUI.clear_rects()
     _G.TrainingBarsDrawn = false
+    _G.TrainingScriptManagerActiveThisFrame = false
 
     -- Mode change ticker
     local cur_mode = _G.CurrentTrainerMode or 0
@@ -805,6 +808,9 @@ re.on_frame(function()
         if _G.CurrentTrainerMode ~= 0 then _G.CurrentTrainerMode = 0 end
         _G.TrainingModeActive = false
         _G.TrainingGamePaused = true
+        _G.ComboTrialsD2DEnabled = false
+        _G.ComboTrials_HideNativeHUD = false
+        _G._ct_bar_geometry = nil
         pcall(_tsm_dump_webstate_inactive)
         return
     end
@@ -845,10 +851,16 @@ re.on_frame(function()
         end
         _G.TrainingModeActive = false
         _G.TrainingGamePaused = true
+        _G.TrainingFloatingBar = nil
+        _G.TrainingFloatingBarTop = nil
+        _G.ComboTrialsD2DEnabled = false
+        _G.ComboTrials_HideNativeHUD = false
+        _G._ct_bar_geometry = nil
         pcall(_tsm_dump_webstate_inactive)
         return
     end
     _G.TrainingModeActive = true
+    _G.TrainingScriptManagerActiveThisFrame = true
 
     if not is_enabled_trainer_mode(_G.CurrentTrainerMode or 0) then
         _G.CurrentTrainerMode = 0

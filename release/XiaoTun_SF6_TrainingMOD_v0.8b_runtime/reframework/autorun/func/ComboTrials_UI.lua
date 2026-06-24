@@ -877,7 +877,8 @@ re.on_frame(function()
     end
     _was_bars_drawn = bars_now
 
-    if _G.FlowMapID ~= 10 and not _G.IsInReplay and _G.CurrentTrainerMode ~= 4 then
+    local is_replay_context = (_G.FlowMapID == 10) or (_G.IsInReplay == true) or (_G.IsInBattleHub == true)
+    if not is_replay_context and (_G.CurrentTrainerMode ~= 4 or _G.TrainingScriptManagerActiveThisFrame ~= true) then
         _ctui_clear_visual_state()
         return
     end
@@ -889,7 +890,7 @@ re.on_frame(function()
         if b == 64 or b == 2112 then is_game_active = true end
     end
 
-    local in_training_context = (_G.CurrentTrainerMode == 4) and (_G.TrainingModeActive == true)
+    local in_training_context = (_G.CurrentTrainerMode == 4) and (_G.TrainingModeActive == true) and (is_replay_context or _G.TrainingScriptManagerActiveThisFrame == true)
     local should_enable_ct_ui = in_training_context and is_game_active
     _G.ComboTrialsD2DEnabled = should_enable_ct_ui
     if not should_enable_ct_ui then

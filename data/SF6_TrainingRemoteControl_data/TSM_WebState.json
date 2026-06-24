@@ -8,15 +8,13 @@
     "timer": 0,
     "training_active": true,
     "trial_demo": false,
-    "trial_file": "Cammy_COMBO_4MP_1484_D0_SA0.json",
+    "trial_file": "",
     "trial_file_idx": 1,
-    "trial_files": [
-        "Cammy_COMBO_4MP_1484_D0_SA0.json"
-    ],
+    "trial_files": null,
     "trial_playing": true,
     "trial_position": 2,
     "trial_recording": false,
     "trial_step": 1,
-    "trial_total": 4,
+    "trial_total": 9,
     "trials": 0
 }

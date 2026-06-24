@@ -132,6 +132,7 @@ local trial_state = {
     start_pos_p1_raw = nil,
     start_pos_p2_raw = nil,
     pending_exact_pos = 0,
+    pending_exact_timeout = 0,
     saved_start_location = nil,
     flip_inputs = false,   -- Whether to visually flip the input display
     _rec_gauges = nil,     -- Gauge snapshot at recording start
@@ -140,6 +141,7 @@ local trial_state = {
     _saved_vital_p2 = nil,
     _pending_victim_hp = nil,
     _pending_attacker_hp = nil,
+    _hp_inject_frames = 0,
     _rec_pending_snapshot = 0,
     _was_playing = false,   -- Previous state for detecting transitions
     _step1_wrong_pending = false,
@@ -368,6 +370,7 @@ local function clear_pending_position_injection()
     trial_state.override_inject_r1 = nil
     trial_state.override_inject_r2 = nil
     trial_state.pending_exact_pos = nil
+    trial_state.pending_exact_timeout = nil
     trial_state._pause_live_r1 = nil
     trial_state._pause_live_r2 = nil
     trial_state._unpause_delay = nil
@@ -1010,12 +1013,44 @@ end
 local function _ct_do_inject_vital(player_idx, hp)
     local p = (player_idx == 0) and GS.p1 or GS.p2
     if not p then return end
+    if p.vital_new == hp and p.vital_old == hp and p.heal_new == hp then return end
     p.vital_new = hp
     p.vital_old = hp
     p.heal_new = hp
 end
 local function inject_player_vital(player_idx, hp)
     pcall(_ct_do_inject_vital, player_idx, hp)
+end
+
+local function hp_to_vital_point(player_idx, hp)
+    local p = (player_idx == 0) and GS.p1 or GS.p2
+    local max_hp = p and p.vital_max or 10000
+    if not max_hp or max_hp <= 0 then max_hp = 10000 end
+    local percent = math.floor((hp * 100.0 / max_hp) + 0.5)
+    if percent < 1 then percent = 1 end
+    if percent > 100 then percent = 100 end
+    return percent
+end
+
+local _tf_parameter_cache = nil
+local function get_tf_parameter_setting()
+    if _tf_parameter_cache then return _tf_parameter_cache end
+    pcall(function()
+        local tm = sdk.get_managed_singleton("app.training.TrainingManager")
+        local funcs = tm and tm:get_field("_tfFuncs")
+        local entries = funcs and funcs:get_field("_entries")
+        local entry = entries and entries:call("get_Item", 6)
+        local val = entry and entry:get_field("value")
+        if val then _tf_parameter_cache = val end
+    end)
+    return _tf_parameter_cache
+end
+
+local function apply_trial_parameter_settings()
+    local tf = get_tf_parameter_setting()
+    if not tf then return end
+    local ok = pcall(function() sdk.call_object_func(tf, "bApply") end)
+    if not ok then pcall(function() tf:call("bApply") end) end
 end
 
 -- Apply health (Victim = combo damage, Attacker = HP recorded at step 1)
@@ -1053,7 +1088,7 @@ local function apply_trial_vital()
             trial_state._saved_vital_p1 = {
                 Vital_Type = p1d.Vital_Type, Is_Vital_Infinity = p1d.Is_Vital_Infinity,
                 Is_Vital_No_Recovery = p1d.Is_Vital_No_Recovery, Is_Vital_Recovery_Timer = p1d.Is_Vital_Recovery_Timer,
-                Is_KO = p1d.Is_KO, Is_Point_Lock = p1d.Is_Point_Lock
+                Is_KO = p1d.Is_KO, Is_Point_Lock = p1d.Is_Point_Lock, Vital_Point = p1d.Vital_Point
             }
         end
 
@@ -1063,7 +1098,7 @@ local function apply_trial_vital()
             trial_state._saved_vital_p2 = {
                 Vital_Type = p2d.Vital_Type, Is_Vital_Infinity = p2d.Is_Vital_Infinity,
                 Is_Vital_No_Recovery = p2d.Is_Vital_No_Recovery, Is_Vital_Recovery_Timer = p2d.Is_Vital_Recovery_Timer,
-                Is_KO = p2d.Is_KO, Is_Point_Lock = p2d.Is_Point_Lock
+                Is_KO = p2d.Is_KO, Is_Point_Lock = p2d.Is_Point_Lock, Vital_Point = p2d.Vital_Point
             }
         end
 
@@ -1072,40 +1107,38 @@ local function apply_trial_vital()
 
         if trial_state._pending_attacker_hp then
             local ad = ps.PlayerDatas[attacker_idx]
-            ad.Vital_Type = 2
             ad.Is_Vital_Recovery_Timer = false
             ad.Is_Vital_Infinity = false
             ad.Is_Vital_No_Recovery = true
+            ad.Vital_Point = hp_to_vital_point(attacker_idx, trial_state._pending_attacker_hp)
         end
 
         if trial_state._pending_victim_hp then
             local vd = ps.PlayerDatas[victim_idx]
-            vd.Vital_Type = 2
             vd.Is_Vital_Recovery_Timer = false
             vd.Is_Vital_Infinity = false
             vd.Is_Vital_No_Recovery = true
             vd.Is_KO = true
             vd.Is_Point_Lock = true
+            vd.Vital_Point = hp_to_vital_point(victim_idx, trial_state._pending_victim_hp)
         end
     end)
+    apply_trial_parameter_settings()
+    trial_state._hp_inject_frames = 0
 end
 
 -- Re-inject HP (after a fail / reset)
 local function reinject_trial_vital()
-    local attacker_idx = trial_state.playing_player
-    local victim_idx = 1 - attacker_idx
-    if trial_state._pending_victim_hp and trial_state._pending_victim_hp > 0 then
-        inject_player_vital(victim_idx, trial_state._pending_victim_hp)
-    end
-    if trial_state._pending_attacker_hp and trial_state._pending_attacker_hp > 0 then
-        inject_player_vital(attacker_idx, trial_state._pending_attacker_hp)
-    end
+    apply_trial_parameter_settings()
+    trial_state._hp_inject_frames = 0
 end
 
 -- Restore vital settings to original values
 local function restore_trial_vital()
     trial_state._pending_victim_hp = nil
     trial_state._pending_attacker_hp = nil
+    trial_state._hp_inject_frames = 0
+    local restored = false
     pcall(function()
         local tm = sdk.get_managed_singleton("app.training.TrainingManager")
         if not tm then return end
@@ -1121,7 +1154,9 @@ local function restore_trial_vital()
             p1d.Is_Vital_Recovery_Timer = trial_state._saved_vital_p1.Is_Vital_Recovery_Timer
             p1d.Is_KO = trial_state._saved_vital_p1.Is_KO
             p1d.Is_Point_Lock = trial_state._saved_vital_p1.Is_Point_Lock
+            if trial_state._saved_vital_p1.Vital_Point ~= nil then p1d.Vital_Point = trial_state._saved_vital_p1.Vital_Point end
             trial_state._saved_vital_p1 = nil
+            restored = true
         end
 
         if trial_state._saved_vital_p2 then
@@ -1132,9 +1167,12 @@ local function restore_trial_vital()
             p2d.Is_Vital_Recovery_Timer = trial_state._saved_vital_p2.Is_Vital_Recovery_Timer
             p2d.Is_KO = trial_state._saved_vital_p2.Is_KO
             p2d.Is_Point_Lock = trial_state._saved_vital_p2.Is_Point_Lock
+            if trial_state._saved_vital_p2.Vital_Point ~= nil then p2d.Vital_Point = trial_state._saved_vital_p2.Vital_Point end
             trial_state._saved_vital_p2 = nil
+            restored = true
         end
     end)
+    if restored then apply_trial_parameter_settings() end
 end
 
 -- Sets the Dummy Counter state (0=Normal, 1=Counter, 2=Punish Counter)
@@ -1465,6 +1503,27 @@ local function apply_forced_position(skip_mirror)
     trial_state.exact_inject_r1 = raw1
     trial_state.exact_inject_r2 = raw2
     trial_state.pending_exact_pos = 10
+    trial_state.pending_exact_timeout = 45
+end
+
+local function apply_exact_position_now()
+    local r1 = trial_state.exact_inject_r1
+    local r2 = trial_state.exact_inject_r2
+    if not r1 or not r2 then return false end
+
+    local p1 = GS.p1
+    local p2 = GS.p2
+    if not p1 or not p2 then return false end
+
+    local sfix_type = _td_sfix
+    if not sfix_type then return false end
+    local sfix_from = sfix_type:get_method("From(System.Double)")
+    if not sfix_from then return false end
+
+    -- r1/r2 are raw sfix values (pos.x.v). In cm: raw / 65536.0
+    if p1.POS_SETx then p1:POS_SETx(sfix_from:call(nil, r1 / 65536.0)) end
+    if p2.POS_SETx then p2:POS_SETx(sfix_from:call(nil, r2 / 65536.0)) end
+    return true
 end
 -- =========================================================
 -- HELPER FUNCTIONS (Shared by UI buttons and pad shortcuts)
@@ -1511,7 +1570,45 @@ local function normalize_sequence_counter_types(sequence)
     end
     for _, step in ipairs(sequence) do
         if step.counter_type == nil then step.counter_type = 0 end
+        if type(step.motion_aliases) ~= "table" then step.motion_aliases = {} end
+        local motion = tostring(step.motion or ""):upper():gsub("%s+", "")
+        local dirs, btns = motion:match("^(%d+)%+?(.*)$")
+        if dirs == "236236" or dirs == "214214" then
+            local seen = {}
+            for _, alias in ipairs(step.motion_aliases) do seen[tostring(alias):upper():gsub("%s+", "")] = true end
+            local suffix = (btns ~= "" and "+" .. btns or "")
+            local aliases = (dirs == "236236") and { "36", "236" } or { "14", "214" }
+            for _, alias_dirs in ipairs(aliases) do
+                local alias = alias_dirs .. suffix
+                if not seen[alias] then
+                    table.insert(step.motion_aliases, alias)
+                    seen[alias] = true
+                end
+            end
+        end
     end
+end
+
+local function normalize_motion_token(value)
+    local s = tostring(value or ""):upper():gsub("%s+", "")
+    s = s:gsub("^>%s*", "")
+    return s
+end
+
+local function motion_matches_expected(actual_motion, actual_input, expected)
+    if not expected then return false end
+    local actual_m = normalize_motion_token(actual_motion)
+    local actual_i = normalize_motion_token(actual_input)
+    local expected_m = normalize_motion_token(expected.motion)
+    if actual_m ~= "" and actual_m == expected_m then return true end
+    if actual_i ~= "" and actual_i == expected_m then return true end
+    if type(expected.motion_aliases) == "table" then
+        for _, alias in ipairs(expected.motion_aliases) do
+            local a = normalize_motion_token(alias)
+            if a ~= "" and (actual_m == a or actual_i == a) then return true end
+        end
+    end
+    return false
 end
 
 local function load_combo_from_file(path, force)
@@ -1601,7 +1698,15 @@ local function start_recording(player_idx)
 end
 
 local function start_trial(player_idx)
-    restore_trial_vital()
+    local was_playing = trial_state.is_playing
+    clear_pending_position_injection()
+    if was_playing then
+        trial_state._pending_victim_hp = nil
+        trial_state._pending_attacker_hp = nil
+        trial_state._hp_inject_frames = 0
+    else
+        restore_trial_vital()
+    end
     trial_state.is_recording = false
     trial_state._rec_gauges = nil
     trial_state._rec_hit_type = nil
@@ -1609,12 +1714,16 @@ local function start_trial(player_idx)
     trial_state.playing_player = player_idx
     trial_state.current_step = 1
     trial_state._was_playing = false
+    trial_state._first_hit_landed = false
+    trial_state._reset_grace = 15
+    trial_state._hp_inject_frames = 0
 
     trial_state.live_start_pos_p1, trial_state.live_start_pos_p2, trial_state.live_start_pos_p1_raw, trial_state.live_start_pos_p2_raw = capture_current_positions()
 
     -- Full display reset (Text log + D2D Raw and Animated)
     players[player_idx].log = {}
     players[player_idx].input_history_queue = {}
+    players[player_idx].last_combo_count = 0
     if ComboTrials_D2D then
         pcall(function() ComboTrials_D2D.reset_anim() end)
         pcall(function() ComboTrials_D2D.reset_raw() end)
@@ -1625,9 +1734,6 @@ local function start_trial(player_idx)
 
     -- INJECT FIRST-STEP TRAINING ENVIRONMENT
     apply_trial_training_environment()
-    if _G.p2_vital_mode and type(set_vital_recovery) == "function" then
-        set_vital_recovery(1, _G.p2_vital_mode)
-    end
     update_trial_flip_state()
     apply_forced_position()
     trial_state._pending_reinject_settings = true
@@ -1709,12 +1815,19 @@ local function load_and_start_trial(player_idx)
 end
 
 local function reset_trial_steps()
+    clear_pending_position_injection()
+    trial_state.success_timer = 0
+    trial_state.fail_timer = 0
+    trial_state.fail_reason = nil
+    trial_state.active_universal_hold = nil
     trial_state.current_step = 1
 	trial_state.ui_visual_step = 1     --- NEW
     trial_state.floating_info = nil    --- NEW
     trial_state._step1_wrong_pending = false
     trial_state._first_hit_landed = false
     trial_state._reset_grace = 15
+    local p_state = players[trial_state.playing_player]
+    if p_state then p_state.last_combo_count = 0 end
     for _, item in ipairs(trial_state.sequence) do
         item.actual_combo = 0
         item.has_hit = false
@@ -2186,9 +2299,17 @@ end
 
 setup_hook("app.battle.bBattleFlow", "updateKO", nil, function(retval)
     if trial_state.is_playing or trial_state.is_recording or (demo_state and demo_state.is_playing) then
-        -- Force automatic reset (reposition) as soon as K.O. is detected
-        if trial_state.is_playing and trial_state.success_timer == 0 then
-            trial_state.success_timer = 1 
+        -- Skip KO animation, but do not mark a trial as complete until the
+        -- sequence validation has actually reached the final step.
+        if trial_state.is_playing and not (demo_state and demo_state.is_playing) and trial_state.success_timer == 0 then
+            local seq = trial_state.sequence or {}
+            local last_step = seq[#seq]
+            local attacker = (trial_state.playing_player == 1) and GS.p2 or GS.p1
+            local combo_count = math.max(get_combo_count(attacker) or 0, last_step and (last_step.actual_combo or 0) or 0)
+            if #seq > 0 and trial_state.current_step > #seq and last_step
+                and (not last_step.expected_combo or last_step.expected_combo == 0 or combo_count >= last_step.expected_combo) then
+                trial_state.success_timer = d2d_cfg.fail_display_frames or 120
+            end
         end
         return sdk.to_ptr(2) -- 2 = Skip animation
     end
@@ -2595,23 +2716,7 @@ local function ct_handle_first_frame_init()
         trial_state.floating_info = nil
         _G.ComboTrials_HideNativeHUD = false
 
-        -- Only touch TrainingManager if NOT in replay
-        if not _G.IsInReplay and _G.FlowMapID ~= 10 then
-            pcall(function()
-                local tm = sdk.get_managed_singleton("app.training.TrainingManager")
-                if not tm then return end
-                local ps = tm:get_field("_tData"):get_field("ParameterSetting")
-                if not ps or not ps.PlayerDatas then return end
-                for i = 0, 1 do
-                    local pd = ps.PlayerDatas[i]
-                    pd.Is_Vital_Recovery_Timer = true
-                    pd.Is_Vital_Infinity = false
-                    pd.Is_Vital_No_Recovery = false
-                    pd.Is_KO = false
-                    pd.Is_Point_Lock = true
-                end
-            end)
-        end
+        restore_trial_vital()
     end
 
 end
@@ -2696,28 +2801,29 @@ local function ct_handle_position_correction(_in_replay)
     -- POST-REFRESH EXACT POSITION CORRECTION (skip in replay)
     if not _in_replay and trial_state.pending_exact_pos and trial_state.pending_exact_pos > 0 then
         local tm_check = sdk.get_managed_singleton("app.training.TrainingManager")
-        if tm_check and tm_check:get_field("_IsReqRefresh") == false then
+        local refresh_done = tm_check and tm_check:get_field("_IsReqRefresh") == false
+        local force_finish = false
+
+        if refresh_done then
             trial_state.pending_exact_pos = trial_state.pending_exact_pos - 1
-            if trial_state.pending_exact_pos == 0 then
-                pcall(function()
-                    local r1 = trial_state.exact_inject_r1
-                    local r2 = trial_state.exact_inject_r2
-                    if not r1 or not r2 then return end
-
-                    local p1 = GS.p1
-                    local p2 = GS.p2
-                    if not p1 or not p2 then return end
-
-                    local sfix_type = _td_sfix
-                    if not sfix_type then return end
-                    local sfix_from = sfix_type:get_method("From(System.Double)")
-                    if not sfix_from then return end
-
-                    -- r1/r2 are raw sfix values (pos.x.v). In cm: raw / 65536.0
-                    if p1.POS_SETx then p1:POS_SETx(sfix_from:call(nil, r1 / 65536.0)) end
-                    if p2.POS_SETx then p2:POS_SETx(sfix_from:call(nil, r2 / 65536.0)) end
-                end)
+        else
+            trial_state.pending_exact_timeout = (trial_state.pending_exact_timeout or 45) - 1
+            if trial_state.pending_exact_timeout <= 0 then
+                force_finish = true
+                trial_state.pending_exact_pos = 0
+                if tm_check then
+                    pcall(function()
+                        tm_check:set_field("_IsReqRefresh", false)
+                    end)
+                end
             end
+        end
+
+        if trial_state.pending_exact_pos == 0 then
+            pcall(apply_exact_position_now)
+            trial_state.pending_exact_timeout = nil
+        elseif force_finish then
+            trial_state.pending_exact_timeout = nil
         end
     end
 
@@ -2732,8 +2838,7 @@ end
 
 local function ct_handle_hp_injection()
     -- INJECTION HP EXACT VIA PLAYER OBJECT
-    -- Inject continuously while the trial waits for the first hit (current_step == 1)
-    -- Stop permanently once the victim takes a hit (combo_cnt > 0)
+    -- Fine tune exact HP for a short window after refresh/reset, then stop.
     -- After a refresh (forced pos), wait for the refresh to finish first
     if trial_state.is_playing and trial_state.current_step == 1 then
         local tm = sdk.get_managed_singleton("app.training.TrainingManager")
@@ -2747,7 +2852,9 @@ local function ct_handle_hp_injection()
         end
         local attacker_idx = trial_state.playing_player
         local victim_idx = 1 - attacker_idx
-        if not trial_state._first_hit_landed then
+        if trial_state._first_hit_landed then
+            trial_state._hp_inject_frames = 0
+        elseif (trial_state._hp_inject_frames or 0) > 0 then
             if tm and not is_refreshing then
                 if trial_state._pending_victim_hp then
                     inject_player_vital(victim_idx, trial_state._pending_victim_hp)
@@ -2755,6 +2862,7 @@ local function ct_handle_hp_injection()
                 if trial_state._pending_attacker_hp then
                     inject_player_vital(attacker_idx, trial_state._pending_attacker_hp)
                 end
+                trial_state._hp_inject_frames = trial_state._hp_inject_frames - 1
             end
         end
     end
@@ -2961,7 +3069,8 @@ local function ct_player_validation(p_idx, p_state)
 
         if #trial_state.sequence > 0 and trial_state.current_step > #trial_state.sequence then
             local last_step = trial_state.sequence[#trial_state.sequence]
-            if trial_state.success_timer == 0 and not is_hold_pending and not (trial_state.fail_timer and trial_state.fail_timer > 0) and (not last_step.expected_combo or last_step.expected_combo == 0 or (_pf.current_combo or 0) >= last_step.expected_combo) then
+            local observed_combo = math.max(_pf.current_combo or 0, p_state.last_combo_count or 0, last_step.actual_combo or 0)
+            if trial_state.success_timer == 0 and not is_hold_pending and not (trial_state.fail_timer and trial_state.fail_timer > 0) and (not last_step.expected_combo or last_step.expected_combo == 0 or observed_combo >= last_step.expected_combo) then
                 trial_state.success_timer = d2d_cfg.fail_display_frames or 120
             end
         end
@@ -3638,7 +3747,7 @@ local function ct_player_process_actions(p_idx, p_state, actions_to_process)
                         end
 
                         if allow_input then
-                            if expected and act_id == expected.id then
+                            if expected and (act_id == expected.id or motion_matches_expected(motion_str, real_input_str, expected)) then
                                 trial_state._step1_wrong_pending = false
                                 local actual_delay = 0
                                 local last_played = trial_state.last_played_frame or engine_frame_count
@@ -4484,8 +4593,11 @@ re.on_frame(function()
         clear_trial_snapshot()
     end
 
-    -- GUARD: cancel the refresh triggered by save shortcuts when trial is active with forced position
-    if trial_state.is_playing and d2d_cfg.forced_position_idx ~= 1 then
+    -- GUARD: cancel the refresh triggered by save shortcuts when trial is active with forced position.
+    -- Do not cancel our own reset/start refresh; pending_exact_pos is set by apply_forced_position().
+    local save_refresh_recent = _save_fired_at > 0 and (_real_frame - _save_fired_at) <= 8
+    if trial_state.is_playing and save_refresh_recent and d2d_cfg.forced_position_idx ~= 1
+        and not (trial_state.pending_exact_pos and trial_state.pending_exact_pos > 0) then
         local tm2 = sdk.get_managed_singleton("app.training.TrainingManager")
         if tm2 then
             local ok, ts = pcall(_ct_get_field, tm2, "_TrainingState")

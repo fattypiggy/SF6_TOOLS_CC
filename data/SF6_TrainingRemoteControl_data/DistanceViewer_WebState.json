@@ -34,7 +34,7 @@
     "aa_neutral_buffer": 0,
     "aa_subs": null,
     "is_replay": false,
-    "p1_char": "Cammy",
+    "p1_char": "Akuma",
     "p1_facing_right": true,
     "p1_prefs": {
         "A.K.I.": {
@@ -421,7 +421,7 @@
             "yellow_offset": 50
         }
     },
-    "p1_show_all": false,
+    "p1_show_all": true,
     "p2_char": "Akuma",
     "p2_facing_right": false,
     "p2_prefs": {
@@ -785,5 +785,5 @@
             "yellow_offset": 50
         }
     },
-    "p2_show_all": false
+    "p2_show_all": true
 }

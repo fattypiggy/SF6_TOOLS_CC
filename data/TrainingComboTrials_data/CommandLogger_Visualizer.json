@@ -41,12 +41,12 @@
     "fail_display_frames": 100,
     "fail_reset_delay": 1.5,
     "float_pos": {
-        "x": 0.08958333333333333,
+        "x": 0.08984375,
         "y": 0.9555555555555556
     },
     "float_size": {
-        "h": 0.04351851851851852,
-        "w": 0.8197916666666667
+        "h": 0.04375,
+        "w": 0.819921875
     },
     "font_size": 0.02500000037252903,
     "forced_position_idx": 2,
@@ -137,7 +137,7 @@
         "text_y_offset": -0.014499999582767487
     },
     "raw_max_history": 16,
-    "raw_p1": false,
+    "raw_p1": true,
     "raw_p2": false,
     "raw_pos_p1": {
         "x": 0.9700000286102295,
@@ -150,7 +150,7 @@
     "show_combo_count": false,
     "show_live_single_p1": true,
     "show_live_single_p2": true,
-    "show_p1": false,
+    "show_p1": true,
     "show_p2": false,
     "spacing_x": 0.004999999888241291,
     "spacing_y": 0.04800000041723251,

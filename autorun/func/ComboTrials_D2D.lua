@@ -867,7 +867,6 @@ local function d2d_draw_inner()
             mode = "playing"
         end
 
-        local is_succ = (trial_state.success_timer > 0)
         local padding_y = spacing_y * 0.15
         local rect_x = is_aligned_right and (trial_x - cartouche_w + spacing_x * 2) or (trial_x - spacing_x * 2)
         local target_anim_y = nil
@@ -881,6 +880,13 @@ local function d2d_draw_inner()
         -- Build display lines (follow-up groups)
         local display_lines = build_display_lines(trial_state.sequence)
         local n_lines = #display_lines
+        local final_step = trial_state.sequence and trial_state.sequence[#trial_state.sequence] or nil
+        local final_visual_complete = false
+        if mode == "playing" and final_step and trial_state.current_step > #trial_state.sequence then
+            local expected_combo = final_step.expected_combo or 0
+            final_visual_complete = (expected_combo == 0) or ((final_step.actual_combo or 0) >= expected_combo)
+        end
+        local is_succ = (trial_state.success_timer > 0) or final_visual_complete
 
         -- Find the active display_line (the one containing current_step)
         local raw_visual_dl = 1
