@@ -73,9 +73,6 @@ end)
 local CONFIG_FILE = "Training_ScriptManager_data/TrainingManager_Config.json"
 
 local config = {
-    func_button = nil, -- No default: must be set by user via CHANGE FUNCTION BUTTON
-    switch_key = 0x30, -- Keyboard key for mode switch (default: '0' = VK 0x30)
-    switch_modifiers = {}, -- Required modifiers (e.g. {0x11} for Ctrl)
     btn_colors = { c1 = 0xFFFF0000, c2 = 0xFF019D00, c3 = 0xFF0000FF, c4 = 0xFFDC00FF },
     btn_alphas = { c1 = 200, c2 = 200, c3 = 200, c4 = 200 },
     -- Top bar colors (ARGB)
@@ -120,8 +117,6 @@ end
 local function load_config()
     local data = _G.safe_load_json(CONFIG_FILE)
     if data then
-        if data.func_button then config.func_button = data.func_button end
-        if data.switch_key then config.switch_key = data.switch_key end
         if data.btn_colors and type(data.btn_colors) == "table" then
             for k, v in pairs(data.btn_colors) do config.btn_colors[k] = v end
         end
@@ -137,19 +132,19 @@ local function load_config()
         if data.distance_viewer_enabled ~= nil then config.distance_viewer_enabled = data.distance_viewer_enabled == true end
         if data.sheldons_boxes_enabled ~= nil then config.sheldons_boxes_enabled = data.sheldons_boxes_enabled == true end
     end
-    _G.TrainingFuncButton = config.func_button
     publish_button_colors()
     publish_passive_plugin_flags()
 end
 
 local function save_config()
     json.dump_file(CONFIG_FILE, config)
-    _G.TrainingFuncButton = config.func_button
     publish_button_colors()
     publish_passive_plugin_flags()
 end
 
 load_config()
+_G.TrainingFuncButton = nil
+_G.TrainingFuncHeld = false
 
 local _tsm_hide_ref_menu_frames = 90
 local function _tsm_force_hide_reframework_menu()
@@ -302,57 +297,6 @@ local function cycle_next_mode()
     _G.CurrentTrainerMode = MODE_CYCLE[idx]
 end
 
--- Input Management (Gamepad & Keyboard)
-local last_input_mask = 0
-local is_binding_mode = false
-local is_kb_binding_mode = false
-local last_kb_0_state = false
-local last_kb_hide_state = false
-local HIDE_UI_KEY = 0x39 -- 9
-
--- CORRECTED: 64 = X (Xbox) / Square (PS)
-local BTN_SQUARE = 64
-
--- Hoisted to file scope to avoid per-frame closure/table allocations (hot path)
-local _TSM_MODIFIER_VKS = {0x10, 0x11, 0x12, 0x5B, 0x5C}
-local _TSM_MOD_SET = {}
-for _, mk in ipairs(_TSM_MODIFIER_VKS) do _TSM_MOD_SET[mk] = true end
-
-local function _tsm_scan_kb_binding()
-    local mods_held = {}
-    for _, mk in ipairs(_TSM_MODIFIER_VKS) do
-        if reframework:is_key_down(mk) then mods_held[#mods_held + 1] = mk end
-    end
-
-    for vk = 0x08, 0x7F do
-        if not _TSM_MOD_SET[vk] and reframework:is_key_down(vk) then
-            config.switch_key = vk
-            config.switch_modifiers = mods_held
-            save_config()
-            is_kb_binding_mode = false
-            break
-        end
-    end
-end
-
-local function _tsm_vk_in_list(list, vk)
-    for _, m in ipairs(list) do
-        if m == vk then return true end
-    end
-    return false
-end
-
-local function _tsm_check_kb_switch(switch_vk, switch_mods)
-    if not reframework:is_key_down(switch_vk) then return false end
-    for _, m in ipairs(switch_mods) do
-        if not reframework:is_key_down(m) then return false end
-    end
-    for _, m in ipairs(_TSM_MODIFIER_VKS) do
-        if not _tsm_vk_in_list(switch_mods, m) and reframework:is_key_down(m) then return false end
-    end
-    return true
-end
-
 local function toggle_global_ui_visibility()
     _G._tsm_hide_ui = not _G._tsm_hide_ui
     _G._tsm_hide_flash = 10
@@ -362,90 +306,25 @@ local function toggle_global_ui_visibility()
     end
 end
 
-local function handle_hide_ui_hotkey()
-    if is_kb_binding_mode or TrainingHotkeys.is_input_blocked() then
-        local ok, down = pcall(reframework.is_key_down, reframework, HIDE_UI_KEY)
-        last_kb_hide_state = ok and down == true
-        return
-    end
-
-    local ok, down = pcall(reframework.is_key_down, reframework, HIDE_UI_KEY)
-    local is_down = ok and down == true
-    if is_down and not last_kb_hide_state then
-        toggle_global_ui_visibility()
-    end
-    last_kb_hide_state = is_down
-end
-
-local function handle_input()
-    local gamepad_manager = sdk.get_native_singleton("via.hid.GamePad")
-    local gamepad_type = sdk.find_type_definition("via.hid.GamePad")
-    if not gamepad_manager then return end
-
-    local devices = sdk.call_native_func(gamepad_manager, gamepad_type, "get_ConnectingDevices")
-    if not devices then return end
-
-    local count = devices:call("get_Count") or 0
-    local active_buttons = 0
-    
-    for i = 0, count - 1 do
-        local pad = devices:call("get_Item", i)
-        if pad then
-            local b = pad:call("get_Button") or 0
-            if b > 0 then active_buttons = b; break end
-        end
-    end
-
-    -- BINDING LOGIC (If clicked in UI)
-    if is_binding_mode then
-        if active_buttons ~= 0 and last_input_mask == 0 then
-            config.func_button = active_buttons
-            save_config()
-            is_binding_mode = false
-        end
-        last_input_mask = active_buttons
-        return
-    end
-
-    -- KEYBOARD BINDING LOGIC (scan all keys, capture modifiers)
-    if is_kb_binding_mode then
-        pcall(_tsm_scan_kb_binding)
-        if is_kb_binding_mode then return end -- still waiting for a key
-    end
-
-    if TrainingHotkeys.is_input_blocked() then
-        local switch_vk = config.switch_key or 0x30
-        local switch_mods = config.switch_modifiers or {}
-        local ok_kb, kb_down = pcall(_tsm_check_kb_switch, switch_vk, switch_mods)
-        last_kb_0_state = ok_kb and kb_down == true
-        last_input_mask = active_buttons
-        return
-    end
-
-    -- SCRIPT SWITCH LOGIC (FUNCTION + SQUARE on Pad)
-    local func_btn = _G.TrainingFuncButton
-    local is_func_held = false
-    if func_btn and func_btn > 0 then
-        is_func_held = (active_buttons & func_btn) == func_btn
-    end
-    _G.TrainingFuncHeld = is_func_held
-    local is_switch_pressed = (active_buttons & BTN_SQUARE) == BTN_SQUARE and (last_input_mask & BTN_SQUARE) ~= BTN_SQUARE
-
-    -- SCRIPT SWITCH LOGIC (configurable keyboard key + modifiers)
-    local switch_vk = config.switch_key or 0x30
-    local switch_mods = config.switch_modifiers or {}
-    local ok_kb, kb_down = pcall(_tsm_check_kb_switch, switch_vk, switch_mods)
-    local is_kb_0_down = ok_kb and kb_down == true
-    local is_kb_0_pressed = is_kb_0_down and not last_kb_0_state
-
-    -- Trigger switch if either Pad combo or Keyboard key is pressed
-    if (is_func_held and is_switch_pressed) or is_kb_0_pressed then
-        cycle_next_mode()
-    end
-
-    last_input_mask = active_buttons
-    last_kb_0_state = is_kb_0_down
-end
+TrainingHotkeys.register_scope("script_manager", {
+    title = "脚本总台",
+    order = 0,
+    enabled_default = false,
+    actions = {
+        {
+            id = "cycle_mode",
+            label = "循环切换训练模式",
+            enabled = function() return not _G.IsInBattleHub and is_in_training_mode() end,
+            run = cycle_next_mode,
+        },
+        {
+            id = "toggle_ui",
+            label = "隐藏 / 显示训练 UI",
+            enabled = function() return not _G.IsInBattleHub end,
+            run = toggle_global_ui_visibility,
+        },
+    },
+})
 
 -- ==========================================
 -- 2. UI RESTORATION & HUD TRACKING LOGIC
@@ -574,34 +453,6 @@ local MODE_BUTTONS = {
     { id = 4, label = "连段训练" },
 }
 
-local VK_NAMES = {
-    [0x08]="BACKSPACE",[0x09]="TAB",[0x0D]="ENTER",[0x10]="SHIFT",[0x11]="CTRL",[0x12]="ALT",
-    [0x14]="CAPS",[0x1B]="ESC",[0x20]="SPACE",
-    [0x21]="PGUP",[0x22]="PGDN",[0x23]="END",[0x24]="HOME",[0x25]="LEFT",[0x26]="UP",[0x27]="RIGHT",[0x28]="DOWN",
-    [0x2D]="INSERT",[0x2E]="DELETE",
-    [0x30]="0",[0x31]="1",[0x32]="2",[0x33]="3",[0x34]="4",[0x35]="5",[0x36]="6",[0x37]="7",[0x38]="8",[0x39]="9",
-    [0x41]="A",[0x42]="B",[0x43]="C",[0x44]="D",[0x45]="E",[0x46]="F",[0x47]="G",[0x48]="H",[0x49]="I",
-    [0x4A]="J",[0x4B]="K",[0x4C]="L",[0x4D]="M",[0x4E]="N",[0x4F]="O",[0x50]="P",[0x51]="Q",[0x52]="R",
-    [0x53]="S",[0x54]="T",[0x55]="U",[0x56]="V",[0x57]="W",[0x58]="X",[0x59]="Y",[0x5A]="Z",
-    [0x60]="NUM0",[0x61]="NUM1",[0x62]="NUM2",[0x63]="NUM3",[0x64]="NUM4",
-    [0x65]="NUM5",[0x66]="NUM6",[0x67]="NUM7",[0x68]="NUM8",[0x69]="NUM9",
-    [0x70]="F1",[0x71]="F2",[0x72]="F3",[0x73]="F4",[0x74]="F5",[0x75]="F6",
-    [0x76]="F7",[0x77]="F8",[0x78]="F9",[0x79]="F10",[0x7A]="F11",[0x7B]="F12",
-    [0xBA]=";",[0xBB]="=",[0xBC]=",",[0xBD]="-",[0xBE]=".",[0xBF]="/",[0xC0]="`",
-}
-local function vk_name(vk)
-    return VK_NAMES[vk] or string.format("0x%02X", vk)
-end
-
-local function combo_name(vk, mods)
-    local parts = {}
-    if mods then
-        for _, m in ipairs(mods) do parts[#parts + 1] = vk_name(m) end
-    end
-    parts[#parts + 1] = vk_name(vk)
-    return table.concat(parts, " + ")
-end
-
 local function draw_top_floating_bar()
     local visible, sw, sh = SharedUI.begin_floating_window_top("TrainingModeSwitch##top", top_bar_width, top_bar_height)
     if not visible then
@@ -611,16 +462,6 @@ local function draw_top_floating_bar()
 
     local scale = sh / 1080.0
     local sp = 4 * scale
-
-    -- Build switch label with dynamic shortcut (keyboard vs controller)
-    local switch_label
-    local fn = SharedUI.get_func_name()
-    local key_label = combo_name(config.switch_key or 0x30, config.switch_modifiers)
-    if SharedUI.is_keyboard_mode() or not fn then
-        switch_label = "切换训练模式 (" .. key_label .. ")"
-    else
-        switch_label = "切换训练模式 (" .. fn .. " + 方块/X)"
-    end
 
     local train_count = 1 + #MODE_BUTTONS
     local train_x = sw * 0.125
@@ -633,7 +474,7 @@ local function draw_top_floating_bar()
     local top_y = sh * 0.01
 
     imgui.set_cursor_pos(Vector2f.new(train_x, top_y))
-    if SharedUI.sf6_button(switch_label .. "##sw_top", SWITCH_COLOR, btn_w) then
+    if SharedUI.sf6_button("切换训练模式##sw_top", SWITCH_COLOR, btn_w) then
         cycle_next_mode()
     end
 
@@ -796,7 +637,7 @@ re.on_frame(function()
     _G.FlowMapID = fid
     _G.IsInBattleHub = (fid == 9)
     local is_replay = (fid == 10) or (_G.IsInReplay == true)
-    pcall(TrainingHotkeys.update, is_binding_mode or is_kb_binding_mode)
+    pcall(TrainingHotkeys.update)
 
     -- HIDE UI BUTTON (works in training + replay)
     if not _G._tsm_hide_flash then _G._tsm_hide_flash = 0 end
@@ -804,7 +645,6 @@ re.on_frame(function()
     pcall(_tsm_update_hide_rect)
     if not _G._tsm_hide_cooldown then _G._tsm_hide_cooldown = 0 end
     if _G._tsm_hide_cooldown > 0 then _G._tsm_hide_cooldown = _G._tsm_hide_cooldown - 1 end
-    handle_hide_ui_hotkey()
     if not _G.IsInBattleHub and _G._tsm_hide_cooldown == 0 and imgui.is_mouse_clicked(0) then
         local m = imgui.get_mouse()
         if m then
@@ -878,8 +718,6 @@ re.on_frame(function()
         _G.CurrentTrainerMode = 0
     end
 
-    handle_input()
-
     -- Clear D2D floating bar when no training mode is active
     if _G.CurrentTrainerMode == 0 then
         _G.TrainingFloatingBar = nil
@@ -909,8 +747,6 @@ re.on_frame(function()
         end)
     end
     _G._tsm_last_mode = _G.CurrentTrainerMode
-
-    if is_binding_mode then return end
 
     -- CHECK AUTOMATIC GUARD SWITCHING
     update_guard_logic()
@@ -1169,162 +1005,15 @@ re.on_draw_ui(function()
         end
 
         -- ==========================================
-        -- SECTION 2: CONTROLLER CONFIG
+        -- SECTION 2: HOTKEY SETTINGS
         -- ==========================================
-        if styled_header("--- 控制器设置 ---", UI_THEME.hdr_config) then
-            if is_binding_mode then
-                imgui.spacing()
-                imgui.push_style_color(5, 0xFF00FFFF)
-                imgui.push_style_color(21, 0xFF005555)
-                imgui.push_style_color(22, 0xFF007777)
-                imgui.push_style_color(23, 0xFF009999)
-                imgui.push_style_color(0, 0xFF00FFFF)
-                imgui.button(">>> 请按下手柄任意按键... <<<", Vector2f.new(-1, 40))
-                imgui.pop_style_color(5)
-                imgui.spacing()
-            else
-                local btn_name = "未设置"
-                if config.func_button then
-                    btn_name = "按键ID: " .. tostring(config.func_button)
-                    if config.func_button == 16384 then btn_name = "SELECT / BACK（选择/返回）" end
-                    if config.func_button == 8192 then btn_name = "R3 / RS（右摇杆按下）" end
-                    if config.func_button == 4096 then btn_name = "L3 / LS（左摇杆按下）" end
-                end
-
-                imgui.spacing()
-                imgui.push_style_color(5, 0xFFFFFFFF)
-                imgui.push_style_color(21, 0xFFCC6600)
-                imgui.push_style_color(22, 0xFFFF8800)
-                imgui.push_style_color(23, 0xFFFFAA33)
-                imgui.push_style_color(0, 0xFFFFCC66)
-                if config.func_button then
-                    -- Two buttons side by side: CHANGE + RESET
-                    local avail = imgui.get_window_size().x - 40
-                    local reset_w = 80
-                    if imgui.button("修改功能按键  [" .. btn_name .. "]", Vector2f.new(avail - reset_w - 8, 35)) then
-                        is_binding_mode = true
-                        last_input_mask = 0
-                    end
-                    imgui.pop_style_color(5)
-                    imgui.same_line(0, 8)
-                    imgui.push_style_color(5, 0xFFFFFFFF)
-                    imgui.push_style_color(21, 0xFF0000AA)
-                    imgui.push_style_color(22, 0xFF0000DD)
-                    imgui.push_style_color(23, 0xFF0000FF)
-                    imgui.push_style_color(0, 0xFFAAAAFF)
-                    if imgui.button("重置##func_reset", Vector2f.new(reset_w, 35)) then
-                        config.func_button = nil
-                        save_config()
-                    end
-                    imgui.pop_style_color(5)
-                else
-                    if imgui.button("修改功能按键  [" .. btn_name .. "]", Vector2f.new(-1, 35)) then
-                        is_binding_mode = true
-                        last_input_mask = 0
-                    end
-                    imgui.pop_style_color(5)
-                end
-                imgui.spacing()
-
-                if config.func_button then
-                    imgui.text_colored("功能按键用于所有手柄快捷键操作。", 0xFF888888)
-                    imgui.text_colored("按住功能按键期间会屏蔽其他输入。", 0xFF888888)
-                else
-                    imgui.text_colored("尚未设置功能按键。请设置一个来使用手柄快捷键。", 0xFFFF8800)
-                    imgui.text_colored("（功能键 + 方块 = 切换模式，功能键 + 方向键 = 调整计时）", 0xFF888888)
-                end
-
-                imgui.spacing()
-                imgui.separator()
-                imgui.spacing()
-
-                -- Keyboard switch key binding
-                if is_kb_binding_mode then
-                    imgui.push_style_color(5, 0xFF00FFFF)
-                    imgui.push_style_color(21, 0xFF005555)
-                    imgui.push_style_color(22, 0xFF007777)
-                    imgui.push_style_color(23, 0xFF009999)
-                    imgui.push_style_color(0, 0xFF00FFFF)
-                    imgui.button(">>> 请按下任意按键... <<<", Vector2f.new(-1, 35))
-                    imgui.pop_style_color(5)
-                else
-                    local cur_key = combo_name(config.switch_key or 0x30, config.switch_modifiers)
-                    imgui.push_style_color(5, 0xFFFFFFFF)
-                    imgui.push_style_color(21, 0xFF006644)
-                    imgui.push_style_color(22, 0xFF008866)
-                    imgui.push_style_color(23, 0xFF00AA88)
-                    imgui.push_style_color(0, 0xFF66FFCC)
-                    local avail = imgui.get_window_size().x - 40
-                    local reset_w = 80
-                    if imgui.button("修改切换按键  [" .. cur_key .. "]", Vector2f.new(avail - reset_w - 8, 35)) then
-                        is_kb_binding_mode = true
-                    end
-                    imgui.pop_style_color(5)
-                    imgui.same_line(0, 8)
-                    imgui.push_style_color(5, 0xFFFFFFFF)
-                    imgui.push_style_color(21, 0xFF0000AA)
-                    imgui.push_style_color(22, 0xFF0000DD)
-                    imgui.push_style_color(23, 0xFF0000FF)
-                    imgui.push_style_color(0, 0xFFAAAAFF)
-                    if imgui.button("重置##kb_reset", Vector2f.new(reset_w, 35)) then
-                        config.switch_key = 0x30
-                        config.switch_modifiers = {}
-                        save_config()
-                    end
-                    imgui.pop_style_color(5)
-                end
-                imgui.spacing()
-                imgui.text_colored("切换按键用于循环切换训练模式。", 0xFF888888)
-            end
-        end
-
-        -- ==========================================
-        -- SECTION 3: CUSTOM HOTKEYS
-        -- ==========================================
-        if styled_header("--- 自定义快捷键 ---", UI_THEME.hdr_config) then
-            imgui.text_colored("当前仅支持键盘；各模块默认关闭且无绑定。", 0xFF888888)
-            imgui.spacing()
+        if styled_header("--- 快捷键设置 ---", UI_THEME.hdr_config) then
             TrainingHotkeys.draw_menu()
         end
 
-        -- SECTION 3: HELP & SHORTCUTS
+        -- SECTION 3: MODE DESCRIPTIONS
         -- ==========================================
-        if styled_header("--- 帮助与快捷键 ---", UI_THEME.hdr_help) then
-            local fn = SharedUI.get_func_name()
-
-            imgui.text_colored("如何切换模式", 0xFF00FFFF)
-            imgui.text("  顶部栏：点击切换或任意模式按钮")
-            imgui.text("  键盘：按 [" .. combo_name(config.switch_key or 0x30, config.switch_modifiers) .. "]")
-            imgui.text("  键盘：按 [9] 隐藏/显示顶部栏和模式控制栏")
-            if fn then
-                imgui.text("  手柄：[" .. fn .. "] + [方块 / X]")
-            end
-            imgui.spacing()
-
-            imgui.separator()
-            imgui.text_colored("确认训练快捷键", 0xFF00FFFF)
-            imgui.text("  键盘 1 : 计时 -")
-            imgui.text("  键盘 2 : 计时 +")
-            imgui.text("  键盘 3 : 重置（空闲）/ 停止（运行中）")
-            imgui.text("  键盘 4 : 开始（空闲）/ 暂停（运行中）")
-            if fn then
-                imgui.text("  " .. fn .. "+DOWN  : 计时 -")
-                imgui.text("  " .. fn .. "+UP    : 计时 +")
-                imgui.text("  " .. fn .. "+LEFT  : 重置（空闲）/ 停止（运行中）")
-                imgui.text("  " .. fn .. "+RIGHT : 开始（空闲）/ 暂停（运行中）")
-            end
-            imgui.spacing()
-
-            imgui.separator()
-            imgui.text_colored("连段训练快捷键", 0xFF00FFFF)
-            imgui.text("  请在“自定义快捷键”中启用并绑定。")
-            imgui.text("  默认关闭，不再占用手柄、摇杆或键盘数字键。")
-            imgui.spacing()
-
-            imgui.separator()
-            imgui.text_colored("各模式说明", 0xFF00FFFF)
-            imgui.spacing()
-
+        if styled_header("--- 模式说明 ---", UI_THEME.hdr_help) then
             imgui.text_colored("确认训练", 0xFF00FF00)
             imgui.text("  练习命中确认接连段。")
             imgui.text("  木人随机防御；命中就继续连段。")

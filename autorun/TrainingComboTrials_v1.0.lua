@@ -1531,7 +1531,7 @@ local function apply_exact_position_now()
     return true
 end
 -- =========================================================
--- HELPER FUNCTIONS (Shared by UI buttons and pad shortcuts)
+-- HELPER FUNCTIONS (Shared by UI buttons and external actions)
 -- =========================================================
 
 local function reset_positions_to_default()
@@ -4459,9 +4459,6 @@ if _G._shared_input_post then
 table.insert(_G._shared_input_post, function(p_id, retval)
     if p_id == 0 and trial_state.is_playing and trial_state.fail_timer and trial_state.fail_timer > 0 then
         pcall(_ct_clear_inputs, trial_state.playing_player)
-    end
-    if p_id == 0 and _G.TrainingFuncHeld then
-        pcall(_ct_clear_inputs, 0)
     end
     if p_id == 0 and demo_state.is_playing and demo_state.p1_mask > 0 then
         pcall(_ct_demo_inject_mask)

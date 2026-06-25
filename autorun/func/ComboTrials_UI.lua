@@ -90,7 +90,7 @@ local function zh_status_text(text)
     return map[s] or s
 end
 
--- Shortcut-openable and navigable combo dropdown (replaces imgui.combo for ##FilesP1)
+-- Externally-openable combo dropdown (replaces imgui.combo for ##FilesP1)
 local _dropdown_highlight_idx = nil
 local _dropdown_scroll_needed = false
 
@@ -125,37 +125,11 @@ local function combo_openable(label, current_idx, items, force_open, btn_width)
         if force_open then _G.ComboTrials_OpenDropdown = false end
     end
 
-    -- Shortcut navigation (flags set by the input handler)
-    if _G.ComboTrials_DropdownNavUp then
-        _G.ComboTrials_DropdownNavUp = false
-        if _dropdown_highlight_idx and _dropdown_highlight_idx > 1 then
-            _dropdown_highlight_idx = _dropdown_highlight_idx - 1
-            _dropdown_scroll_needed = true
-        end
-    end
-    if _G.ComboTrials_DropdownNavDown then
-        _G.ComboTrials_DropdownNavDown = false
-        if _dropdown_highlight_idx and _dropdown_highlight_idx < #items then
-            _dropdown_highlight_idx = _dropdown_highlight_idx + 1
-            _dropdown_scroll_needed = true
-        end
-    end
-
     local changed = false
     local new_idx = current_idx
 
     if imgui.begin_popup(popup_id) then
         _G.ComboTrials_DropdownOpen = true
-
-        -- Shortcut selection (func+Cross/A or key 8)
-        if _G.ComboTrials_DropdownSelect then
-            _G.ComboTrials_DropdownSelect = false
-            if _dropdown_highlight_idx then
-                new_idx = _dropdown_highlight_idx
-                changed = (new_idx ~= current_idx)
-            end
-            imgui.close_current_popup()
-        end
 
         for i = 1, #items do
             local is_highlighted = (i == _dropdown_highlight_idx)
@@ -383,7 +357,7 @@ local function draw_single_line_content()
 
     -- === STATUS ENGINE (shared by replay and training) ===
 
-    -- Pick up cancel flag from shortcut handler
+    -- Pick up cancel flag from external actions
     if _G.ComboTrials_ReplayCancelPlayer ~= nil then
         local cp = _G.ComboTrials_ReplayCancelPlayer
         _G.ComboTrials_ReplayCancelPlayer = nil
@@ -391,7 +365,7 @@ local function draw_single_line_content()
         _replay_saved_clock = os.clock()
     end
 
-    -- Pick up save flag from shortcut handler
+    -- Pick up save flag from external actions
     if _G.ComboTrials_ReplaySavePlayer ~= nil then
         _replay_save_player = _G.ComboTrials_ReplaySavePlayer
         _G.ComboTrials_ReplaySavePlayer = nil

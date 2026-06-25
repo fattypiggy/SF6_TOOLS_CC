@@ -13691,7 +13691,8 @@
                     "ar": 234.8513,
                     "input": "6LK"
                 },
-                "yellow_offset": 50
+                "visibility": null,
+                "yellow_offset": 43
             },
             "Terry": {
                 "low": {
@@ -13748,6 +13749,7 @@
                     "ar": 148.341,
                     "input": "5HP"
                 },
+                "visibility": null,
                 "yellow_offset": 50
             },
             "Alex": {

@@ -233,75 +233,16 @@ function UI.draw_standard_hud(window_name, cfg, session, mode_label, show_timer,
     imgui.pop_style_var(2); imgui.pop_style_color(1)
 end
 
--- ==========================================
--- DYNAMIC SHORTCUT LABEL (pad vs keyboard)
--- ==========================================
-local function _sui_read_keyboard_mode()
-    local igm = sdk.get_managed_singleton("app.InputGuideManager")
-    if igm then return igm:call("GetMode", 0) == 2 end
-    return false
-end
-
-local function is_keyboard_mode()
-    local ok, kb = pcall(_sui_read_keyboard_mode)
-    return (ok and kb) or false
-end
-UI.is_keyboard_mode = is_keyboard_mode
-
--- ==========================================
--- FUNC BUTTON NAME + DYNAMIC MESSAGES
--- ==========================================
-local FUNC_NAMES = {
-    [16384] = "SELECT",
-    [8192]  = "R3",
-    [4096]  = "L3",
-}
-
-function UI.get_func_name()
-    local id = _G.TrainingFuncButton
-    if not id then return nil end
-    return FUNC_NAMES[id] or ("BTN " .. tostring(id))
-end
-
--- Dynamic pause/reset messages adapting to keyboard vs controller
 function UI.pause_message()
-    local fn = UI.get_func_name()
-    if is_keyboard_mode() or not fn then
-        return "已暂停：按 4 继续"
-    end
-    return "已暂停：按 " .. fn .. " + RIGHT 继续"
+    return "已暂停"
 end
 
 function UI.reset_message()
-    local fn = UI.get_func_name()
-    if is_keyboard_mode() or not fn then
-        return "按 3 重置"
-    end
-    return "按 " .. fn .. " + LEFT 重置"
-end
-
--- Dynamic shortcut label for button text: D/U/R/L → keyboard number or FUNC+DIR
-local DIR_NAMES = { D = "DOWN", U = "UP", R = "RIGHT", L = "LEFT", A = "CROSS" }
-local DIR_TO_KEY = { D = "1", U = "2", R = "3", L = "4", A = "8" }
-
-function UI.sc_label(pad_dir, kb_key)
-    local fn = UI.get_func_name()
-    if is_keyboard_mode() or not fn then
-        return kb_key or DIR_TO_KEY[pad_dir] or pad_dir
-    else
-        return fn .. "+" .. (DIR_NAMES[pad_dir] or pad_dir)
-    end
-end
-
--- Always returns pad label (longest) for stable button width calculations
-function UI.sc_label_max(pad_dir)
-    local fn = UI.get_func_name()
-    if not fn then return DIR_TO_KEY[pad_dir] or pad_dir end
-    return fn .. "+" .. (DIR_NAMES[pad_dir] or pad_dir)
+    return "训练已结束"
 end
 
 -- ==========================================
--- SHORTCUT BUTTON COLORS (read from Training_ScriptManager via _G)
+-- ACTION BUTTON COLORS (read from Training_ScriptManager via _G)
 -- ==========================================
 -- Fallback defaults (ABGR) if ScriptManager hasn't loaded yet
 local SC_DEFAULTS = {

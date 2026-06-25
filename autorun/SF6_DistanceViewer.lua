@@ -285,7 +285,6 @@ local config = {
     
     -- Global
     marker_thickness = 5.0, marker_origin_shift = 0.0,
-	func_button = nil,
     -- Window State
     show_debug_window = false,
 	expert_mode_enabled = false,
@@ -555,7 +554,6 @@ local function apply_teleport_exact(attacker_id, distance, is_retry, is_throw)
 end
 
 local first_draw = true
-local is_binding_mode = false
 
 -- Functions utilizing the loaded config for visibility
 local function is_move_visible(pi, char_name, input)
@@ -2235,6 +2233,20 @@ local function cycle_player_display(p)
     save_settings()
 end
 
+local distance_viewer_commands = {
+    cycle_p1 = function() cycle_player_display("p1") end,
+    cycle_p2 = function() cycle_player_display("p2") end,
+    toggle_window = function()
+        config.show_debug_window = not config.show_debug_window
+        first_draw = true
+        save_settings()
+    end,
+}
+
+local TrainingHotkeys = require("func/Training_Hotkeys")
+local DistanceViewerHotkeys = require("func/DistanceViewer_Hotkeys")
+DistanceViewerHotkeys.init(distance_viewer_commands, TrainingHotkeys)
+
 -- =========================================================
 -- [AUTO ACTIVATE MOVE] — State & helpers (before draw_config_ui)
 -- =========================================================
@@ -2395,46 +2407,9 @@ end
 
 local function draw_config_ui()
     -- ==========================================
-    -- 0. HELP & INFO
+    -- 0. AUTO ACTIVATE INFO
     -- ==========================================
-    if styled_header("--- 帮助 & 信息 ---", UI_THEME.hdr_info) then
-        imgui.text("快捷键（键盘 / 手柄）：")
-
-        if not config.expert_mode_enabled then
-            imgui.text("- [5] 或 (Func) + LB/L1 : 切换 P1（普通 / 关闭）")
-            imgui.text("- [6] 或 (Func) + RB/R1 : 切换 P2（普通 / 关闭）")
-        else
-            imgui.text("- [5] 或 (Func) + LB/L1 : 切换 P1（开启 / 关闭）")
-            imgui.text("- [6] 或 (Func) + RB/R1 : 切换 P2（开启 / 关闭）")
-        end
-
-        imgui.text("- [7] 或 (Func) + Triangle/Y : 切换 UI 窗口")
-
-        if _G.TrainingFuncButton ~= nil then
-            imgui.text_colored("* (Func) 功能键在 Training Script Manager 中定义（默认：Select）", COL_GREY)
-        else
-            imgui.separator()
-            if is_binding_mode then
-                imgui.text_colored("-- 按下任意手柄按钮绑定 FUNC 键 --", 0xFF00FFFF)
-            else
-                local btn_name = "未设置"
-                if config.func_button then
-                    btn_name = "ID: " .. tostring(config.func_button)
-                    if config.func_button == 16384 then btn_name = "SELECT / BACK" end
-                    if config.func_button == 8192 then btn_name = "R3 / RS" end
-                    if config.func_button == 4096 then btn_name = "L3 / LS" end
-                end
-
-                imgui.text("当前 Func 按键: " .. btn_name)
-                imgui.same_line()
-                if imgui.button("更改 Func 按键") then
-                    is_binding_mode = true
-                    last_input_mask = 0
-                end
-            end
-        end
-        imgui.spacing()
-        imgui.separator()
+    if styled_header("--- 自动激活说明 ---", UI_THEME.hdr_info) then
         imgui.text_colored("自动激活", 0xFF00FFFF)
         imgui.text("  主(M): 设置触发招式及其范围。")
         imgui.text("  副(S): 开火时随机选择的额外招式。")
@@ -2943,82 +2918,6 @@ end
 load_advanced_data()
 
 -- =========================================================
--- [SHORTCUTS SYSTEM]
--- =========================================================
-local last_input_mask = 0
-local KB_5 = 0x35
-local KB_6 = 0x36
-local KB_7 = 0x37
-local last_kb_state = { [KB_5] = false, [KB_6] = false, [KB_7] = false }
-local PAD_LB = 256
-local PAD_RB = 1024
-local PAD_TRIANGLE = 16
-
-local function get_hardware_pad_mask()
-    local gamepad_manager = sdk.get_native_singleton("via.hid.GamePad")
-    local gamepad_type = sdk.find_type_definition("via.hid.GamePad")
-    if not gamepad_manager then return 0 end
-    local devices = sdk.call_native_func(gamepad_manager, gamepad_type, "get_ConnectingDevices")
-    if not devices then return 0 end
-    local count = devices:call("get_Count") or 0
-    for i = 0, count - 1 do
-        local pad = devices:call("get_Item", i)
-        if pad then
-            local b = pad:call("get_Button") or 0; if b > 0 then return b end
-        end
-    end
-    return 0
-end
-
-local function is_kb_down(vk)
-    local ok, result = pcall(reframework.is_key_down, reframework, vk)
-    return ok and result
-end
-
-local function handle_viewer_shortcuts()
-    local active_buttons = get_hardware_pad_mask()
-    local kb_now = { [KB_5] = is_kb_down(KB_5), [KB_6] = is_kb_down(KB_6), [KB_7] = is_kb_down(KB_7) }
-    local function kb_pressed(vk) return kb_now[vk] and not last_kb_state[vk] end
-
-    if is_binding_mode then
-        if active_buttons ~= 0 and last_input_mask == 0 then
-            config.func_button = active_buttons
-            save_settings()
-            is_binding_mode = false
-        end
-        last_input_mask = active_buttons
-        last_kb_state = kb_now
-        return
-    end
-
-    local func_btn = _G.TrainingFuncButton or config.func_button
-    local is_func_held = false
-    if func_btn and func_btn > 0 then
-        is_func_held = ((active_buttons & func_btn) == func_btn)
-    end
-
-    local function is_pressed(target_mask)
-        if not is_func_held then return false end
-        return ((active_buttons & target_mask) == target_mask) and not ((last_input_mask & target_mask) == target_mask)
-    end
-
-    local changed = false
-
-    -- Cycle P1 Modes
-    if is_pressed(PAD_LB) or kb_pressed(KB_5) then
-        cycle_player_display("p1"); changed = true
-    end
-
-    -- Cycle P2 Modes
-    if is_pressed(PAD_RB) or kb_pressed(KB_6) then
-        cycle_player_display("p2"); changed = true
-    end
-
-    if changed then save_settings() end
-    last_input_mask = active_buttons; last_kb_state = kb_now
-end
-
--- =========================================================
 -- [AUTO ACTIVATE MOVE] — Tick & Hook
 -- =========================================================
 local function aa_has_any_move()
@@ -3500,8 +3399,6 @@ re.on_frame(function()
             end
         end
     end
-    handle_viewer_shortcuts()
-
     -- Build local rect list from all sources (independent of frame ordering)
     local all_rects = {}
     -- From SharedUI floating bars

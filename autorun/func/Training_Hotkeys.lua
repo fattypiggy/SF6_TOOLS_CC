@@ -274,7 +274,6 @@ local function draw_scope(scope)
         scope_cfg.enabled = enabled == true
         save_config()
     end
-    imgui.text_colored("默认无绑定；只在这里启用并绑定后才响应。", 0xFF888888)
 
     for _, action_id in ipairs(scope.action_order) do
         local action = scope.actions[action_id]

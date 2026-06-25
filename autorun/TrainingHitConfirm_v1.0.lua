@@ -105,12 +105,6 @@ local TEXTS = {
 -- =========================================================
 local DEPENDANT_ON_MANAGER = true 
 
--- BUTTON MASKS
-local BTN_UP     = 1
-local BTN_DOWN   = 2
-local BTN_LEFT   = 4
-local BTN_RIGHT  = 8
-
 local MASK_LIGHT  = 144 -- 16 + 128
 local MASK_MEDIUM = 288 -- 32 + 256
 local MASK_HEAVY  = 576 -- 64 + 512
@@ -320,21 +314,6 @@ local function check_p1_cancelable()
     local ok, cancelable = pcall(_hc_check_cancelable_impl)
     if ok and cancelable then return true end
     return false
-end
-
--- Keep Hardware reader ONLY for menu navigation shortcuts
-local function get_hardware_pad_mask()
-    local gamepad_manager = sdk.get_native_singleton("via.hid.GamePad")
-    local gamepad_type = sdk.find_type_definition("via.hid.GamePad")
-    if not gamepad_manager then return 0 end
-    local devices = sdk.call_native_func(gamepad_manager, gamepad_type, "get_ConnectingDevices")
-    if not devices then return 0 end
-    local count = devices:call("get_Count") or 0
-    for i = 0, count - 1 do
-        local pad = devices:call("get_Item", i)
-        if pad then local b = pad:call("get_Button") or 0; if b > 0 then return b end end
-    end
-    return 0
 end
 
 -- local function format_time(s) if not s or s < 0 then s = 0 end return string.format("%02d:%02d", math.floor(s/60), math.floor(s%60)) end
@@ -971,15 +950,7 @@ local function update_logic()
     if is_game_active then update_detection() end
 end
 
--- =========================================================
--- INPUT HANDLING
--- =========================================================
-local last_input_mask = 0
-local last_kb_state = { [0x31]=false, [0x32]=false, [0x33]=false, [0x34]=false }
-
 local function hc_ticker(msg) if _G.show_custom_ticker then _G.show_custom_ticker(msg, 0.3) end end
-
-local function _hc_is_key_down(k) return reframework:is_key_down(k) end
 
 local function apply_difficulty(val)
     user_config.difficulty = val
@@ -993,104 +964,55 @@ local function apply_difficulty(val)
     save_conf()
 end
 
-local function handle_input()
-    -- Use Hardware Input for MENU NAVIGATION Only
-    local active_buttons = get_hardware_pad_mask()
-
-    local func_btn = _G.TrainingFuncButton or 16384
-    local is_func_held = ((active_buttons & func_btn) == func_btn)
-
-    local kb_state = {}
-    for _, k in ipairs({0x31, 0x32, 0x33, 0x34}) do
-        local ok, down = pcall(_hc_is_key_down, k)
-        kb_state[k] = ok and down
-    end
-    local function kb_pressed(k) return kb_state[k] and not last_kb_state[k] end
-    local function pad_pressed(btn) return ((active_buttons & btn) == btn) and not ((last_input_mask & btn) == btn) end
-    local function is_action(btn, kb) return (is_func_held and pad_pressed(btn)) or kb_pressed(kb) end
-
-    -- 1. TIMER/TRIALS SETTINGS (UP/DOWN = 2/3)
+local function adjust_training_amount(delta)
+    if GS.in_pause_menu then return end
     if not session.is_running and not session.is_time_up then
-        if is_action(BTN_UP, 0x32) then
-            if user_config.session_mode == "timer" then
-                user_config.timer_minutes = math.min(60, user_config.timer_minutes + 1)
-                session.time_rem = user_config.timer_minutes * 60
-                set_feedback("计时：" .. user_config.timer_minutes .. " 分钟", COLORS.White, 1.0)
-            else
-                user_config.trial_count = math.min(200, user_config.trial_count + 10)
-                set_feedback(tostring(user_config.trial_count), COLORS.White, 1.0)
-            end
-            save_conf()
+        if user_config.session_mode == "timer" then
+            user_config.timer_minutes = math.max(1, math.min(60, user_config.timer_minutes + delta))
+            session.time_rem = user_config.timer_minutes * 60
+            set_feedback("计时：" .. user_config.timer_minutes .. " 分钟", COLORS.White, 1.0)
+        else
+            user_config.trial_count = math.max(10, math.min(200, user_config.trial_count + (delta * 10)))
+            set_feedback(tostring(user_config.trial_count), COLORS.White, 1.0)
         end
-        if is_action(BTN_DOWN, 0x31) then
-            if user_config.session_mode == "timer" then
-                user_config.timer_minutes = math.max(1, user_config.timer_minutes - 1)
-                session.time_rem = user_config.timer_minutes * 60
-                set_feedback("计时：" .. user_config.timer_minutes .. " 分钟", COLORS.White, 1.0)
-            else
-                user_config.trial_count = math.max(10, user_config.trial_count - 10)
-                set_feedback(tostring(user_config.trial_count), COLORS.White, 1.0)
-            end
-            save_conf()
-        end
+        save_conf()
     end
-
-    -- POSITION 3 (key 3): START when not running, STOP when running
-    -- Pad: BTN_RIGHT=start/pause, BTN_LEFT=stop/reset (unchanged)
-    local pos3_kb = kb_pressed(0x33)
-    local pos3_pad = is_func_held and pad_pressed(BTN_RIGHT)
-    local pos4_kb = kb_pressed(0x34)
-    local pos4_pad = is_func_held and pad_pressed(BTN_LEFT)
-
-    -- Position 3 (key 3 / FUNC+LEFT): RESET when idle, STOP when running
-    if not session.is_running and not session.is_time_up then
-        if pos3_kb or pos4_pad then
-            reset_session_stats()
-            set_feedback(TEXTS.reset_done, COLORS.White, 1.0)
-            hc_ticker("会话已重置")
-        end
-    elseif session.is_running then
-        if pos3_kb or pos4_pad then
-            reset_session_stats()
-            set_feedback("已停止", COLORS.Red, 1.5)
-            hc_ticker("训练已停止")
-        end
-    elseif session.is_time_up then
-        if pos3_kb or pos4_pad then
-            reset_session_stats()
-            set_feedback(TEXTS.reset_done, COLORS.White, 1.0)
-            hc_ticker("会话已重置")
-        end
-    end
-
-    -- Position 4 (key 4 / FUNC+RIGHT): START when idle, PAUSE when running
-    if not session.is_running and not session.is_time_up then
-        if pos4_kb or pos3_pad then
-            reset_session_stats()
-            if user_config.session_mode == "timer" then session.time_rem = user_config.timer_minutes * 60 end
-            session.is_running = true; session.is_paused = false
-            set_feedback(TEXTS.started, COLORS.Green, 1.0)
-            hc_ticker("训练已开始")
-        end
-    elseif session.is_running then
-        if pos4_kb or pos3_pad then
-            session.is_paused = not session.is_paused
-            set_feedback(session.is_paused and TEXTS.paused or TEXTS.resumed, COLORS.Yellow, 1.0)
-            hc_ticker(session.is_paused and "训练已暂停" or "训练已继续")
-        end
-    end
-
-    last_input_mask = active_buttons
-    last_kb_state = kb_state
 end
 
-local function update_logic_and_input()
-    handle_input()
-    update_logic()
+local function reset_or_stop_training()
+    if GS.in_pause_menu then return end
+    local was_running = session.is_running
+    reset_session_stats()
+    set_feedback(was_running and "已停止" or TEXTS.reset_done, was_running and COLORS.Red or COLORS.White, was_running and 1.5 or 1.0)
+    hc_ticker(was_running and "训练已停止" or "会话已重置")
 end
 
+local function start_or_pause_training()
+    if GS.in_pause_menu then return end
+    if not session.is_running and not session.is_time_up then
+        reset_session_stats()
+        if user_config.session_mode == "timer" then session.time_rem = user_config.timer_minutes * 60 end
+        session.is_running = true
+        session.is_paused = false
+        set_feedback(TEXTS.started, COLORS.Green, 1.0)
+        hc_ticker("训练已开始")
+    elseif session.is_running then
+        session.is_paused = not session.is_paused
+        set_feedback(session.is_paused and TEXTS.paused or TEXTS.resumed, COLORS.Yellow, 1.0)
+        hc_ticker(session.is_paused and "训练已暂停" or "训练已继续")
+    end
+end
 
+local hit_confirm_commands = {
+    decrease_amount = function() adjust_training_amount(-1) end,
+    increase_amount = function() adjust_training_amount(1) end,
+    reset_or_stop = reset_or_stop_training,
+    start_or_pause = start_or_pause_training,
+}
 
+local TrainingHotkeys = require("func/Training_Hotkeys")
+local HitConfirmHotkeys = require("func/HitConfirm_Hotkeys")
+HitConfirmHotkeys.init(hit_confirm_commands, TrainingHotkeys)
 -- =========================================================
 -- [FIXED EVENTS]
 -- =========================================================
@@ -1140,7 +1062,6 @@ end
 
 -- SESSION BUTTONS — DOCKED
 local function draw_session_buttons_docked()
-    local sl = SharedUI.sc_label
     local SC = SharedUI.SC_COLORS
     -- Mode toggle
     local mode_label = user_config.session_mode == "timer" and "模式：计时" or "模式：次数"
@@ -1151,21 +1072,21 @@ local function draw_session_buttons_docked()
     end
     imgui.same_line()
     if user_config.session_mode == "timer" then
-        if SharedUI.sc_button("减少本次训练量(1)##dk_hc", SC.c1) then user_config.timer_minutes = math.max(1, user_config.timer_minutes - 1); reset_session_stats(); save_conf() end
+        if SharedUI.sc_button("减少本次训练量##dk_hc", SC.c1) then user_config.timer_minutes = math.max(1, user_config.timer_minutes - 1); reset_session_stats(); save_conf() end
         imgui.same_line()
-        if SharedUI.sc_button("增加本次训练量(2)##dk_hc", SC.c2) then user_config.timer_minutes = math.min(60, user_config.timer_minutes + 1); reset_session_stats(); save_conf() end
+        if SharedUI.sc_button("增加本次训练量##dk_hc", SC.c2) then user_config.timer_minutes = math.min(60, user_config.timer_minutes + 1); reset_session_stats(); save_conf() end
         imgui.same_line(); imgui.text(tostring(user_config.timer_minutes) .. " 分钟")
     else
-        if SharedUI.sc_button("减少本次训练量(1)##dk_hc", SC.c1) then user_config.trial_count = math.max(10, user_config.trial_count - 10); reset_session_stats(); save_conf() end
+        if SharedUI.sc_button("减少本次训练量##dk_hc", SC.c1) then user_config.trial_count = math.max(10, user_config.trial_count - 10); reset_session_stats(); save_conf() end
         imgui.same_line()
-        if SharedUI.sc_button("增加本次训练量(2)##dk_hc", SC.c2) then user_config.trial_count = math.min(200, user_config.trial_count + 10); reset_session_stats(); save_conf() end
+        if SharedUI.sc_button("增加本次训练量##dk_hc", SC.c2) then user_config.trial_count = math.min(200, user_config.trial_count + 10); reset_session_stats(); save_conf() end
         imgui.same_line(); imgui.text(tostring(user_config.trial_count) .. " 次")
     end
     imgui.same_line(300)
-    if SharedUI.sc_button("重置训练数据(3)##dk_hc", SC.c3) then reset_session_stats(); set_feedback(TEXTS.reset_done, COLORS.White, 1.0); hc_ticker("会话已重置") end
+    if SharedUI.sc_button("重置训练数据##dk_hc", SC.c3) then reset_session_stats(); set_feedback(TEXTS.reset_done, COLORS.White, 1.0); hc_ticker("会话已重置") end
     imgui.spacing()
     if not session.is_running then
-        if SharedUI.sc_button("开始训练(4)##dk_hc", SC.c4) then
+        if SharedUI.sc_button("开始训练##dk_hc", SC.c4) then
             reset_session_stats()
             if user_config.session_mode == "timer" then session.time_rem = user_config.timer_minutes * 60 end
             session.is_running = true; session.is_paused = false
@@ -1173,9 +1094,9 @@ local function draw_session_buttons_docked()
             hc_ticker("训练已开始")
         end
     else
-        if SharedUI.sc_button("停止 (" .. sl("L", "3") .. ")##dk_hc", SC.c3) then reset_session_stats(); set_feedback("已停止", COLORS.Red, 1.0); hc_ticker("训练已停止") end
+        if SharedUI.sc_button("停止##dk_hc", SC.c3) then reset_session_stats(); set_feedback("已停止", COLORS.Red, 1.0); hc_ticker("训练已停止") end
         imgui.same_line()
-        if SharedUI.sc_button((session.is_paused and "继续" or "暂停") .. " (" .. sl("R", "4") .. ")##dk_hc", SC.c4) then session.is_paused = not session.is_paused; hc_ticker(session.is_paused and "训练已暂停" or "训练已继续") end
+        if SharedUI.sc_button((session.is_paused and "继续" or "暂停") .. "##dk_hc", SC.c4) then session.is_paused = not session.is_paused; hc_ticker(session.is_paused and "训练已暂停" or "训练已继续") end
     end
 end
 
@@ -1183,17 +1104,15 @@ end
 local function draw_session_floating()
     local visible, sw, sh = SharedUI.begin_floating_window("确认训练##float")
     if not visible then user_config.show_floating = false; save_conf(); SharedUI.end_floating_window(); return end
-    local sl = SharedUI.sc_label
     local SC = SharedUI.SC_COLORS
     local w_width = imgui.get_window_size().x
     local sp = 4 * (sh / 1080.0)
     local pad_x = sw * 0.01
     SharedUI.draw_floating_bg()
-    local slm = SharedUI.sc_label_max
     local all_labels = {
-        "减少本次训练量(1)", "增加本次训练量(2)",
-        "重置训练数据(3)", "停止训练(3)",
-        "开始训练(4)", "暂停训练(4)"
+        "减少本次训练量", "增加本次训练量",
+        "重置训练数据", "停止训练",
+        "开始训练", "暂停训练"
     }
     local max_w = 0
     for _, t in ipairs(all_labels) do local tw = imgui.calc_text_size(t).x; if tw > max_w then max_w = tw end end
@@ -1203,25 +1122,25 @@ local function draw_session_floating()
     imgui.set_cursor_pos(Vector2f.new(pad_x, sh * 0.01))
     -- +/- buttons adapt to mode
     if user_config.session_mode == "timer" then
-        if SharedUI.sf6_button("减少本次训练量(1)##fl_hc", SC.c1, actual_w) then user_config.timer_minutes = math.max(1, user_config.timer_minutes - 1); reset_session_stats(); save_conf() end
+        if SharedUI.sf6_button("减少本次训练量##fl_hc", SC.c1, actual_w) then user_config.timer_minutes = math.max(1, user_config.timer_minutes - 1); reset_session_stats(); save_conf() end
         imgui.same_line(0, sp)
-        if SharedUI.sf6_button("增加本次训练量(2)##fl_hc", SC.c2, actual_w) then user_config.timer_minutes = math.min(60, user_config.timer_minutes + 1); reset_session_stats(); save_conf() end
+        if SharedUI.sf6_button("增加本次训练量##fl_hc", SC.c2, actual_w) then user_config.timer_minutes = math.min(60, user_config.timer_minutes + 1); reset_session_stats(); save_conf() end
     else
-        if SharedUI.sf6_button("减少本次训练量(1)##fl_hc", SC.c1, actual_w) then user_config.trial_count = math.max(10, user_config.trial_count - 10); reset_session_stats(); save_conf() end
+        if SharedUI.sf6_button("减少本次训练量##fl_hc", SC.c1, actual_w) then user_config.trial_count = math.max(10, user_config.trial_count - 10); reset_session_stats(); save_conf() end
         imgui.same_line(0, sp)
-        if SharedUI.sf6_button("增加本次训练量(2)##fl_hc", SC.c2, actual_w) then user_config.trial_count = math.min(200, user_config.trial_count + 10); reset_session_stats(); save_conf() end
+        if SharedUI.sf6_button("增加本次训练量##fl_hc", SC.c2, actual_w) then user_config.trial_count = math.min(200, user_config.trial_count + 10); reset_session_stats(); save_conf() end
     end
     imgui.same_line(0, sp)
     if not session.is_running then
-        if SharedUI.sf6_button("重置训练数据(3)##fl_hc", SC.c3, actual_w) then reset_session_stats(); set_feedback(TEXTS.reset_done, COLORS.White, 1.0); hc_ticker("会话已重置") end
+        if SharedUI.sf6_button("重置训练数据##fl_hc", SC.c3, actual_w) then reset_session_stats(); set_feedback(TEXTS.reset_done, COLORS.White, 1.0); hc_ticker("会话已重置") end
     else
-        if SharedUI.sf6_button("停止 (" .. sl("L", "3") .. ")##fl_hc", SC.c3, actual_w) then reset_session_stats(); set_feedback("已停止", COLORS.Red, 1.0); hc_ticker("训练已停止") end
+        if SharedUI.sf6_button("停止##fl_hc", SC.c3, actual_w) then reset_session_stats(); set_feedback("已停止", COLORS.Red, 1.0); hc_ticker("训练已停止") end
     end
     imgui.same_line(0, sp)
     if session.is_running then
-        if SharedUI.sf6_button((session.is_paused and "继续" or "暂停") .. " (" .. sl("R", "4") .. ")##fl_hc", SC.c4, actual_w) then session.is_paused = not session.is_paused; hc_ticker(session.is_paused and "训练已暂停" or "训练已继续") end
+        if SharedUI.sf6_button((session.is_paused and "继续" or "暂停") .. "##fl_hc", SC.c4, actual_w) then session.is_paused = not session.is_paused; hc_ticker(session.is_paused and "训练已暂停" or "训练已继续") end
     else
-        if SharedUI.sf6_button("开始训练(4)##fl_hc", SC.c4, actual_w) then
+        if SharedUI.sf6_button("开始训练##fl_hc", SC.c4, actual_w) then
             reset_session_stats()
             if user_config.session_mode == "timer" then
                 session.time_rem = user_config.timer_minutes * 60
@@ -1284,7 +1203,7 @@ re.on_frame(function()
     local cur_mode = _G.CurrentTrainerMode or 0
 
     if should_update_logic then
-        update_logic_and_input()
+        update_logic()
     end
 
     -- [NEW] Only draw the HUD when allowed (hidden during pause menu)
