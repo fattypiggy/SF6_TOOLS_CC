@@ -217,6 +217,11 @@ local function localize_motion_text(s)
     return s
 end
 
+local function is_shun_goku_satsu_motion(motion)
+    local s = tostring(motion or ""):upper()
+    return s:find("SHUN%s+GOKU%s+SATSU") ~= nil or s:find("瞬狱杀") ~= nil
+end
+
 local function parse_motion_to_icons(log_entry, trial_mode, should_flip, reverse_layout)
     local d2d_cfg = ctx.d2d_cfg
     local motion_tokens = {}
@@ -224,7 +229,7 @@ local function parse_motion_to_icons(log_entry, trial_mode, should_flip, reverse
 
     -- Convert to uppercase IMMEDIATELY so that j. becomes J.
     s = s:upper()
-    if log_entry.id == 1231 then
+    if log_entry.id == 1231 and is_shun_goku_satsu_motion(s) then
         s = "LP,LP,6,LK,HP (瞬狱杀)"
     end
 
@@ -1102,7 +1107,7 @@ end
 function M.init(shared_ctx)
     ctx = shared_ctx
     ctx.localize_motion_text = function(motion, action_id)
-        if action_id == 1231 then
+        if action_id == 1231 and is_shun_goku_satsu_motion(motion) then
             return "LP,LP,6,LK,HP (瞬狱杀)"
         end
         return localize_motion_text(tostring(motion or ""):upper())
