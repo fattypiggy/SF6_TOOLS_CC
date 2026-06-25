@@ -8,6 +8,7 @@ local json = json
 require("func/SharedHooks") -- error registry (_G.safe_load_json) + shared hooks
 local GS = require("func/GameState")
 local UIKit = require("func/UIKit")
+local TrainingHotkeys = require("func/Training_Hotkeys")
 
 -- ==========================================
 -- CUSTOM TICKER SYSTEM
@@ -362,8 +363,9 @@ local function toggle_global_ui_visibility()
 end
 
 local function handle_hide_ui_hotkey()
-    if is_kb_binding_mode then
-        last_kb_hide_state = false
+    if is_kb_binding_mode or TrainingHotkeys.is_input_blocked() then
+        local ok, down = pcall(reframework.is_key_down, reframework, HIDE_UI_KEY)
+        last_kb_hide_state = ok and down == true
         return
     end
 
@@ -409,6 +411,15 @@ local function handle_input()
     if is_kb_binding_mode then
         pcall(_tsm_scan_kb_binding)
         if is_kb_binding_mode then return end -- still waiting for a key
+    end
+
+    if TrainingHotkeys.is_input_blocked() then
+        local switch_vk = config.switch_key or 0x30
+        local switch_mods = config.switch_modifiers or {}
+        local ok_kb, kb_down = pcall(_tsm_check_kb_switch, switch_vk, switch_mods)
+        last_kb_0_state = ok_kb and kb_down == true
+        last_input_mask = active_buttons
+        return
     end
 
     -- SCRIPT SWITCH LOGIC (FUNCTION + SQUARE on Pad)
@@ -785,6 +796,7 @@ re.on_frame(function()
     _G.FlowMapID = fid
     _G.IsInBattleHub = (fid == 9)
     local is_replay = (fid == 10) or (_G.IsInReplay == true)
+    pcall(TrainingHotkeys.update, is_binding_mode or is_kb_binding_mode)
 
     -- HIDE UI BUTTON (works in training + replay)
     if not _G._tsm_hide_flash then _G._tsm_hide_flash = 0 end
@@ -1267,8 +1279,14 @@ re.on_draw_ui(function()
         end
 
         -- ==========================================
-        -- SECTION 2.5: HIDE UI BUTTON
+        -- SECTION 3: CUSTOM HOTKEYS
         -- ==========================================
+        if styled_header("--- 自定义快捷键 ---", UI_THEME.hdr_config) then
+            imgui.text_colored("当前仅支持键盘；各模块默认关闭且无绑定。", 0xFF888888)
+            imgui.spacing()
+            TrainingHotkeys.draw_menu()
+        end
+
         -- SECTION 3: HELP & SHORTCUTS
         -- ==========================================
         if styled_header("--- 帮助与快捷键 ---", UI_THEME.hdr_help) then
@@ -1276,7 +1294,7 @@ re.on_draw_ui(function()
 
             imgui.text_colored("如何切换模式", 0xFF00FFFF)
             imgui.text("  顶部栏：点击切换或任意模式按钮")
-            imgui.text("  键盘：按 [0]")
+            imgui.text("  键盘：按 [" .. combo_name(config.switch_key or 0x30, config.switch_modifiers) .. "]")
             imgui.text("  键盘：按 [9] 隐藏/显示顶部栏和模式控制栏")
             if fn then
                 imgui.text("  手柄：[" .. fn .. "] + [方块 / X]")
@@ -1299,16 +1317,8 @@ re.on_draw_ui(function()
 
             imgui.separator()
             imgui.text_colored("连段训练快捷键", 0xFF00FFFF)
-            imgui.text("  键盘 1 : 录制 P1 / 停止并保存")
-            imgui.text("  键盘 2 : 开始 P1 连段训练 / 停止连段训练")
-            imgui.text("  键盘 3 : 录制 P2")
-            imgui.text("  键盘 4 : 切换位置模式")
-            if fn then
-                imgui.text("  " .. fn .. "+LEFT  : 录制 P1 / 停止并保存")
-                imgui.text("  " .. fn .. "+UP    : 开始 P1 连段训练 / 停止连段训练")
-                imgui.text("  " .. fn .. "+DOWN  : 录制 P2")
-                imgui.text("  " .. fn .. "+RIGHT : 切换位置模式")
-            end
+            imgui.text("  请在“自定义快捷键”中启用并绑定。")
+            imgui.text("  默认关闭，不再占用手柄、摇杆或键盘数字键。")
             imgui.spacing()
 
             imgui.separator()

@@ -21,7 +21,6 @@ local load_and_start_trial, start_recording, stop_recording_and_save, cancel_rec
 local refresh_combo_list, restore_trial_vital, save_d2d_config, get_exc_filename
 local ui_state
 
-
 local dump_status = ""
 local exc_status = ""
 
@@ -33,19 +32,6 @@ local _replay_save_player = nil
 local _replay_saved_fname_p1 = nil
 local _replay_saved_fname_p2 = nil
 local _prev_is_recording = false
-
--- Dynamic shortcuts: gamepad (FUNC+DIR) or keyboard (1/2/3/4)
--- Left-to-right positions: L=1, U=2, R=3, D=4 (4-btn) | L=1, R=2 (2-btn)
-local SharedUI = require("func/Training_SharedUI")
-local CT_KB_MAP = { L = "1", U = "2", R = "3", D = "4", A = "8" }
-local function sc(pad_key, kb_override)
-    return SharedUI.sc_label(pad_key, kb_override or CT_KB_MAP[pad_key])
-end
--- Always returns the pad label (longest) for stable button width calculation
-local function sc_max(pad_key)
-    local dir_names = { D = "DOWN", U = "UP", R = "RIGHT", L = "LEFT", A = "CROSS" }
-    return (SharedUI.get_func_name() or "") .. "+" .. (dir_names[pad_key] or pad_key)
-end
 
 -- =========================================================
 -- UI THEME AND STYLES (Inspired by Training Hit Confirm)
@@ -345,8 +331,8 @@ local function draw_single_line_content()
     local pad_y = sh * 0.01
 
     -- Widths excluding P2 buttons
-    local rec_btn_w_base = get_max_text_width({ "停止并保存 (" .. sc_max("L") .. ")", "取消 (" .. sc_max("R") .. ")", "录制 P1 (" .. sc_max("L") .. ")", "录制 P2 (" .. sc_max("R") .. ")", "重置连段 (" .. sc_max("L") .. ")", "自动演示连段 (" .. sc_max("R") .. ")" }, true)
-    local play_btn_w_base = get_max_text_width({ "开始训练 (" .. sc_max("U") .. ")", "停止训练 (" .. sc_max("U") .. ")", "镜像位 (" .. sc_max("D") .. ")" }, true)
+    local rec_btn_w_base = get_max_text_width({ "停止并保存", "取消", "录制 P1", "录制 P2", "重置连段", "自动演示连段" }, true)
+    local play_btn_w_base = get_max_text_width({ "开始训练", "停止训练", "镜像位" }, true)
 
     local absolute_btn_w = math.max(rec_btn_w_base, play_btn_w_base)
 
@@ -507,18 +493,18 @@ local function draw_single_line_content()
         replay_status_label(0, replay_dd_w)
         imgui.same_line(0, sp)
         if trial_state.is_recording then
-            if styled_sf6_button("停止并保存 (" .. sc("L") .. ")", true, replay_btn_w, true, false, TRIAL_COLORS) then _replay_save_player = trial_state.recording_player; stop_recording_and_save() end
+            if styled_sf6_button("停止并保存", true, replay_btn_w, true, false, TRIAL_COLORS) then _replay_save_player = trial_state.recording_player; stop_recording_and_save() end
             imgui.same_line(0, sp)
-            if styled_sf6_button("取消 (" .. sc("R", "2") .. ")", false, replay_btn_w, true, false, P1_COLORS) then
+            if styled_sf6_button("取消", false, replay_btn_w, true, false, P1_COLORS) then
                 local cp = trial_state.recording_player
                 cancel_recording()
                 if cp == 0 then _replay_status_p1 = "canceled" else _replay_status_p2 = "canceled" end
                 _replay_saved_clock = os.clock()
             end
         else
-            if styled_sf6_button("录制 P1 (" .. sc("L") .. ")", false, replay_btn_w, true, false, P1_COLORS) then _replay_save_player = 0; start_recording(0) end
+            if styled_sf6_button("录制 P1", false, replay_btn_w, true, false, P1_COLORS) then _replay_save_player = 0; start_recording(0) end
             imgui.same_line(0, sp)
-            if styled_sf6_button("录制 P2 (" .. sc("R", "2") .. ")", false, replay_btn_w, true, false, P2_COLORS) then _replay_save_player = 1; start_recording(1) end
+            if styled_sf6_button("录制 P2", false, replay_btn_w, true, false, P2_COLORS) then _replay_save_player = 1; start_recording(1) end
         end
         imgui.same_line(0, sp)
         replay_status_label(1, replay_dd_w)
@@ -532,9 +518,9 @@ local function draw_single_line_content()
         replay_status_label(0, dd_w)
         imgui.same_line(0, sp)
         if trial_state.is_recording then
-            if styled_sf6_button("停止并保存 (" .. sc("L") .. ")", true, dynamic_rec_w, true, false, TRIAL_COLORS) then _replay_save_player = trial_state.recording_player; stop_recording_and_save() end
+            if styled_sf6_button("停止并保存", true, dynamic_rec_w, true, false, TRIAL_COLORS) then _replay_save_player = trial_state.recording_player; stop_recording_and_save() end
             imgui.same_line(0, sp)
-            if styled_sf6_button("取消 (" .. sc("R", "2") .. ")", false, dynamic_rec_w, true, false, P1_COLORS) then
+            if styled_sf6_button("取消", false, dynamic_rec_w, true, false, P1_COLORS) then
                 local cp = trial_state.recording_player
                 cancel_recording()
                 if cp == 0 then _replay_status_p1 = "canceled" else _replay_status_p2 = "canceled" end
@@ -558,11 +544,11 @@ local function draw_single_line_content()
             end
         end
         imgui.same_line(0, sp)
-        if styled_sf6_button("重播演示 (" .. sc("L") .. ")", false, dynamic_rec_w, true, false, TRIAL_COLORS) then
+        if styled_sf6_button("重播演示", false, dynamic_rec_w, true, false, TRIAL_COLORS) then
             if ctx.start_demo then ctx.start_demo() end
         end
         imgui.same_line(0, sp)
-        if styled_sf6_button("退出演示 (" .. sc("R", "2") .. ")", false, dynamic_rec_w, true, false, P1_COLORS) then
+        if styled_sf6_button("退出演示", false, dynamic_rec_w, true, false, P1_COLORS) then
             if ctx.stop_demo then ctx.stop_demo() end
         end
     else
@@ -584,21 +570,21 @@ local function draw_single_line_content()
         imgui.same_line(0, sp)
         local btn_w = trial_state.is_playing and actual_btn_w or training_btn_w
         if trial_state.is_playing then
-            if styled_sf6_button("重置连段 (" .. sc("L") .. ")", false, btn_w, true, false, P1_COLORS) then
+            if styled_sf6_button("重置连段", false, btn_w, true, false, P1_COLORS) then
                 ctx.reset_trial_steps_and_load(trial_state.playing_player)
             end
         else
-            if styled_sf6_button("录制连段 (" .. sc("L") .. ")", false, btn_w, true, false, P1_COLORS) then start_recording(0) end
+            if styled_sf6_button("录制连段", false, btn_w, true, false, P1_COLORS) then start_recording(0) end
         end
 
         imgui.same_line(0, sp)
         if trial_state.is_playing then
-            if styled_sf6_button("停止训练 (" .. sc("U") .. ")", true, btn_w, true, false, TRIAL_COLORS) then
+            if styled_sf6_button("停止训练", true, btn_w, true, false, TRIAL_COLORS) then
                 trial_state.is_playing = false
             end
         elseif not trial_state.is_recording then
             local is_p1_active = (trial_state.is_playing and trial_state.playing_player == 0)
-            if styled_sf6_button(is_p1_active and "停止训练 (" .. sc("U") .. ")" or "开始训练 (" .. sc("U") .. ")", is_p1_active, btn_w, true, false, TRIAL_COLORS) then
+            if styled_sf6_button(is_p1_active and "停止训练" or "开始训练", is_p1_active, btn_w, true, false, TRIAL_COLORS) then
                 if is_p1_active then trial_state.is_playing = false
                 else load_and_start_trial(0) end
             end
@@ -606,7 +592,7 @@ local function draw_single_line_content()
 
         imgui.same_line(0, sp)
         if trial_state.is_playing then
-            if styled_sf6_button(switch_pos_label() .. " (" .. sc("R") .. ")", false, btn_w, true, false, SWITCH_COLORS) then
+            if styled_sf6_button(switch_pos_label(), false, btn_w, true, false, SWITCH_COLORS) then
                 d2d_cfg.forced_position_idx = d2d_cfg.forced_position_idx + 1
                 if d2d_cfg.forced_position_idx > 3 then d2d_cfg.forced_position_idx = 1 end
                 ctx.save_d2d_config()
@@ -623,12 +609,12 @@ local function draw_single_line_content()
                 styled_sf6_button("演示(晕厥)", false, btn_w, true, false, { base = 0x78444444, hover = 0x78444444, active = 0x78444444, text = 0xFF888888, border = 0xFF666666 })
                 imgui.pop_style_color(3)
             else
-                if styled_sf6_button("自动演示连段 (" .. sc("D") .. ")", false, btn_w, true, false, P2_COLORS) then
+                if styled_sf6_button("自动演示连段", false, btn_w, true, false, P2_COLORS) then
                     if ctx.start_demo then ctx.start_demo() end
                 end
             end
         else
-            if styled_sf6_button(switch_pos_label() .. " (" .. sc("R") .. ")", false, btn_w, true, false, SWITCH_COLORS) then
+            if styled_sf6_button(switch_pos_label(), false, btn_w, true, false, SWITCH_COLORS) then
                 d2d_cfg.forced_position_idx = d2d_cfg.forced_position_idx + 1
                 if d2d_cfg.forced_position_idx > 3 then d2d_cfg.forced_position_idx = 1 end
                 ctx.save_d2d_config()
@@ -646,8 +632,8 @@ local function draw_combo_trials_content(is_floating)
     local size = imgui.get_window_size()
     local w_width = (size.x > 50) and size.x or (sw * 0.44)
 
-    local rec_btn_w_base = get_max_text_width({ "停止并保存 (" .. sc_max("L") .. ")", "取消 (" .. sc_max("R") .. ")", "录制 P1 (" .. sc_max("L") .. ")", "录制 P2 (" .. sc_max("R") .. ")", "重置连段 (" .. sc_max("L") .. ")", "自动演示连段 (" .. sc_max("R") .. ")" }, is_floating)
-    local play_btn_w_base = get_max_text_width({ "开始训练 (" .. sc_max("U") .. ")", "停止训练 (" .. sc_max("U") .. ")", "镜像位 (" .. sc_max("D") .. ")" }, is_floating)
+    local rec_btn_w_base = get_max_text_width({ "停止并保存", "取消", "录制 P1", "录制 P2", "重置连段", "自动演示连段" }, is_floating)
+    local play_btn_w_base = get_max_text_width({ "开始训练", "停止训练", "镜像位" }, is_floating)
 
     local absolute_btn_w = math.max(rec_btn_w_base, play_btn_w_base)
     local spacing_cols = 20 * (sh / 1080.0)
@@ -726,7 +712,7 @@ local function draw_combo_trials_content(is_floating)
     
     local is_demo_active = (ctx.demo_state and ctx.demo_state.is_playing)
     if trial_state.is_playing or is_demo_active then
-        if styled_sf6_button("重置连段 (" .. sc("L") .. ")", false, rec_btn_w, is_floating) then
+        if styled_sf6_button("重置连段", false, rec_btn_w, is_floating) then
             if is_demo_active then
                 if ctx.start_demo then ctx.start_demo() end
             else
@@ -741,7 +727,7 @@ local function draw_combo_trials_content(is_floating)
             imgui.push_style_color(23, 0xFF444444)
             styled_sf6_button("演示(晕厥)", false, rec_btn_w, is_floating, false, { base = 0x78444444, hover = 0x78444444, active = 0x78444444, text = 0xFF888888, border = 0xFF666666 })
             imgui.pop_style_color(3)
-        elseif styled_sf6_button("自动演示连段 (" .. sc("R") .. ")", is_demo_active, rec_btn_w, is_floating, false, P2_COLORS) then
+        elseif styled_sf6_button("自动演示连段", is_demo_active, rec_btn_w, is_floating, false, P2_COLORS) then
             if is_demo_active then
                 if ctx.stop_demo then ctx.stop_demo() end
             else
@@ -749,22 +735,22 @@ local function draw_combo_trials_content(is_floating)
             end
         end
     elseif trial_state.is_recording then
-        if styled_sf6_button("停止并保存 (" .. sc("L") .. ")", true, rec_btn_w, is_floating, false, TRIAL_COLORS) then
+        if styled_sf6_button("停止并保存", true, rec_btn_w, is_floating, false, TRIAL_COLORS) then
             stop_recording_and_save()
         end
 
         -- Always force stacking with spacing in windowed mode
         imgui.spacing()
 
-        if styled_sf6_button("取消 (" .. sc("R", "2") .. ")", false, rec_btn_w, is_floating, false, P1_COLORS) then
+        if styled_sf6_button("取消", false, rec_btn_w, is_floating, false, P1_COLORS) then
             cancel_recording()
         end
     else
-        if styled_sf6_button("录制 P1 (" .. sc("L") .. ")", false, rec_btn_w, is_floating, false, P1_COLORS) then
+        if styled_sf6_button("录制 P1", false, rec_btn_w, is_floating, false, P1_COLORS) then
             start_recording(0)
         end
         if mode_all_stacked then imgui.spacing() end
-        if styled_sf6_button("录制 P2 (" .. sc("R") .. ")", false, rec_btn_w, is_floating, false, P2_COLORS) then
+        if styled_sf6_button("录制 P2", false, rec_btn_w, is_floating, false, P2_COLORS) then
             start_recording(1)
         end
     end
@@ -781,13 +767,13 @@ local function draw_combo_trials_content(is_floating)
     if not is_floating then imgui.text_colored("3. 播放连段", COLORS.White) end
 
     if trial_state.is_playing or is_demo_active then
-        if styled_sf6_button("停止训练 (" .. sc("U") .. ")", true, play_btn_w, is_floating, false, TRIAL_COLORS) then
+        if styled_sf6_button("停止训练", true, play_btn_w, is_floating, false, TRIAL_COLORS) then
             trial_state.is_playing = false
             if ctx.stop_demo then ctx.stop_demo() end
         end
     elseif not trial_state.is_recording then
         local is_p1_active = (trial_state.is_playing and trial_state.playing_player == 0)
-        if styled_sf6_button(is_p1_active and "停止训练 (" .. sc("U") .. ")" or "开始训练 (" .. sc("U") .. ")", is_p1_active, play_btn_w, is_floating, false, TRIAL_COLORS) then
+        if styled_sf6_button(is_p1_active and "停止训练" or "开始训练", is_p1_active, play_btn_w, is_floating, false, TRIAL_COLORS) then
             if is_p1_active then trial_state.is_playing = false
             else load_and_start_trial(0) end
         end
@@ -797,7 +783,7 @@ local function draw_combo_trials_content(is_floating)
     
     -- SWITCH POS (Hidden during recording)
     if not trial_state.is_recording then
-        if styled_sf6_button(switch_pos_label() .. " (" .. sc("D") .. ")", false, play_btn_w, is_floating, false, SWITCH_COLORS) then
+        if styled_sf6_button(switch_pos_label(), false, play_btn_w, is_floating, false, SWITCH_COLORS) then
             d2d_cfg.forced_position_idx = d2d_cfg.forced_position_idx + 1
             if d2d_cfg.forced_position_idx > 3 then d2d_cfg.forced_position_idx = 1 end
             ctx.save_d2d_config()
@@ -1162,8 +1148,8 @@ re.on_frame(function()
             local w_width = size.x
 
             -- Calculate single-line threshold
-            local rec_btn_w_check = get_max_text_width({ "停止并保存 (" .. sc_max("L") .. ")", "取消 (" .. sc_max("R") .. ")", "录制 P1 (" .. sc_max("L") .. ")", "录制 P2 (" .. sc_max("R") .. ")" }, true)
-            local play_btn_w_check = get_max_text_width({ "开始训练 (" .. sc_max("U") .. ")", "停止训练 (" .. sc_max("U") .. ")" }, true)
+            local rec_btn_w_check = get_max_text_width({ "停止并保存", "取消", "录制 P1", "录制 P2" }, true)
+            local play_btn_w_check = get_max_text_width({ "开始训练", "停止训练" }, true)
             local min_single_line_w = 200 + (rec_btn_w_check + play_btn_w_check) * 2 + 150 * (sh / 1080.0)
 
             if w_width >= min_single_line_w then
@@ -1172,8 +1158,8 @@ re.on_frame(function()
             else
                 -- NORMAL MODE: Header + standard content
                 -- Calculate exact actual width to synchronize header transition with UI layout
-                local rec_btn_w_base = get_max_text_width({ "停止并保存 (" .. sc_max("L") .. ")", "取消 (" .. sc_max("R") .. ")", "录制 P1 (" .. sc_max("L") .. ")", "录制 P2 (" .. sc_max("R") .. ")", "重置连段 (" .. sc_max("L") .. ")", "自动演示连段 (" .. sc_max("R") .. ")" }, true)
-                local play_btn_w_base = get_max_text_width({ "开始训练 (" .. sc_max("U") .. ")", "停止训练 (" .. sc_max("U") .. ")", "镜像位 (" .. sc_max("D") .. ")" }, true)
+                local rec_btn_w_base = get_max_text_width({ "停止并保存", "取消", "录制 P1", "录制 P2", "重置连段", "自动演示连段" }, true)
+                local play_btn_w_base = get_max_text_width({ "开始训练", "停止训练", "镜像位" }, true)
                 local absolute_btn_w = math.max(rec_btn_w_base, play_btn_w_base)
                 local spacing_cols = 20 * (sh / 1080.0)
 

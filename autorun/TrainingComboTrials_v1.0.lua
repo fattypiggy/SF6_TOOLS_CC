@@ -1876,217 +1876,9 @@ local function sanitize_ascii_filename_part(value, max_chars)
     return s
 end
 
--- =========================================================
--- PAD SHORTCUTS SYSTEM (FUNC + D-PAD)
--- =========================================================
-local BTN_UP          = 1
-local BTN_DOWN        = 2
-local BTN_LEFT        = 4
-local BTN_RIGHT       = 8
-local BTN_CROSS       = 32  -- Cross (PS) / A (Xbox)  [RDown in via.hid.GamePad]
-local last_input_mask = 0
-local last_kb_state = { [0x31]=false, [0x32]=false, [0x33]=false, [0x34]=false, [0x38]=false, [0x26]=false, [0x28]=false, [0x0D]=false }
-
--- VK codes for keys 1,2,3,4,8 (top row) + arrows
-local KB_1 = 0x31  -- Position 1: LEFT
-local KB_2 = 0x32  -- Position 2: UP (4-btn) or RIGHT (2-btn)
-local KB_3 = 0x33  -- Position 3: RIGHT (4-btn only)
-local KB_4 = 0x34  -- Position 4: DOWN (4-btn only)
-local KB_8 = 0x38  -- A (OPEN/CLOSE COMBO DROPDOWN)
-local KB_ARROW_UP   = 0x26  -- Arrow up (dropdown navigation)
-local KB_ARROW_DOWN = 0x28  -- Arrow down (dropdown navigation)
-local KB_ENTER      = 0x0D  -- Enter (confirm dropdown selection)
-
--- Detection of last used input device (shared via _G)
-if _G.ComboTrials_InputDevice == nil then _G.ComboTrials_InputDevice = "pad" end
-
-local function get_hardware_pad_mask()
-    local gamepad_manager = sdk.get_native_singleton("via.hid.GamePad")
-    local gamepad_type = _td_gamepad
-    if not gamepad_manager then return 0 end
-    local devices = sdk.call_native_func(gamepad_manager, gamepad_type, "get_ConnectingDevices")
-    if not devices then return 0 end
-    local count = devices:call("get_Count") or 0
-    for i = 0, count - 1 do
-        local pad = devices:call("get_Item", i)
-        if pad then
-            local b = pad:call("get_Button") or 0; if b > 0 then return b end
-        end
-    end
-    return 0
-end
-
--- Keyboard reading via reframework API (with safe fallback)
-local function _ct_read_key(vk)
-    return reframework:is_key_down(vk)
-end
-local function is_kb_down(vk)
-    local ok, result = pcall(_ct_read_key, vk)
-    return ok and result
-end
-
 local POS_TICKER_NAMES = { "自由位", "连段位", "镜像位" }
 local function ct_ticker(msg)
     if _G.show_custom_ticker then _G.show_custom_ticker(msg, 0.3) end
-end
-local _kb_now = { [KB_1]=false, [KB_2]=false, [KB_3]=false, [KB_4]=false, [KB_8]=false, [KB_ARROW_UP]=false, [KB_ARROW_DOWN]=false, [KB_ENTER]=false }
-
-local function handle_combo_shortcuts()
-    if _G.FlowMapID ~= 10 and not _G.IsInReplay and _G.CurrentTrainerMode ~= 4 then return end
-    if _G._ct_bar_collapsed then return end
-
-    local active_buttons = get_hardware_pad_mask()
-    local func_btn = _G.TrainingFuncButton or 16384
-    local is_func_held = ((active_buttons & func_btn) == func_btn)
-
-    local function is_pressed(target_mask)
-        if not is_func_held then return false end
-        return ((active_buttons & target_mask) == target_mask) and not ((last_input_mask & target_mask) == target_mask)
-    end
-
-    -- Keyboard reading: keys 1,2,3,4,8 + arrows (front-edge)
-    _kb_now[KB_1] = is_kb_down(KB_1)
-    _kb_now[KB_2] = is_kb_down(KB_2)
-    _kb_now[KB_3] = is_kb_down(KB_3)
-    _kb_now[KB_4] = is_kb_down(KB_4)
-    _kb_now[KB_8] = is_kb_down(KB_8)
-    _kb_now[KB_ARROW_UP] = is_kb_down(KB_ARROW_UP)
-    _kb_now[KB_ARROW_DOWN] = is_kb_down(KB_ARROW_DOWN)
-    _kb_now[KB_ENTER] = is_kb_down(KB_ENTER)
-    local kb_now = _kb_now
-    local function kb_pressed(vk)
-        return kb_now[vk] and not last_kb_state[vk]
-    end
-
-    -- Detect active input device
-    if is_func_held and active_buttons > func_btn then
-        _G.ComboTrials_InputDevice = "pad"
-    end
-    for _, vk in ipairs({KB_1, KB_2, KB_3, KB_4, KB_8}) do
-        if kb_now[vk] then _G.ComboTrials_InputDevice = "kb" end
-    end
-    if kb_now[KB_ARROW_UP] or kb_now[KB_ARROW_DOWN] then
-        _G.ComboTrials_InputDevice = "kb"
-    end
-
-    -- =============================================
-    -- DROPDOWN NAVIGATION MODE: blocks all other shortcuts
-    -- =============================================
-    if _G.ComboTrials_DropdownOpen then
-        if is_pressed(BTN_UP) or kb_pressed(KB_ARROW_UP) then
-            _G.ComboTrials_DropdownNavUp = true
-        end
-        if is_pressed(BTN_DOWN) or kb_pressed(KB_ARROW_DOWN) then
-            _G.ComboTrials_DropdownNavDown = true
-        end
-        if is_pressed(BTN_CROSS) or kb_pressed(KB_8) or kb_pressed(KB_ENTER) then
-            _G.ComboTrials_DropdownSelect = true
-        end
-        last_input_mask = active_buttons
-        for k, v in pairs(kb_now) do last_kb_state[k] = v end
-        return
-    end
-
-    local is_demo_active = (demo_state and demo_state.is_playing)
-
-    -- =============================================
-    -- Positional shortcuts (left to right):
-    --   4 buttons: LEFT/1, UP/2, RIGHT/3, DOWN/4
-    --   2 buttons: LEFT/1, RIGHT/2
-    -- =============================================
-
-    if is_demo_active then
-        -- ===== DEMO: 2 buttons (LEFT/1 = restart, RIGHT/2 = quit) =====
-        if is_pressed(BTN_LEFT) or kb_pressed(KB_1) then
-            if ctx.start_demo then ctx.start_demo() end
-        end
-        if is_pressed(BTN_RIGHT) or kb_pressed(KB_2) then
-            if ctx.stop_demo then ctx.stop_demo() end
-            -- trial_state.is_playing stays true so we return to the trial
-        end
-
-    elseif trial_state.is_recording then
-        -- ===== RECORDING: 2 buttons (LEFT/1 = save, RIGHT/2 = cancel) =====
-        if is_pressed(BTN_LEFT) or kb_pressed(KB_1) then
-            _G.ComboTrials_ReplaySavePlayer = trial_state.recording_player
-            stop_recording_and_save(); ct_ticker("录制已保存")
-        end
-        if is_pressed(BTN_RIGHT) or kb_pressed(KB_2) then
-            _G.ComboTrials_ReplayCancelPlayer = trial_state.recording_player
-            cancel_recording(); ct_ticker("录制已取消")
-        end
-
-    elseif trial_state.is_playing then
-        -- ===== PLAYING: 4 buttons (LEFT/1=reset, UP/2=stop, RIGHT/3=demo, DOWN/4=switch pos) =====
-        if is_pressed(BTN_LEFT) or kb_pressed(KB_1) then
-            -- RESET: reload the sequence without leaving the trial
-            local curr_player = trial_state.playing_player
-            local paths = (curr_player == 0) and file_system.saved_combos_paths_p1 or file_system.saved_combos_paths_p2
-            local idx = (curr_player == 0) and (file_system.selected_file_idx_p1 or 1) or (file_system.selected_file_idx_p2 or 1)
-            if #paths > 0 then
-                load_combo_from_file(paths[idx], true)
-                start_trial(curr_player)
-            elseif #trial_state.sequence > 0 then
-                trial_state.is_playing = true
-                trial_state.playing_player = curr_player
-                reset_trial_steps()
-            end
-        end
-        if is_pressed(BTN_UP) or kb_pressed(KB_2) then
-            trial_state.is_playing = false
-        end
-        if is_pressed(BTN_RIGHT) or kb_pressed(KB_3) then
-            d2d_cfg.forced_position_idx = d2d_cfg.forced_position_idx + 1
-            if d2d_cfg.forced_position_idx > 3 then d2d_cfg.forced_position_idx = 1 end
-            save_d2d_config()
-            apply_forced_position()
-            ct_ticker("位置模式：" .. (POS_TICKER_NAMES[d2d_cfg.forced_position_idx] or ""))
-            -- Mini-reset to properly reposition after switching pos
-            reset_trial_steps()
-            if ctx.reset_visuals then ctx.reset_visuals() end
-        end
-        if is_pressed(BTN_DOWN) or kb_pressed(KB_4) then
-            if ctx.start_demo then ctx.start_demo() end
-        end
-
-    else
-        if _G.IsInReplay or _G.IsInBattleHub then
-            -- ===== REPLAY/SPECTATE IDLE: 2 buttons (LEFT/1=rec P1, RIGHT/2=rec P2) =====
-            if is_pressed(BTN_LEFT) or kb_pressed(KB_1) then
-                _G.ComboTrials_ReplaySavePlayer = 0
-                start_recording(0)
-            end
-            if is_pressed(BTN_RIGHT) or kb_pressed(KB_2) then
-                _G.ComboTrials_ReplaySavePlayer = 1
-                start_recording(1)
-            end
-        else
-            -- ===== IDLE: 3 buttons (LEFT/1=record, UP/2=start trial, RIGHT/3=switch pos) =====
-            if is_pressed(BTN_LEFT) or kb_pressed(KB_1) then
-                start_recording(0); ct_ticker("录制中")
-            end
-            if is_pressed(BTN_UP) or kb_pressed(KB_2) then
-                load_and_start_trial(0); ct_ticker("连段训练已启动")
-            end
-            if is_pressed(BTN_RIGHT) or kb_pressed(KB_3) then
-                d2d_cfg.forced_position_idx = d2d_cfg.forced_position_idx + 1
-                if d2d_cfg.forced_position_idx > 3 then d2d_cfg.forced_position_idx = 1 end
-                save_d2d_config()
-                if d2d_cfg.forced_position_idx == 1 then apply_forced_position() end
-                ct_ticker("位置模式：" .. (POS_TICKER_NAMES[d2d_cfg.forced_position_idx] or ""))
-            end
-        end
-    end
-
-    -- FUNC + CROSS (A) / Key 8: OPEN COMBO FILES DROPDOWN
-    if is_pressed(BTN_CROSS) or kb_pressed(KB_8) then
-        if not trial_state.is_recording then
-            _G.ComboTrials_OpenDropdown = true
-        end
-    end
-
-    last_input_mask = active_buttons
-    for k, v in pairs(kb_now) do last_kb_state[k] = v end
 end
 
 -- =========================================================
@@ -3963,7 +3755,6 @@ re.on_frame(function()
     ct_poll_trialhub_sync_signal()
     ct_handle_first_frame_init()
     _G.ComboTrials_HideNativeHUD = (trial_state.is_recording or trial_state.is_playing)
-    handle_combo_shortcuts()
 
     local is_game_paused = GS.in_pause_menu
     ct_handle_pause_positions(is_game_paused, _in_replay)
@@ -4308,6 +4099,101 @@ end
 ctx.demo_state = demo_state
 ctx.stop_demo = function() demo_state.is_playing = false end
 ctx.start_demo = start_demo
+
+local function can_start_combo_action()
+    return not trial_state.is_recording
+        and not trial_state.is_playing
+        and not (demo_state and demo_state.is_playing)
+end
+
+local function is_replay_context()
+    return _G.FlowMapID == 10 or _G.IsInReplay == true
+end
+
+local function switch_position_mode()
+    d2d_cfg.forced_position_idx = (d2d_cfg.forced_position_idx or 1) + 1
+    if d2d_cfg.forced_position_idx > 3 then d2d_cfg.forced_position_idx = 1 end
+    save_d2d_config()
+
+    if trial_state.is_playing then
+        apply_forced_position()
+        reset_trial_steps()
+        if ctx.reset_visuals then ctx.reset_visuals() end
+    elseif d2d_cfg.forced_position_idx == 1 then
+        apply_forced_position()
+    end
+
+    ct_ticker("位置模式：" .. (POS_TICKER_NAMES[d2d_cfg.forced_position_idx] or ""))
+end
+
+ctx.commands = {
+    record_p1 = function()
+        if not can_start_combo_action() then return end
+        if is_replay_context() then _G.ComboTrials_ReplaySavePlayer = 0 end
+        start_recording(0)
+        ct_ticker("录制中")
+    end,
+    record_p2 = function()
+        if not can_start_combo_action() then return end
+        if is_replay_context() then _G.ComboTrials_ReplaySavePlayer = 1 end
+        start_recording(1)
+        ct_ticker("录制中")
+    end,
+    save_recording = function()
+        if not trial_state.is_recording then return end
+        if is_replay_context() then _G.ComboTrials_ReplaySavePlayer = trial_state.recording_player end
+        stop_recording_and_save()
+        ct_ticker("录制已保存")
+    end,
+    cancel_recording = function()
+        if not trial_state.is_recording then return end
+        if is_replay_context() then _G.ComboTrials_ReplayCancelPlayer = trial_state.recording_player end
+        cancel_recording()
+        ct_ticker("录制已取消")
+    end,
+    start_trial = function()
+        if not can_start_combo_action() then return end
+        load_and_start_trial(0)
+        ct_ticker("连段训练已启动")
+    end,
+    reset_trial = function()
+        if demo_state and demo_state.is_playing then
+            start_demo()
+        elseif trial_state.is_playing then
+            ctx.reset_trial_steps_and_load(trial_state.playing_player or 0)
+        end
+    end,
+    stop_trial = function()
+        if not trial_state.is_playing and not (demo_state and demo_state.is_playing) then return end
+        trial_state.is_playing = false
+        demo_state.is_playing = false
+        ct_ticker("连段训练已停止")
+    end,
+    start_demo = function()
+        if trial_state.is_recording then return end
+        start_demo()
+    end,
+    restart_demo = function()
+        if not (demo_state and demo_state.is_playing) then return end
+        start_demo()
+    end,
+    quit_demo = function()
+        if not (demo_state and demo_state.is_playing) then return end
+        demo_state.is_playing = false
+    end,
+    switch_position = function()
+        if trial_state.is_recording then return end
+        switch_position_mode()
+    end,
+    open_combo_dropdown = function()
+        if trial_state.is_recording then return end
+        _G.ComboTrials_OpenDropdown = true
+    end,
+}
+
+local TrainingHotkeys = require("func/Training_Hotkeys")
+local ComboTrialsHotkeys = require("func/ComboTrials_Hotkeys")
+ComboTrialsHotkeys.init(ctx, TrainingHotkeys)
 
 -- (Keep sf6_menu_state below this as before)
 sf6_menu_state = { active = false, x = 0, y = 0, w = 0, h = 0 }
