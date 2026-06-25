@@ -188,6 +188,35 @@ end
 -- =========================================================
 -- parse_motion_to_icons
 -- =========================================================
+local function localize_motion_text(s)
+    s = tostring(s or "")
+
+    -- Longer phrases must be replaced before their shorter components.
+    s = s:gsub("FULLY%s+DELAYED", "完全延迟")
+    s = s:gsub("CANCEL%s+ACTION", "取消动作")
+    s = s:gsub("DO%s+NOTHING", "不操作")
+    s = s:gsub("RUN%s+STOP", "急停")
+    s = s:gsub("1ST%s+HALF", "前半段")
+    s = s:gsub("2ND%s+HALF", "后半段")
+    s = s:gsub("FLASH%s+KICK", "脚刀")
+    s = s:gsub("SHUN%s+GOKU%s+SATSU", "瞬狱杀")
+
+    s = s:gsub("ENHANCED", "强化")
+    s = s:gsub("PERFECT", "完美")
+    s = s:gsub("INSTANT", "即时")
+    s = s:gsub("DELAYED", "延迟")
+    s = s:gsub("FEINT", "假动作")
+    s = s:gsub("CANCEL", "取消")
+    s = s:gsub("SLIDE", "滑步")
+    s = s:gsub("UNKNOWN", "未知")
+
+    s = s:gsub("LVL%s*(%d+)", "等级 %1")
+    s = s:gsub("LEVEL%s*(%d+)", "等级 %1")
+    s = s:gsub("(%d+)%s+MEDALS", "%1 枚奖牌")
+    s = s:gsub("(%d+)%s+MEDAL", "%1 枚奖牌")
+    return s
+end
+
 local function parse_motion_to_icons(log_entry, trial_mode, should_flip, reverse_layout)
     local d2d_cfg = ctx.d2d_cfg
     local motion_tokens = {}
@@ -195,8 +224,8 @@ local function parse_motion_to_icons(log_entry, trial_mode, should_flip, reverse
 
     -- Convert to uppercase IMMEDIATELY so that j. becomes J.
     s = s:upper()
-    if log_entry.id == 1231 and s:match("SHUN GOKU SATSU") then
-        s = "LP,LP,6,LK,HP (SHUN GOKU SATSU)"
+    if log_entry.id == 1231 then
+        s = "LP,LP,6,LK,HP (瞬狱杀)"
     end
 
     -- 1. Inline normalization of aerial state (J. -> [空中], keeps each [空中] at its position)
@@ -283,6 +312,9 @@ local function parse_motion_to_icons(log_entry, trial_mode, should_flip, reverse
     s = s:gsub("%(HOLD%)", "{hold}")
     s = s:gsub("%(HOLD (.-)%)", "{hold} (%1)")
     s = s:gsub("HOLD", "{hold}")
+
+    s = s:gsub("FOLLOW%-UP", "{followup}")
+    s = localize_motion_text(s)
 
     s = s:gsub("63214", "{hcb}")
     s = s:gsub("41236", "{hcf}")
@@ -1069,6 +1101,12 @@ end
 
 function M.init(shared_ctx)
     ctx = shared_ctx
+    ctx.localize_motion_text = function(motion, action_id)
+        if action_id == 1231 then
+            return "LP,LP,6,LK,HP (瞬狱杀)"
+        end
+        return localize_motion_text(tostring(motion or ""):upper())
+    end
     d2d.register(d2d_init, d2d_draw)
 end
 

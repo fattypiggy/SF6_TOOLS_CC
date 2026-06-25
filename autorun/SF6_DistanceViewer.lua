@@ -1135,10 +1135,6 @@ local function get_current_max_reach(player_obj, locked_origin_x)
 
     local col = act_param.Collision
     if not col then return 0 end
-    local root_x = 0.0
-    if player_obj.pos and player_obj.pos.x and player_obj.pos.x.v then
-        root_x = player_obj.pos.x.v / 6553600.0
-    end
     
     local max_dist = 0.0
     if col.Infos and col.Infos._items then
@@ -1151,9 +1147,8 @@ local function get_current_max_reach(player_obj, locked_origin_x)
                 if is_attack and rect.OffsetX and rect.SizeX then
                     local box_x = rect.OffsetX.v / 6553600.0
                     local half_x = rect.SizeX.v / 6553600.0
-                    local center_x = root_x + box_x
-                    local edge_left = center_x - half_x
-                    local edge_right = center_x + half_x
+                    local edge_left = box_x - half_x
+                    local edge_right = box_x + half_x
                     local d1 = math.abs(edge_left - locked_origin_x)
                     local d2 = math.abs(edge_right - locked_origin_x)
                     if d1 > max_dist then max_dist = d1 end
@@ -1301,10 +1296,10 @@ local function update_combat_distances()
                 if r and dominated then
                     local box_x = (r.OffsetX and r.OffsetX.v) and (r.OffsetX.v / 6553600.0) or 0.0
                     local size_x = (r.SizeX and r.SizeX.v) and (r.SizeX.v / 6553600.0) or 0.0
-                    local center_x = px + box_x
                     
-                    local right_edge = center_x + size_x
-                    local left_edge = center_x - size_x
+                    -- Collision offsets are already in world space.
+                    local right_edge = box_x + size_x
+                    local left_edge = box_x - size_x
                     
                     -- Front offset for Teleport calculation
                     local off = is_on_left and (right_edge - px) or (px - left_edge)
@@ -1331,8 +1326,7 @@ local function update_combat_distances()
                 if r and r:get_field("HitNo") ~= nil and (r.TypeFlag or 0) == 0 then
                     local box_x = (r.OffsetX and r.OffsetX.v) and (r.OffsetX.v / 6553600.0) or 0.0
                     local size_x = (r.SizeX and r.SizeX.v) and (r.SizeX.v / 6553600.0) or 0.0
-                    local center_x = px + box_x
-                    local off = is_on_left and ((center_x + size_x) - px) or (px - (center_x - size_x))
+                    local off = is_on_left and ((box_x + size_x) - px) or (px - (box_x - size_x))
                     if not best or off > best then best = off end
                 end
             end

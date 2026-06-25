@@ -494,12 +494,6 @@ local draw_boxes = function(w, aP, p1)
 
     if aP == nil or aP.Collision == nil then return end
     local col = aP.Collision
-    local root_x = 0.0
-    local root_y = 0.0
-    if w and w.pos and w.pos.x and w.pos.x.v and w.pos.y and w.pos.y.v then
-        root_x = w.pos.x.v / 6553600.0
-        root_y = w.pos.y.v / 6553600.0
-    end
 
     for j, r in pairs(col.Infos._items) do
         if r ~= nil then
@@ -509,8 +503,10 @@ local draw_boxes = function(w, aP, p1)
             local box_y = r.OffsetY.v / 6553600.0
             local half_x = r.SizeX.v / 6553600.0
             local half_y = r.SizeY.v / 6553600.0
-            local center_x = root_x + box_x
-            local center_y = root_y + box_y
+            -- Collision offsets are already world-space coordinates. Adding
+            -- the owner position again makes boxes move twice as far.
+            local center_x = box_x
+            local center_y = box_y
 
             v_tl.x = center_x - half_x; v_tl.y = center_y + half_y; v_tl.z = 0
             v_tr.x = center_x + half_x; v_tr.y = center_y + half_y; v_tr.z = 0

@@ -1905,8 +1905,10 @@ local function draw_combo_trials_menu_ui()
                         end
 
                         -- Translated keywords: VRAI INPUT -> REAL INPUT, Reel -> Raw
-                        local left_col = string.format("真实输入 | %s (ID: %d)%s%s", log.motion, log.id, charge_str,
-                            combo_str)
+                        local display_motion = ctx.localize_motion_text
+                            and ctx.localize_motion_text(log.motion, log.id) or log.motion
+                        local left_col = string.format("真实输入 | %s (ID: %d)%s%s", display_motion, log.id,
+                            charge_str, combo_str)
                         local right_col = string.format("原始: %s (%s)", log.real_input, log.frame_diff)
 
                         local line_color = COLORS.White
