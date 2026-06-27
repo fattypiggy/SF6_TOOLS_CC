@@ -1,147 +1,238 @@
-# Street Fighter 6 Combo Community（SF6CC）
+# SF6 Combo Community（SF6CC）
 
-> **让街霸 6 训练更简单，让社区共同成长。**
+🌐 语言
 
-SF6 Combo Community（SF6CC）是一个面向 **Street Fighter 6** 玩家的开源训练社区。
+- **简体中文**
+- [English](README.en.md)
 
-我们的目标不仅是制作一个训练 MOD，更是建立一套完整的训练生态，让任何玩家都能轻松学习、分享和维护训练内容。
+> 让街霸训练更简单，让社区共同成长。
+
+SF6 Combo Community（SF6CC）是一个面向 **Street Fighter 6** 的开源训练平台。
+
+项目基于 **WTT（Wael Training Tools）** 持续发展，在保持兼容性的基础上，专注于改善训练体验、本地化支持、社区协作以及长期可维护性。
+
+我们的目标不仅仅是开发一个训练 MOD，而是建立一套能够长期维护、持续成长的《街霸6》训练生态。
 
 ---
 
-## 项目愿景
+# 为什么选择 SF6CC？
 
-《街头霸王 6》有很高的学习门槛。新人往往需要四处寻找连段、手动录入训练内容、查阅大量视频，并在反复练习后才能确认操作是否正确。
+《街霸6》的学习门槛并不低。
 
-SF6CC 希望改变这一点：
+新玩家通常需要：
+
+* 阅读大量术语
+* 查找各种连段
+* 手动录入训练内容
+* 观看大量视频
+* 反复验证是否练习正确
+
+SF6CC 希望把这些流程变得更加简单。
+
+我们的目标是：
 
 > **让街霸训练像下载地图一样简单。**
 
-我们希望持续建设：
+---
 
-- 更优秀的中文训练体验
-- 社区共享连段
-- 一键安装与自动更新
-- 开放的数据格式
-- 更丰富的训练模式
-- 长期维护的街霸训练社区
+# 功能特色
 
-## 项目特色
+## 更好的训练体验
 
-### 更好的训练体验
+* 完整中文本地化
+* 更符合中文玩家习惯的 UI
+* 更清晰的训练流程
+* 更低的学习成本
 
-- 中文化训练流程
-- 更清晰的 UI 与交互优化
-- 已知问题修复与持续维护
-- 更低的使用与学习门槛
+---
 
-### 社区驱动
+## 更完善的训练功能
 
-任何玩家都可以参与：
+目前已经包含：
 
-- 分享连段
-- 修正训练数据
-- 提交 Bug 与改进建议
-- 提交 Pull Request
-- 编写教程
-- 优化翻译
+* 连段训练（Combo Trials）
+* Hit Confirm Training
+* Distance Viewer
+* Script Manager
+* Combo 数据管理
+* JSON 数据驱动
 
-SF6CC 希望成为一个真正由社区共同维护的训练平台。
+并持续扩展新的训练模式。
 
-### 永久免费
+---
 
-本项目永久免费，并坚持：
+## 社区驱动
 
-- 开源
-- 社区共建
-- 不售卖训练内容
-- 不提供任何作弊功能
-- 不影响游戏公平性
+任何玩家都可以参与建设：
 
-## 致谢与来源
+* 分享连段
+* 提交训练数据
+* 修正数据错误
+* 提交 Bug
+* 编写教程
+* 提交 Pull Request
 
-SF6CC 基于 [WTT（Wael Training Tools）/ SF6_Tools](https://github.com/Wael3rd/SF6_Tools) 持续开发，并在此基础上进行了功能扩展、中文本地化与整体体验优化。
+我们希望建立真正由社区共同维护的训练平台。
 
-感谢 **Wael3rd** 创建优秀的训练框架，为社区提供坚实基础。
+---
 
-- 原项目 GitHub：[Wael3rd/SF6_Tools](https://github.com/Wael3rd/SF6_Tools)
-- 原项目 Nexus Mods：[WTT - Wael Training Tools](https://www.nexusmods.com/streetfighter6/mods/3173)
+## 永久免费
 
-在 WTT 的基础上，SF6CC 持续进行包括但不限于以下工作：
+SF6CC 将永久免费。
 
-- 完整中文本地化
-- UI 重构与体验优化
-- 多项 Bug 修复
-- 连段训练增强
-- 社区网站与社区数据管理
-- 一键安装与本地客户端
-- 自动更新（开发中）
-- 社区贡献体系
+项目坚持：
 
-SF6CC 尊重原项目的署名与授权要求，持续保持与 WTT 的兼容性，并探索更适合中文社区的发展方向。授权与署名细节请参阅 [CREDITS.md](CREDITS.md) 和 [LICENSE_NOTES.md](LICENSE_NOTES.md)。
+* 开源
+* 社区共建
+* 不售卖训练内容
+* 不提供作弊功能
+* 不影响游戏公平性
 
-## 当前状态
+---
 
-项目目前处于快速开发阶段。
+# 快速开始
 
-已完成：
+安装方式将在后续版本持续完善。
 
-- [x] 中文训练体验
-- [x] 连段训练系统
-- [x] 社区网站
-- [x] 一键安装
-- [x] 本地客户端
-- [x] 社区测试
+目前推荐：
 
-正在开发：
+1. 安装 REFramework
+2. 下载 SF6CC
+3. 按照安装说明复制到游戏目录
+4. 启动游戏开始训练
 
-- [ ] 自动更新
-- [ ] 社区上传
-- [ ] 更多训练模式
-- [ ] 更完善的数据统计
-- [ ] Web 重构
+未来将提供：
 
-## 如何参与
+* 一键安装
+* 自动更新
+* 本地客户端
+* 社区内容同步
 
-欢迎任何形式的贡献。你可以：
+---
 
-- 提交 Issue
-- 提交 Pull Request
-- 分享连段
-- 编写教程
-- 优化文档
-- 提供测试反馈
+## 📚 项目文档
 
-贡献指南将随 GitHub 开源社区同步发布。
+- [项目首页](README.md)
+- [项目愿景](VISION.zh-CN.md)
+- [项目发展规划](ROADMAP.zh-CN.md)
+- [架构设计](ARCHITECTURE.zh-CN.md)
+- [AI 开发规范](AGENTS.zh-CN.md)
+- [贡献指南](CONTRIBUTING.zh-CN.md)
 
-## Roadmap
+English entry: [README.en.md](README.en.md)
 
-- [ ] GitHub 开源社区
-- [ ] 自动更新
-- [ ] Cloudflare R2 下载
-- [ ] 社区上传系统
-- [ ] 更多训练模式
-- [ ] Web 架构优化
-- [ ] 社区统计
-- [ ] 插件生态
+如果你使用 AI 编程工具（Codex、Claude Code、Gemini CLI、Cursor、Windsurf 等），建议首先阅读 [AGENTS.zh-CN.md](AGENTS.zh-CN.md)。
 
-## 支持项目
+---
 
-如果 SF6CC 帮助到了你，欢迎：
+# 项目架构
 
-- Star 本仓库
-- 分享给更多玩家
-- 提交 Bug
-- 提出建议
-- 自愿支持项目持续开发
+整个生态保持解耦设计。
 
-你的每一次反馈、每一个 Issue、每一个 Pull Request，都会让这个项目变得更好。
+```text
+Street Fighter 6
+        │
+        ▼
+ REFramework
+        │
+        ▼
+    WTT Core
+        │
+        ▼
+      SF6CC
+        │
+        ▼
+      SF6CM
+```
 
-## 最后
+各部分职责：
 
-SF6CC 不属于某一个人。
+* **WTT**：训练框架
+* **SF6CC**：训练增强、本地化、UI、数据规范
+* **SF6CM**：社区平台、网站、Metadata、下载管理
 
-它属于所有热爱 Street Fighter 6、愿意分享、愿意学习、愿意建设社区的玩家。
+SF6CC 与 SF6CM 仅通过 JSON 数据交换，不直接依赖彼此。
 
-希望未来有一天，国内玩家学习街霸时，第一个打开的不再只是视频，而是整个社区。
+---
 
-欢迎加入 SF6 Combo Community。
+# 当前状态
+
+当前项目已完成：
+
+* ✅ 中文本地化
+* ✅ UI 优化
+* ✅ 连段训练增强
+* ✅ Hit Confirm Training
+* ✅ Distance Viewer
+* ✅ Script Manager
+* ✅ Combo 数据管理
+* ✅ JSON 数据标准
+* ✅ AI 开发规范
+* ✅ 架构文档
+
+项目仍在持续开发中。
+
+---
+
+# 项目路线图
+
+未来将重点建设：
+
+* 社区内容管理
+* 自动安装与更新
+* Replay 分析
+* AI 辅助训练
+* 更多训练模式
+* 全球统一 JSON 数据规范
+
+详细规划请参阅：
+
+[ROADMAP.zh-CN.md](ROADMAP.zh-CN.md)
+
+---
+
+# 如何参与
+
+欢迎任何形式的贡献：
+
+* Lua 开发
+* UI / UX
+* 多语言支持
+* Combo 数据整理
+* 文档
+* Bug 修复
+* 测试反馈
+
+提交代码前，请阅读：
+
+[CONTRIBUTING.zh-CN.md](CONTRIBUTING.zh-CN.md)
+
+---
+
+# 致谢
+
+SF6CC 基于 **WTT（Wael Training Tools）** 持续发展。
+
+感谢 **Wael3rd** 为 Street Fighter 6 社区打造优秀的训练框架。
+
+我们希望：
+
+* 尽可能将通用能力贡献回 WTT；
+* 在此基础上持续改善中文社区体验；
+* 与全球社区共同推动统一的数据规范和开放的训练生态。
+
+---
+
+# License
+
+请参阅：
+
+* LICENSE
+* LICENSE_NOTES.md
+* CREDITS.md
+
+---
+
+> **SF6CC 不只是一个训练 MOD。**
+>
+> **我们希望建立一个能够持续维护、开放协作、面向未来的街霸训练生态。**

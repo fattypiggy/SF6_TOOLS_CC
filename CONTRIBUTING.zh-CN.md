@@ -1,0 +1,216 @@
+# CONTRIBUTING.zh-CN.md
+
+语言：[English](CONTRIBUTING.md)
+
+## 文档导航
+
+* [项目首页](README.md)
+* [项目愿景](VISION.zh-CN.md)
+* [项目发展规划](ROADMAP.zh-CN.md)
+* [架构设计](ARCHITECTURE.zh-CN.md)
+* [AI 开发规范](AGENTS.zh-CN.md)
+* **贡献指南**
+
+---
+
+# SF6CC 贡献指南
+
+感谢你愿意参与 SF6CC 项目。
+
+SF6CC 是基于 WTT（SF6 Tools）发展而来的社区增强项目。
+
+我们的目标不是简单增加功能，而是建立一个能够长期维护、持续发展的《街霸6》训练生态。
+
+---
+
+# 开始之前
+
+建议先阅读以下文档：
+
+* [项目首页](README.md)
+* [AI 开发规范](AGENTS.zh-CN.md)
+* [架构设计](ARCHITECTURE.zh-CN.md)
+
+这三个文档说明了：
+
+* 项目目标
+* 架构设计
+* AI 开发规范
+* 长期维护原则
+
+阅读后再开始开发，可以避免很多重复工作。
+
+---
+
+# 我们欢迎什么样的贡献
+
+包括但不限于：
+
+* Lua 功能改进
+* UI/UX 优化
+* 多语言支持
+* 连段数据整理
+* Character 数据维护
+* Exception Rules
+* Bug 修复
+* 文档完善
+* 性能优化
+
+无论贡献大小，都非常欢迎。
+
+---
+
+# 开发原则
+
+提交代码时，请尽量遵循以下原则：
+
+一个 Commit 只解决一个问题。
+
+一个 PR 只完成一个主题。
+
+避免一次提交同时修改：
+
+* UI
+* 重构
+* Bug
+* 数据
+
+这样更容易 Review，也更方便以后同步 WTT。
+
+---
+
+# 与 WTT 的关系
+
+SF6CC 并不是 WTT 的竞争项目。
+
+我们的目标是：
+
+能够贡献回 WTT 的能力，尽量贡献回去。
+
+例如：
+
+* Bug 修复
+* 多语言支持
+* 公共工具
+* UI 改进
+* 通用组件
+
+而：
+
+社区功能
+
+网站
+
+数据库
+
+客户端
+
+保持独立发展。
+
+---
+
+# Config 文件
+
+不要看到 Config 就认为它属于用户配置。
+
+本项目很多 Config 实际属于：
+
+产品默认体验。
+
+例如：
+
+* 默认字体
+* 默认布局
+* 默认颜色
+* 默认模块启用状态
+
+这些应该进入 Git。
+
+真正不应提交的是：
+
+* Window Position
+* Session
+* WebState
+* LastFail
+* Replay
+* Cache
+
+---
+
+# Release 文件
+
+不要提交：
+
+* release/
+* ZIP
+* runtime/
+* Dump
+* 临时分析数据
+
+正式发布请使用 GitHub Releases。
+
+---
+
+# 提交规范
+
+推荐 Commit 示例：
+
+新增：
+
+Add localization framework
+
+修复：
+
+Fix hit confirm parser
+
+优化：
+
+Improve combo trial UI
+
+重构：
+
+Refactor TrainingComboTrials
+
+文档：
+
+Update architecture documentation
+
+---
+
+# Pull Request
+
+提交 PR 时建议说明：
+
+为什么需要这个修改？
+
+解决了什么问题？
+
+是否影响兼容性？
+
+是否影响已有 JSON？
+
+是否影响 WTT？
+
+UI 修改建议附截图。
+
+大型架构调整建议先讨论。
+
+---
+
+# 最后
+
+SF6CC 希望成为一个长期维护、开放协作的项目。
+
+如果你发现：
+
+更好的架构
+
+更好的体验
+
+更好的设计
+
+欢迎一起讨论。
+
+感谢每一位贡献者，希望我们一起推动《街霸6》社区不断进步。
+
+欢迎使用 AI 辅助开发，但所有提交仍应由贡献者自行审核、测试并对代码质量负责。
