@@ -109,6 +109,92 @@ local p_id_stack = {}
 local _cached_addr = { [0] = nil, [1] = nil }
 local _addr_refresh = 0
 
+local function get_p2_player()
+    local ok, sP = pcall(_sh_get_player_singleton)
+    if not ok or not sP or not sP.mcPlayer then return nil end
+    return sP.mcPlayer[1]
+end
+
+local function write_p2_input_mask(mask)
+    local p2 = get_p2_player()
+    if not p2 then return false end
+    local final_mask = mask or 0
+    if final_mask ~= 0 and p2:get_field("rl_dir") then
+        local has_right = (final_mask & 4) ~= 0
+        local has_left  = (final_mask & 8) ~= 0
+        final_mask = final_mask & ~12
+        if has_right then final_mask = final_mask | 8 end
+        if has_left  then final_mask = final_mask | 4 end
+    end
+    pcall(function()
+        p2:set_field("pl_input_new", final_mask)
+        p2:set_field("pl_sw_new", final_mask)
+    end)
+    return true
+end
+
+local function finalize_distance_viewer_p2_input(p_id)
+    if p_id ~= 1 then return end
+    local dv_heartbeat = _G._dv_aa_heartbeat or 0
+    local heartbeat_stale = dv_heartbeat > 0 and (os.clock() - dv_heartbeat) > 0.5
+    local release_frames = _G._dv_aa_release_frames or 0
+    local dv_aa_known = _G._dv_aa_enabled ~= nil or _G._dv_aa_p2_mask ~= nil or dv_heartbeat > 0 or release_frames > 0
+    local desired_mask = _G._dv_aa_p2_mask or 0
+    local can_apply = RuntimeSafety.can_inject_input()
+        and _G.SF6_DistanceViewer_Enabled == true
+        and _G.SF6_DistanceViewer_AutoActivate_Enabled == true
+        and _G._dv_aa_enabled == true
+        and not heartbeat_stale
+        and release_frames <= 0
+        and desired_mask > 0
+
+    if can_apply then
+        write_p2_input_mask(desired_mask)
+        return
+    end
+
+    local should_clear = (dv_aa_known and _G.SF6_DistanceViewer_Enabled ~= true)
+        or (dv_aa_known and _G.SF6_DistanceViewer_AutoActivate_Enabled ~= true)
+        or (dv_aa_known and _G._dv_aa_enabled ~= true)
+        or heartbeat_stale
+        or release_frames > 0
+    if not should_clear then return end
+    write_p2_input_mask(0)
+    _G._dv_aa_p2_mask = 0
+    _G._dv_aa_enabled = false
+    if release_frames > 0 then
+        _G._dv_aa_release_frames = release_frames - 1
+    end
+end
+
+local function distance_viewer_input_finalizer(p_id, retval)
+    finalize_distance_viewer_p2_input(p_id)
+end
+
+local function ensure_distance_viewer_finalizer_tail()
+    if not _G._shared_input_post then return end
+    for i = #_G._shared_input_post, 1, -1 do
+        if _G._shared_input_post[i] == distance_viewer_input_finalizer then
+            table.remove(_G._shared_input_post, i)
+        end
+    end
+    table.insert(_G._shared_input_post, distance_viewer_input_finalizer)
+end
+
+_G._dv_ensure_shared_input_finalizer_tail = ensure_distance_viewer_finalizer_tail
+ensure_distance_viewer_finalizer_tail()
+
+local function reset_distance_viewer_p2_input()
+    write_p2_input_mask(0)
+    _G.SF6_DistanceViewer_AutoActivate_Enabled = false
+    _G._dv_aa_enabled = false
+    _G._dv_aa_p2_mask = 0
+    _G._dv_aa_release_frames = 0
+    _G._dv_aa_heartbeat = 0
+    _G._dv_aa_frame = 0
+    _G._dv_aa_last_had_input = false
+end
+
 local cplayer_type = sdk.find_type_definition("nBattle.cPlayer")
 if not cplayer_type or not cplayer_type:get_method("pl_input_sub") then
     _G._mod_errors.count = _G._mod_errors.count + 1
@@ -153,6 +239,7 @@ if cplayer_type then
                         pcall(cb, p_id, retval)
                     end
                 end
+                finalize_distance_viewer_p2_input(p_id)
                 return retval
             end
         )
@@ -163,5 +250,12 @@ end
 -- CENTRALIZED GC: one step per frame, smooths out GC pauses
 -- =========================================================
 re.on_application_entry("UpdateBehavior", function()
+    finalize_distance_viewer_p2_input(1)
     collectgarbage("step", 1)
 end)
+
+if re.on_script_reset then
+    re.on_script_reset(function()
+        reset_distance_viewer_p2_input()
+    end)
+end

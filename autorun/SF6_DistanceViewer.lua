@@ -113,6 +113,9 @@ local auto_activate = {
 }
 local AA_COLOR_RED = 0xFF0000FF
 local AA_COLOR_WHITE = 0xFFFFFFFF
+local _dv_release_p2_input
+local _dv_mark_aa_release
+local _dv_update_aa_input_state
 
 -- =========================================================
 -- [ADVANCED MODE - Distance Logger integration]
@@ -404,6 +407,7 @@ local function poll_web_bridge()
             end
             -- Auto-activate changes
             if bridge._aa then
+                local aa_bridge_enabled = bridge._aa.enabled == true or auto_activate.enabled == true
                 if bridge._aa.delay_min ~= nil then
                     auto_activate.delay_min = bridge._aa.delay_min
                     config.aa_delay_min = bridge._aa.delay_min
@@ -415,9 +419,27 @@ local function poll_web_bridge()
                 if bridge._aa.enabled ~= nil then
                     auto_activate.enabled = bridge._aa.enabled
                     if bridge._aa.enabled then auto_activate.was_in_range = true
-                    else auto_activate.waiting_neutral = false; auto_activate.was_in_range = false end
+                    else
+                        auto_activate.waiting_neutral = false
+                        auto_activate.was_in_range = false
+                        auto_activate.p2_mask = 0
+                        if auto_activate.is_firing then aa_stop_fire() end
+                        auto_activate.move = nil
+                        auto_activate.move_idx = 1
+                        auto_activate.sequence = {}
+                        auto_activate.sub_moves = {}
+                        auto_activate.active_move = nil
+                        auto_activate.active_sequence = {}
+                        auto_activate.footwork_enabled = false
+                        auto_activate.footwork_counter = 0
+                        auto_activate.footwork_cur_limit = 0
+                        auto_activate.footwork_neutral = 0
+                        _G._dv_aa_pending_input = nil
+                        _G._dv_aa_pending_sub = nil
+                        _dv_mark_aa_release(12)
+                    end
                 end
-                if bridge._aa.move_input ~= nil then
+                if aa_bridge_enabled and bridge._aa.move_input ~= nil then
                     if bridge._aa.move_input == "" then
                         auto_activate.move = nil
                         auto_activate.move_idx = 1
@@ -433,7 +455,7 @@ local function poll_web_bridge()
                     auto_activate.neutral_buffer = bridge._aa.neutral_buffer
                     config.aa_neutral_buffer = bridge._aa.neutral_buffer
                 end
-                if bridge._aa.set_sub then
+                if aa_bridge_enabled and bridge._aa.set_sub then
                     local input = bridge._aa.set_sub.input
                     if bridge._aa.set_sub.active then
                         local w = bridge._aa.set_sub.weight or 5
@@ -445,14 +467,14 @@ local function poll_web_bridge()
                         auto_activate.sub_moves[input] = nil
                     end
                 end
-                if bridge._aa.set_sub_weight then
+                if aa_bridge_enabled and bridge._aa.set_sub_weight then
                     local input = bridge._aa.set_sub_weight.input
                     local w = bridge._aa.set_sub_weight.weight or 5
                     if auto_activate.sub_moves[input] then
                         auto_activate.sub_moves[input].weight = w
                     end
                 end
-                if bridge._aa.footwork ~= nil then
+                if aa_bridge_enabled and bridge._aa.footwork ~= nil then
                     auto_activate.footwork_enabled = bridge._aa.footwork
                     if not bridge._aa.footwork then auto_activate.p2_mask = 0; auto_activate.footwork_counter = 0 end
                 end
@@ -2716,7 +2738,26 @@ local function draw_config_ui()
         if c_en then
             auto_activate.enabled = v_en
             if v_en then auto_activate.was_in_range = true
-            else aa_stop_fire(); auto_activate.waiting_neutral = false; auto_activate.was_in_range = false end
+            else
+                if auto_activate.is_firing then aa_stop_fire() end
+                auto_activate.p2_mask = 0
+                auto_activate.delay_counter = 0
+                auto_activate.waiting_neutral = false
+                auto_activate.was_in_range = false
+                auto_activate.move = nil
+                auto_activate.move_idx = 1
+                auto_activate.sequence = {}
+                auto_activate.sub_moves = {}
+                auto_activate.active_move = nil
+                auto_activate.active_sequence = {}
+                auto_activate.footwork_enabled = false
+                auto_activate.footwork_counter = 0
+                auto_activate.footwork_cur_limit = 0
+                auto_activate.footwork_neutral = 0
+                _G._dv_aa_pending_input = nil
+                _G._dv_aa_pending_sub = nil
+                _dv_mark_aa_release(12)
+            end
         end
 
 
@@ -2939,16 +2980,57 @@ _G._aa_log = { active = false, file = nil, frame = 0 }
 local _aa_log = _G._aa_log
 local _dv_last_window_rect = nil -- saved from on_draw_ui, used next frame
 
+_dv_mark_aa_release = function(frames)
+    _G.SF6_DistanceViewer_AutoActivate_Enabled = false
+    _G._dv_aa_enabled = false
+    _G._dv_aa_p2_mask = 0
+    _G._dv_aa_release_frames = math.max(_G._dv_aa_release_frames or 0, frames or 8)
+    _G._dv_aa_heartbeat = os.clock()
+    local rs = _G.SF6CC_RuntimeSafety
+    _G._dv_aa_frame = rs and rs.frame or 0
+    if _dv_release_p2_input then pcall(_dv_release_p2_input) end
+end
+
+_dv_update_aa_input_state = function()
+    local mask = auto_activate and (auto_activate.p2_mask or 0) or 0
+    local aa_enabled = _G.SF6_DistanceViewer_Enabled == true and auto_activate and auto_activate.enabled == true
+    local owns_input = aa_enabled and mask > 0
+    _G.SF6_DistanceViewer_AutoActivate_Enabled = aa_enabled
+    _G._dv_aa_enabled = owns_input
+    _G._dv_aa_p2_mask = owns_input and mask or 0
+    if aa_enabled and not owns_input and (_G._dv_aa_last_had_input == true) then
+        _G._dv_aa_release_frames = math.max(_G._dv_aa_release_frames or 0, 4)
+    end
+    _G._dv_aa_last_had_input = owns_input
+    _G._dv_aa_heartbeat = os.clock()
+    local rs = _G.SF6CC_RuntimeSafety
+    _G._dv_aa_frame = rs and rs.frame or 0
+end
+
 local function _dv_disable_runtime_effects()
     d2d_queue = {}
     _dv_last_window_rect = nil
-    _G._dv_aa_p2_mask = 0
+    _dv_mark_aa_release(12)
+    _G._dv_aa_pending_input = nil
+    _G._dv_aa_pending_sub = nil
     if auto_activate then
+        if auto_activate.is_firing then aa_stop_fire() end
         auto_activate.p2_mask = 0
         auto_activate.delay_counter = 0
         auto_activate.waiting_neutral = false
         auto_activate.was_in_range = false
-        if auto_activate.is_firing then aa_stop_fire() end
+        auto_activate.tracked_action_id = -1
+        auto_activate.active_move = nil
+        auto_activate.active_sequence = {}
+        auto_activate.current_step = 1
+        auto_activate.current_frame = 0
+        auto_activate.fire_delay = 0
+        auto_activate.footwork_counter = 0
+        auto_activate.footwork_cur_limit = 0
+        auto_activate.footwork_neutral = 0
+        auto_activate.reset_grace = 0
+        auto_activate.gap_grace = 0
+        auto_activate._anticipation_roll = nil
     end
 end
 
@@ -2973,8 +3055,8 @@ local function _dv_read_p1_act_st()
 end
 
 local function aa_tick()
-    if not RuntimeSafety.is_training_allowed() then
-        auto_activate.p2_mask = 0
+    if _G.SF6_DistanceViewer_Enabled ~= true or not RuntimeSafety.is_training_allowed() then
+        _dv_disable_runtime_effects()
         return
     end
 
@@ -3001,6 +3083,21 @@ local function aa_tick()
         auto_activate.waiting_neutral = false
         auto_activate.tracked_action_id = -1
         if auto_activate.is_firing then aa_stop_fire(); auto_activate.waiting_neutral = false end
+        _dv_update_aa_input_state()
+        return
+    end
+
+    if not auto_activate.enabled then
+        if auto_activate.is_firing then aa_stop_fire() end
+        auto_activate.p2_mask = 0
+        auto_activate.delay_counter = 0
+        auto_activate.waiting_neutral = false
+        auto_activate.was_in_range = false
+        auto_activate.footwork_counter = 0
+        auto_activate.footwork_cur_limit = 0
+        auto_activate.footwork_neutral = 0
+        auto_activate._anticipation_roll = nil
+        _dv_mark_aa_release(8)
         return
     end
 
@@ -3083,9 +3180,10 @@ local function aa_tick()
         end
     end
 
-    if not auto_activate.enabled or not aa_has_any_move() then
+    if not aa_has_any_move() then
         if auto_activate.is_firing then aa_stop_fire(); auto_activate.waiting_neutral = false end
         if not auto_activate.footwork_enabled then auto_activate.p2_mask = 0 end
+        _dv_update_aa_input_state()
         return
     end
 
@@ -3093,6 +3191,7 @@ local function aa_tick()
         if auto_activate.fire_delay > 0 then
             auto_activate.fire_delay = auto_activate.fire_delay - 1
             auto_activate.p2_mask = 0
+            _dv_update_aa_input_state()
             return
         end
         local step = auto_activate.active_sequence[auto_activate.current_step]
@@ -3109,6 +3208,7 @@ local function aa_tick()
         else
             aa_stop_fire()
         end
+        _dv_update_aa_input_state()
         return
     end
 
@@ -3127,11 +3227,12 @@ local function aa_tick()
                 auto_activate.was_in_range = true
             end
         end
+        _dv_update_aa_input_state()
         return
     end
 
     local best_ar, best_jump = aa_best_range()
-    if best_ar < 0 then return end
+    if best_ar < 0 then _dv_update_aa_input_state(); return end
 
     local d_min = auto_activate.delay_min
     local d_max = math.max(d_min, auto_activate.delay_max)
@@ -3150,8 +3251,8 @@ local function aa_tick()
         in_range = c2c < effective_ar
     else
         local _, dist = get_closest_edge(1)
-        if not dist then return end
-        if c2c > 400 and dist < 1 then return end
+        if not dist then _dv_update_aa_input_state(); return end
+        if c2c > 400 and dist < 1 then _dv_update_aa_input_state(); return end
         in_range = dist <= effective_ar + 0.0000001
     end
 
@@ -3181,6 +3282,7 @@ local function aa_tick()
         auto_activate.waiting_neutral = false
         if auto_activate.is_firing then aa_stop_fire(); auto_activate.waiting_neutral = false end
         if auto_activate.delay_counter > 0 then auto_activate.delay_counter = 0 end
+        _dv_update_aa_input_state()
         return
     end
 
@@ -3208,32 +3310,65 @@ local function aa_tick()
 
     auto_activate.was_in_range = in_range
     if auto_activate.was_in_range and not in_range then auto_activate._anticipation_roll = nil end
+    _dv_update_aa_input_state()
 
 end
 
 -- Register AA input injection with shared pl_input_sub hook (0_SharedHooks.lua)
 local _dv_gBattle_td = sdk.find_type_definition("gBattle")
-local function _dv_apply_p2_input_mask()
-    if not RuntimeSafety.can_inject_input() then return end
-    local p2 = _dv_gBattle_td:get_field("Player"):get_data(nil).mcPlayer[1]
-    if not p2 then return end
-    local final_mask = auto_activate.p2_mask
-    if p2:get_field("rl_dir") then
-        local has_right = (final_mask & 4) ~= 0
-        local has_left  = (final_mask & 8) ~= 0
-        final_mask = final_mask & ~12
-        if has_right then final_mask = final_mask | 8 end
-        if has_left  then final_mask = final_mask | 4 end
+_dv_release_p2_input = function()
+    if not _dv_gBattle_td then return end
+    local ok, p2 = pcall(function()
+        local player = _dv_gBattle_td:get_field("Player"):get_data(nil)
+        return player and player.mcPlayer and player.mcPlayer[1]
+    end)
+    if ok and p2 then
+        pcall(function()
+            p2:set_field("pl_input_new", 0)
+            p2:set_field("pl_sw_new", 0)
+        end)
     end
-    p2:set_field("pl_input_new", final_mask)
-    p2:set_field("pl_sw_new", final_mask)
+end
+
+local function _dv_apply_p2_input_mask()
+    -- Intentionally no input write here. aa_tick publishes the desired mask;
+    -- SharedHooks is the single owner that applies or releases P2 input.
 end
 if _G._shared_input_post then
-    table.insert(_G._shared_input_post, function(p_id, retval)
-        if RuntimeSafety.can_inject_input() and p_id == 1 and (auto_activate.is_firing or auto_activate.footwork_enabled) and auto_activate.p2_mask > 0 then
-            pcall(_dv_apply_p2_input_mask)
+    for i = #_G._shared_input_post, 1, -1 do
+        local cb = _G._shared_input_post[i]
+        local ok_info, info = false, nil
+        if debug and debug.getinfo then
+            ok_info, info = pcall(debug.getinfo, cb, "S")
         end
-    end)
+        local src = ok_info and info and info.source or ""
+        if src:find("SF6_DistanceViewer.lua", 1, true) then
+            table.remove(_G._shared_input_post, i)
+        end
+    end
+    if _G._dv_ensure_shared_input_finalizer_tail then
+        pcall(_G._dv_ensure_shared_input_finalizer_tail)
+    end
+    local function dv_shared_input_post(p_id, retval)
+        if p_id == 1 and (auto_activate.enabled ~= true or _G.SF6_DistanceViewer_Enabled ~= true) then
+            _dv_mark_aa_release(8)
+        end
+    end
+    local replaced = false
+    for i, cb in ipairs(_G._shared_input_post) do
+        if cb == _G._dv_shared_input_post then
+            _G._shared_input_post[i] = dv_shared_input_post
+            replaced = true
+            break
+        end
+    end
+    if not replaced then
+        table.insert(_G._shared_input_post, dv_shared_input_post)
+    end
+    _G._dv_shared_input_post = dv_shared_input_post
+    if _G._dv_ensure_shared_input_finalizer_tail then
+        pcall(_G._dv_ensure_shared_input_finalizer_tail)
+    end
 end
 
 -- Hook set_IsReqRefresh to detect battle reset → re-arm AA
@@ -3243,7 +3378,7 @@ pcall(function()
     if m then
         sdk.hook(m, function(args)
             if sdk.to_int64(args[3]) ~= 0 then
-                if auto_activate.enabled then
+                if _G.SF6_DistanceViewer_Enabled == true and auto_activate.enabled then
                     auto_activate.reset_grace = 90
                     auto_activate.waiting_neutral = false
                     auto_activate.delay_counter = 0
@@ -3367,6 +3502,7 @@ re.on_frame(function()
             auto_activate.footwork_counter = 0
             auto_activate.p2_mask = 0
             if auto_activate.is_firing then aa_stop_fire() end
+            _dv_mark_aa_release(12)
         end
         _G._dv_last_p2_char = p2_name
     end
