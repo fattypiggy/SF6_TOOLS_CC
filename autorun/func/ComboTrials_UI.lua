@@ -913,7 +913,7 @@ re.on_frame(function()
         if trial_state.success_timer > 0 then
             line1 = "!!! 成功 !!!"; col1 = 0xFF00FF00
             show_our_hud = true
-        elseif trial_state.is_playing and trial_state.fail_timer and trial_state.fail_timer > 0 then
+        elseif trial_state.is_playing and ((trial_state.fail_timer and trial_state.fail_timer > 0) or trial_state.manual_reset_pending) then
             line1 = "[ " .. zh_status_text(trial_state.fail_reason or "FAILED") .. " ]"
             col1 = (trial_state.fail_reason and string.match(trial_state.fail_reason, "TOO")) and 0xFF0000FF or
                 0xFF00A5FF

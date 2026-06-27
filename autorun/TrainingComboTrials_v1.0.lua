@@ -19,6 +19,7 @@ local ui_state = { viewed_player = 0 }
 
 -- EXACT FRAME COUNTER (Lag-independent, synced to engine)
 local engine_frame_count = 0
+local _pf = {}
 
 local DIR_MAP = {
     [0] = "5",
@@ -126,6 +127,7 @@ local trial_state = {
     success_timer = 0,
     fail_timer = 0,
     fail_reason = nil,
+    manual_reset_pending = false,
     last_recorded_frame = 0,
     last_played_frame = 0,
     start_pos_p1 = nil,
@@ -1215,10 +1217,20 @@ local function save_native_position_settings(sm)
     }
 end
 
+local function request_training_refresh()
+    pcall(function()
+        local tm = sdk.get_managed_singleton("app.training.TrainingManager")
+        if tm then tm._IsReqRefresh = true end
+    end)
+end
+
 local function restore_native_position_settings(request_refresh)
     clear_pending_position_injection()
     local saved = trial_state._native_position_settings
-    if not saved then return end
+    if not saved then
+        if request_refresh then request_training_refresh() end
+        return
+    end
 
     pcall(function()
         local tm = sdk.get_managed_singleton("app.training.TrainingManager")
@@ -1486,6 +1498,87 @@ local function clear_combo_state()
     return ComboTrials_Files.clear_combo_state()
 end
 
+local function reset_player_action_buffers(p_state)
+    if not p_state then return end
+    local direct_input = _pf.direct_input or 0
+    local act_id = _pf.act_id or -1
+    local act_frame = _pf.act_frame or -1
+    p_state.log = {}
+    p_state.input_history_queue = {}
+    p_state.prev_act_id = -1
+    p_state.prev_act_frame = -1
+    p_state.last_direct_input = direct_input
+    p_state.last_combo_count = 0
+    p_state.buffer_act_id = act_id
+    p_state.buffer_act_frame = act_frame
+    p_state.buffer_start_frame = engine_frame_count
+    p_state.buffer_flags = _pf.flags or 0
+    p_state.buffer_action_code = _pf.action_code or 0
+    p_state.buffer_direct_input = direct_input
+    p_state.buffer_b_type = _pf.b_type or 0
+    p_state.buffer_hold_frames = 0
+    p_state.buffer_is_committed = true
+end
+
+local function begin_trial_action_grace(frames)
+    trial_state._action_grace = frames or 90
+    trial_state._action_grace_min = 12
+    trial_state._reset_wait_refresh = true
+end
+
+local function should_hold_trial_action_grace()
+    if trial_state._reset_wait_refresh then
+        local tm = sdk.get_managed_singleton("app.training.TrainingManager")
+        if tm and tm:get_field("_IsReqRefresh") == true then
+            return true
+        end
+        trial_state._reset_wait_refresh = false
+    end
+
+    local min_frames = trial_state._action_grace_min or 0
+    if min_frames > 0 then
+        trial_state._action_grace_min = min_frames - 1
+        return true
+    end
+
+    local act_id = _pf.act_id or -1
+    local buttons = (_pf.direct_input or 0) & 0xFFF0
+    local neutral_action = (act_id <= 50) or act_id == 17 or act_id == 18 or act_id == 36 or act_id == 37 or act_id == 38
+    return not (neutral_action and buttons == 0)
+end
+
+local function is_trial_action_grace_active()
+    return trial_state._action_grace and trial_state._action_grace > 0
+end
+
+local function clear_trial_attempt_state(player_idx)
+    trial_state.success_timer = 0
+    trial_state.fail_timer = 0
+    trial_state.fail_reason = nil
+    trial_state.manual_reset_pending = false
+    trial_state._fail_captured = false
+    trial_state.active_universal_hold = nil
+    trial_state.pending_auto_check = nil
+    trial_state.current_step = 1
+    trial_state.ui_visual_step = 1
+    trial_state.floating_info = nil
+    trial_state.floating_color = nil
+    trial_state._step1_wrong_pending = false
+    trial_state._first_hit_landed = false
+    trial_state._pending_hit_cc = nil
+    trial_state._hit_grace = 0
+    trial_state._reset_grace = 15
+    trial_state.last_played_frame = engine_frame_count
+    begin_trial_action_grace()
+
+    reset_player_action_buffers(players[player_idx or trial_state.playing_player])
+    for _, item in ipairs(trial_state.sequence) do
+        item.actual_combo = 0
+        item.has_hit = false
+        item.last_frame_diff = nil
+    end
+end
+
 -- =========================================================
 -- END DEMO PLAYBACK AREA
 -- =========================================================
@@ -1554,18 +1647,13 @@ local function start_trial(player_idx)
     trial_state._rec_hit_type = nil
     trial_state.is_playing = true
     trial_state.playing_player = player_idx
-    trial_state.current_step = 1
     trial_state._was_playing = false
-    trial_state._first_hit_landed = false
-    trial_state._reset_grace = 15
     trial_state._hp_inject_frames = 0
+    clear_trial_attempt_state(player_idx)
 
     trial_state.live_start_pos_p1, trial_state.live_start_pos_p2, trial_state.live_start_pos_p1_raw, trial_state.live_start_pos_p2_raw = capture_current_positions()
 
     -- Full display reset (Text log + D2D Raw and Animated)
-    players[player_idx].log = {}
-    players[player_idx].input_history_queue = {}
-    players[player_idx].last_combo_count = 0
     if ComboTrials_D2D then
         pcall(function() ComboTrials_D2D.reset_anim() end)
         pcall(function() ComboTrials_D2D.reset_raw() end)
@@ -1658,25 +1746,11 @@ end
 
 local function reset_trial_steps()
     clear_pending_position_injection()
-    trial_state.success_timer = 0
-    trial_state.fail_timer = 0
-    trial_state.fail_reason = nil
-    trial_state.active_universal_hold = nil
-    trial_state.current_step = 1
-	trial_state.ui_visual_step = 1     --- NEW
-    trial_state.floating_info = nil    --- NEW
-    trial_state._step1_wrong_pending = false
-    trial_state._first_hit_landed = false
-    trial_state._reset_grace = 15
-    local p_state = players[trial_state.playing_player]
-    if p_state then p_state.last_combo_count = 0 end
-    for _, item in ipairs(trial_state.sequence) do
-        item.actual_combo = 0
-        item.has_hit = false
-        item.last_frame_diff = nil
-    end
+    clear_trial_attempt_state(trial_state.playing_player)
     -- Keep the training room's health settings for the next attempt
     reinject_trial_vital()
+    apply_trial_training_environment()
+    update_trial_flip_state()
     -- Reset positions if forced pos / mirror is active
     apply_forced_position()
     trial_state._pending_reinject_settings = true
@@ -1988,7 +2062,6 @@ end
 -- =========================================================
 -- PER-FRAME PLAYER CONTEXT (reused each player-loop iteration)
 -- =========================================================
-local _pf = {}
 local _replay_cleaned = false
 
 -- =========================================================
@@ -2018,13 +2091,6 @@ local function ct_handle_web_commands()
             local ok, err = pcall(function()
                 if not trial_state.is_playing then return end
                 local curr_player = trial_state.playing_player
-                local paths = (curr_player == 0) and file_system.saved_combos_paths_p1 or file_system.saved_combos_paths_p2
-                local idx = (curr_player == 0) and (file_system.selected_file_idx_p1 or 1) or (file_system.selected_file_idx_p2 or 1)
-                if #paths > 0 then
-                    load_combo_from_file(paths[idx], true)
-                    start_trial(curr_player)
-                    return
-                end
                 if #trial_state.sequence > 0 then
                     trial_state.is_playing = true
                     trial_state.playing_player = curr_player
@@ -2340,7 +2406,7 @@ local function ct_player_init(p_idx, p_state)
         if trial_state.success_timer > 0 then
             trial_state.success_timer = trial_state.success_timer - 1
             if trial_state.success_timer <= 0 then
-                reset_trial_steps()
+                trial_state.success_timer = 0
             end
         end
 
@@ -2356,9 +2422,8 @@ local function ct_player_init(p_idx, p_state)
 
             trial_state.fail_timer = trial_state.fail_timer - 1
             if trial_state.fail_timer <= 0 then
-                trial_state.fail_reason = nil
-                trial_state._fail_captured = false
-                reset_trial_steps()
+                trial_state.fail_timer = 0
+                trial_state.manual_reset_pending = true
             end
         end
     	end
@@ -2477,7 +2542,7 @@ local function ct_player_tracking(p_idx, p_state)
         elseif trial_state.is_playing and p_idx == trial_state.playing_player
             and not (trial_state.fail_timer and trial_state.fail_timer > 0) then
             -- Step 1 tolerance: fail if the wrong hit LANDS on the dummy
-            if trial_state._step1_wrong_pending and trial_state.current_step == 1 then
+            if trial_state._step1_wrong_pending and trial_state.current_step == 1 and not is_trial_action_grace_active() then
                 trial_state._step1_wrong_pending = false
                 trial_state.fail_timer = d2d_cfg.fail_display_frames or 120
                 trial_state.fail_reason = "WRONG MOVE"
@@ -2532,7 +2597,7 @@ local function ct_player_validation(p_idx, p_state)
     -- SUCCESS VERIFICATION + DROP DETECTION (Trial)
     -- ========================================================
     local is_demo_playing = (demo_state and demo_state.is_playing)
-    if trial_state.is_playing and p_idx == trial_state.playing_player and not is_demo_playing then
+    if trial_state.is_playing and p_idx == trial_state.playing_player and not is_demo_playing and not trial_state.manual_reset_pending then
         local is_hold_pending = (trial_state.active_universal_hold ~= nil)
 
         if #trial_state.sequence > 0 and trial_state.current_step > #trial_state.sequence then
@@ -2671,6 +2736,20 @@ local function ct_player_hold_charge(p_state)
 end
 
 local function ct_player_input_buffer(p_state)
+    if trial_state.is_playing and p_state == players[trial_state.playing_player]
+        and trial_state._action_grace and trial_state._action_grace > 0 then
+        local hold_grace = should_hold_trial_action_grace()
+        trial_state._action_grace = trial_state._action_grace - 1
+        if hold_grace then
+            reset_player_action_buffers(p_state)
+            return {}
+        end
+        trial_state._action_grace = 0
+        trial_state._action_grace_min = 0
+        reset_player_action_buffers(p_state)
+        return {}
+    end
+
     local newly_pressed = (_pf.direct_input ~ p_state.last_direct_input) & _pf.direct_input
     local current_dir_val = _pf.direct_input & 0xF
     local current_dir = DIR_MAP[current_dir_val] or "5"
@@ -3200,7 +3279,7 @@ local function ct_player_process_actions(p_idx, p_state, actions_to_process)
                     trial_step_idx = #trial_state.sequence
                 elseif trial_state.is_playing and p_idx == trial_state.playing_player and #trial_state.sequence > 0 then
 
-                    if trial_state.success_timer == 0 and not (trial_state.fail_timer and trial_state.fail_timer > 0) then
+                    if not trial_state.manual_reset_pending and trial_state.success_timer == 0 and not (trial_state.fail_timer and trial_state.fail_timer > 0) then
                         local allow_input = true
                         local expected = trial_state.sequence[trial_state.current_step]
 
@@ -3850,17 +3929,18 @@ ctx.reset_visuals = function()
     ComboTrials_D2D.reset_raw()
 end
 ctx.reset_trial_steps_and_load = function(player_idx)
+    if #trial_state.sequence > 0 then
+        trial_state.is_playing = true
+        trial_state.playing_player = player_idx
+        reset_trial_steps()
+        return
+    end
+
     local paths = (player_idx == 0) and file_system.saved_combos_paths_p1 or file_system.saved_combos_paths_p2
     local idx = (player_idx == 0) and (file_system.selected_file_idx_p1 or 1) or (file_system.selected_file_idx_p2 or 1)
     if #paths > 0 then
         load_combo_from_file(paths[idx], true)
         start_trial(player_idx)
-        return
-    end
-    if #trial_state.sequence > 0 then
-        trial_state.is_playing = true
-        trial_state.playing_player = player_idx
-        reset_trial_steps()
     end
 end
 -- =========================================================
@@ -4308,9 +4388,6 @@ end
 if _G._shared_input_post then
 table.insert(_G._shared_input_post, function(p_id, retval)
     if not RuntimeSafety.is_training_allowed() then return end
-    if p_id == 0 and trial_state.is_playing and trial_state.fail_timer and trial_state.fail_timer > 0 then
-        pcall(_ct_clear_inputs, trial_state.playing_player)
-    end
     if p_id == 0 and demo_state.is_playing and demo_state.p1_mask > 0 then
         pcall(_ct_demo_inject_mask)
     end

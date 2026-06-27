@@ -17,7 +17,7 @@
     {
       "path": "reframework\\autorun\\func\\ComboTrials_D2D.lua",
       "version": "0.8f",
-      "sha256": "3e70b5f9f15f9de737d94d728ed45a8e9419d7148ffa4142395569c2dab7bf53",
+      "sha256": "4aae41b2273e2c8df699202e5b6ceecba9254f9d77da50cc792adc2037846cd4",
       "required": true
     },
     {
@@ -35,7 +35,7 @@
     {
       "path": "reframework\\autorun\\func\\ComboTrials_UI.lua",
       "version": "0.8f",
-      "sha256": "bdc988b18c60ca3612e78a09fc323c07ba59bbacf342889a831292bd9283ecca",
+      "sha256": "8a4b71d3daeb56dc8505c75a8dc0827ee2e5c7d2fb2e7c8a65ffebfc249c1cc7",
       "required": true
     },
     {
@@ -113,7 +113,7 @@
     {
       "path": "reframework\\autorun\\TrainingComboTrials_v1.0.lua",
       "version": "0.8f",
-      "sha256": "99309754011ec2e349d6e428aa8712d36a17bd455403787739c8993007578993",
+      "sha256": "89321a5615bf3054af8c1a6985c848bc62949527972fb29b4735e27978a3e09e",
       "required": true
     },
     {

@@ -992,18 +992,12 @@ local function d2d_draw_inner()
 
         -- Animated cursor
         if target_anim_y then
-            local is_fail_or_reset = (trial_state.fail_timer and trial_state.fail_timer > 0)
-            if is_fail_or_reset then
-                -- Teleport cartouche to step 1 instantly during fail/reload
-                local reset_y = trial_y + (1 - start_idx) * spacing_y
-                d2d_anim.active_y = reset_y
-                target_anim_y = reset_y
-            elseif not d2d_anim.active_y or math.abs(d2d_anim.active_y - target_anim_y) > (spacing_y * 3) then
+            if not d2d_anim.active_y or math.abs(d2d_anim.active_y - target_anim_y) > (spacing_y * 3) then
                 d2d_anim.active_y = target_anim_y
             end
             d2d_anim.active_y = d2d_anim.active_y + (target_anim_y - d2d_anim.active_y) * 0.15
 
-            local is_fail_state = (trial_state.fail_timer and trial_state.fail_timer > 0)
+            local is_fail_state = (trial_state.fail_timer and trial_state.fail_timer > 0) or trial_state.manual_reset_pending
             local bar_img = nil
             if mode == "recording" then
                 bar_img = assets.imgs["success_bar"]
@@ -1065,7 +1059,7 @@ local function d2d_draw_inner()
             -- Only draw standalone arrow when bar images are unavailable.
             if not assets.imgs["active_bar"] and not assets.imgs["fail_bar"] and not assets.imgs["success_bar"] then
                 local arrow_tex = "arrow"
-                local is_fail_state = (trial_state.fail_timer and trial_state.fail_timer > 0)
+                local is_fail_state = (trial_state.fail_timer and trial_state.fail_timer > 0) or trial_state.manual_reset_pending
                 if trial_state.success_timer > 0 then
                     arrow_tex = "arrow_success"
                 elseif is_fail_state then
