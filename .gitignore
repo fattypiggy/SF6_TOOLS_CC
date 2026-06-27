@@ -14,8 +14,7 @@ sync_signal.json
 /data/TrainingComboTrials_data/Backups/
 
 # Debug/dump files
-/exam/DUMPS_AND_RAWMETHODS/
-/exam/DUMPS_AND_RAWMETHODS.zip
+/exam/
 
 # Build/release artifacts
 /release/
