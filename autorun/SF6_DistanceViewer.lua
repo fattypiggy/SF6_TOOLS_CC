@@ -113,7 +113,6 @@ local auto_activate = {
 }
 local AA_COLOR_RED = 0xFF0000FF
 local AA_COLOR_WHITE = 0xFFFFFFFF
-local _dv_release_p2_input
 local _dv_mark_aa_release
 local _dv_update_aa_input_state
 
@@ -2981,14 +2980,19 @@ local _aa_log = _G._aa_log
 local _dv_last_window_rect = nil -- saved from on_draw_ui, used next frame
 
 _dv_mark_aa_release = function(frames)
+    local had_input = _G._dv_aa_last_had_input == true
+        or _G._dv_aa_enabled == true
+        or (_G._dv_aa_p2_mask or 0) > 0
     _G.SF6_DistanceViewer_AutoActivate_Enabled = false
     _G._dv_aa_enabled = false
     _G._dv_aa_p2_mask = 0
-    _G._dv_aa_release_frames = math.max(_G._dv_aa_release_frames or 0, frames or 8)
+    if had_input then
+        _G._dv_aa_release_frames = math.max(_G._dv_aa_release_frames or 0, frames or 8)
+    end
+    _G._dv_aa_last_had_input = false
     _G._dv_aa_heartbeat = os.clock()
     local rs = _G.SF6CC_RuntimeSafety
     _G._dv_aa_frame = rs and rs.frame or 0
-    if _dv_release_p2_input then pcall(_dv_release_p2_input) end
 end
 
 _dv_update_aa_input_state = function()
@@ -2998,7 +3002,9 @@ _dv_update_aa_input_state = function()
     _G.SF6_DistanceViewer_AutoActivate_Enabled = aa_enabled
     _G._dv_aa_enabled = owns_input
     _G._dv_aa_p2_mask = owns_input and mask or 0
-    if aa_enabled and not owns_input and (_G._dv_aa_last_had_input == true) then
+    if owns_input then
+        _G._dv_aa_release_frames = 0
+    elseif aa_enabled and (_G._dv_aa_last_had_input == true) then
         _G._dv_aa_release_frames = math.max(_G._dv_aa_release_frames or 0, 4)
     end
     _G._dv_aa_last_had_input = owns_input
@@ -3316,24 +3322,6 @@ end
 
 -- Register AA input injection with shared pl_input_sub hook (0_SharedHooks.lua)
 local _dv_gBattle_td = sdk.find_type_definition("gBattle")
-_dv_release_p2_input = function()
-    if not _dv_gBattle_td then return end
-    local ok, p2 = pcall(function()
-        local player = _dv_gBattle_td:get_field("Player"):get_data(nil)
-        return player and player.mcPlayer and player.mcPlayer[1]
-    end)
-    if ok and p2 then
-        pcall(function()
-            p2:set_field("pl_input_new", 0)
-            p2:set_field("pl_sw_new", 0)
-        end)
-    end
-end
-
-local function _dv_apply_p2_input_mask()
-    -- Intentionally no input write here. aa_tick publishes the desired mask;
-    -- SharedHooks is the single owner that applies or releases P2 input.
-end
 if _G._shared_input_post then
     for i = #_G._shared_input_post, 1, -1 do
         local cb = _G._shared_input_post[i]

@@ -108,6 +108,8 @@ _G._shared_input_post = {}
 local p_id_stack = {}
 local _cached_addr = { [0] = nil, [1] = nil }
 local _addr_refresh = 0
+local _dv_p2_input_owned = false
+local _dv_last_release_frame = nil
 
 local function get_p2_player()
     local ok, sP = pcall(_sh_get_player_singleton)
@@ -116,21 +118,36 @@ local function get_p2_player()
 end
 
 local function write_p2_input_mask(mask)
+    if not RuntimeSafety.can_inject_input() then return false end
     local p2 = get_p2_player()
     if not p2 then return false end
     local final_mask = mask or 0
-    if final_mask ~= 0 and p2:get_field("rl_dir") then
+    local ok_rl, facing_reversed = pcall(function() return p2:get_field("rl_dir") end)
+    if final_mask ~= 0 and ok_rl and facing_reversed then
         local has_right = (final_mask & 4) ~= 0
         local has_left  = (final_mask & 8) ~= 0
         final_mask = final_mask & ~12
         if has_right then final_mask = final_mask | 8 end
         if has_left  then final_mask = final_mask | 4 end
     end
-    pcall(function()
+    local ok = pcall(function()
         p2:set_field("pl_input_new", final_mask)
         p2:set_field("pl_sw_new", final_mask)
     end)
-    return true
+    return ok == true
+end
+
+local function decrement_dv_release_frames(release_frames)
+    if release_frames <= 0 then return end
+    local rs = _G.SF6CC_RuntimeSafety
+    local frame = rs and rs.frame
+    if frame == nil then
+        _G._dv_aa_release_frames = math.max(0, release_frames - 1)
+        return
+    end
+    if frame == _dv_last_release_frame then return end
+    _dv_last_release_frame = frame
+    _G._dv_aa_release_frames = math.max(0, release_frames - 1)
 end
 
 local function finalize_distance_viewer_p2_input(p_id)
@@ -138,9 +155,9 @@ local function finalize_distance_viewer_p2_input(p_id)
     local dv_heartbeat = _G._dv_aa_heartbeat or 0
     local heartbeat_stale = dv_heartbeat > 0 and (os.clock() - dv_heartbeat) > 0.5
     local release_frames = _G._dv_aa_release_frames or 0
-    local dv_aa_known = _G._dv_aa_enabled ~= nil or _G._dv_aa_p2_mask ~= nil or dv_heartbeat > 0 or release_frames > 0
     local desired_mask = _G._dv_aa_p2_mask or 0
-    local can_apply = RuntimeSafety.can_inject_input()
+    local can_inject = RuntimeSafety.can_inject_input()
+    local can_apply = can_inject
         and _G.SF6_DistanceViewer_Enabled == true
         and _G.SF6_DistanceViewer_AutoActivate_Enabled == true
         and _G._dv_aa_enabled == true
@@ -149,21 +166,38 @@ local function finalize_distance_viewer_p2_input(p_id)
         and desired_mask > 0
 
     if can_apply then
-        write_p2_input_mask(desired_mask)
+        if write_p2_input_mask(desired_mask) then
+            _dv_p2_input_owned = true
+        end
         return
     end
 
-    local should_clear = (dv_aa_known and _G.SF6_DistanceViewer_Enabled ~= true)
-        or (dv_aa_known and _G.SF6_DistanceViewer_AutoActivate_Enabled ~= true)
-        or (dv_aa_known and _G._dv_aa_enabled ~= true)
-        or heartbeat_stale
-        or release_frames > 0
-    if not should_clear then return end
-    write_p2_input_mask(0)
+    if not can_inject then
+        _G._dv_aa_p2_mask = 0
+        _G._dv_aa_enabled = false
+        _G._dv_aa_release_frames = 0
+        return
+    end
+
+    local should_release = release_frames > 0
+        or (_dv_p2_input_owned and _G.SF6_DistanceViewer_Enabled ~= true)
+        or (_dv_p2_input_owned and _G.SF6_DistanceViewer_AutoActivate_Enabled ~= true)
+        or (_dv_p2_input_owned and _G._dv_aa_enabled ~= true)
+        or (_dv_p2_input_owned and heartbeat_stale)
+    if not should_release then return end
+
+    if _dv_p2_input_owned then
+        write_p2_input_mask(0)
+    end
     _G._dv_aa_p2_mask = 0
     _G._dv_aa_enabled = false
     if release_frames > 0 then
-        _G._dv_aa_release_frames = release_frames - 1
+        decrement_dv_release_frames(release_frames)
+        if release_frames <= 1 then
+            _dv_p2_input_owned = false
+        end
+    else
+        _dv_p2_input_owned = false
     end
 end
 
@@ -185,7 +219,10 @@ _G._dv_ensure_shared_input_finalizer_tail = ensure_distance_viewer_finalizer_tai
 ensure_distance_viewer_finalizer_tail()
 
 local function reset_distance_viewer_p2_input()
-    write_p2_input_mask(0)
+    if _dv_p2_input_owned and RuntimeSafety.can_inject_input() then
+        write_p2_input_mask(0)
+    end
+    _dv_p2_input_owned = false
     _G.SF6_DistanceViewer_AutoActivate_Enabled = false
     _G._dv_aa_enabled = false
     _G._dv_aa_p2_mask = 0
