@@ -13,7 +13,17 @@ local state = {
     in_training = false,
     in_replay = false,
     in_battle_hub = false,
+    native_context = false,
+    native_context_frame = nil,
     frame = 0,
+}
+
+local native_context_cache = { frame = -1, value = false }
+local TRAINING_MANAGER_ALLOW_METHODS = {
+    "get_IsTrainingMode",
+    "get_IsTraining",
+    "get_IsActive",
+    "get_IsEnable",
 }
 
 local function publish()
@@ -40,6 +50,11 @@ local function read_flow_id()
     local work = bfm:get_field("m_flow_work")
     if work and work._FlowMap then return work._FlowMap._ID end
     return nil
+end
+
+local function current_flow_id()
+    if state.flow_id ~= nil then return state.flow_id end
+    return read_flow_id()
 end
 
 local function get_training_manager()
@@ -94,13 +109,7 @@ local function training_manager_allows(tm)
     tm = tm or get_training_manager()
     if not tm then return false end
 
-    local candidates = {
-        "get_IsTrainingMode",
-        "get_IsTraining",
-        "get_IsActive",
-        "get_IsEnable",
-    }
-    for _, method in ipairs(candidates) do
+    for _, method in ipairs(TRAINING_MANAGER_ALLOW_METHODS) do
         local ok, value = pcall(function() return tm:call(method) end)
         if ok and value == false then return false end
     end
@@ -115,10 +124,24 @@ local function has_training_context()
 end
 
 local function native_training_context()
-    local fid = read_flow_id()
+    local fid = current_flow_id()
     if fid == 9 or fid == 10 then return false end
     if _G.IsInBattleHub == true or _G.IsInReplay == true then return false end
     return has_training_context()
+end
+
+local function cached_native_training_context()
+    local frame = state.frame or 0
+    if native_context_cache.frame == frame then
+        return native_context_cache.value
+    end
+
+    local ok, value = pcall(native_training_context)
+    native_context_cache.frame = frame
+    native_context_cache.value = ok and value == true
+    state.native_context = native_context_cache.value
+    state.native_context_frame = frame
+    return native_context_cache.value
 end
 
 function M.begin_frame(flow_id, in_training, in_replay, in_battle_hub)
@@ -129,6 +152,8 @@ function M.begin_frame(flow_id, in_training, in_replay, in_battle_hub)
     state.in_training = in_training == true
     state.in_replay = in_replay == true
     state.in_battle_hub = in_battle_hub == true
+    state.native_context = false
+    state.native_context_frame = nil
     state.frame = (state.frame or 0) + 1
     publish()
 end
@@ -142,9 +167,10 @@ function M.disable(reason)
 end
 
 function M.allow_training()
-    state.allowed = true
-    state.input_allowed = true
-    state.reason = "training"
+    local allowed = cached_native_training_context()
+    state.allowed = allowed
+    state.input_allowed = allowed
+    state.reason = allowed and "training" or "unsafe_training_context"
     publish()
 end
 
@@ -158,25 +184,25 @@ end
 function M.is_allowed()
     if _G.SF6CC_RuntimeAllowed ~= true then return false end
     if M.is_replay_allowed() then
-        local fid = read_flow_id()
+        local fid = current_flow_id()
         return fid == 10 or _G.IsInReplay == true
     end
-    return native_training_context()
+    return cached_native_training_context()
 end
 
 function M.can_inject_input()
-    return _G.SF6CC_InputInjectionAllowed == true and native_training_context()
+    return _G.SF6CC_InputInjectionAllowed == true and cached_native_training_context()
 end
 
 function M.is_training_allowed()
     local s = _G.SF6CC_RuntimeSafety
-    return s and s.allowed == true and s.reason == "training" and native_training_context()
+    return s and s.allowed == true and s.reason == "training" and cached_native_training_context()
 end
 
 function M.is_replay_allowed()
     local s = _G.SF6CC_RuntimeSafety
     if not (s and s.allowed == true and s.reason == "replay") then return false end
-    local fid = read_flow_id()
+    local fid = current_flow_id()
     return fid == 10 or _G.IsInReplay == true
 end
 

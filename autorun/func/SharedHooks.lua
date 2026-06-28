@@ -106,6 +106,7 @@ _G._shared_input_pre = {}
 _G._shared_input_post = {}
 
 local p_id_stack = {}
+local p_id_stack_top = 0
 local _cached_addr = { [0] = nil, [1] = nil }
 local _addr_refresh = 0
 local _dv_p2_input_owned = false
@@ -207,12 +208,13 @@ end
 
 local function ensure_distance_viewer_finalizer_tail()
     if not _G._shared_input_post then return end
+    -- Finalization runs unconditionally after post callbacks below; keep old
+    -- registrations from duplicate-loading this module out of the shared list.
     for i = #_G._shared_input_post, 1, -1 do
         if _G._shared_input_post[i] == distance_viewer_input_finalizer then
             table.remove(_G._shared_input_post, i)
         end
     end
-    table.insert(_G._shared_input_post, distance_viewer_input_finalizer)
 end
 
 _G._dv_ensure_shared_input_finalizer_tail = ensure_distance_viewer_finalizer_tail
@@ -262,7 +264,8 @@ if cplayer_type then
                 if hook_addr == _cached_addr[0] then p_id = 0
                 elseif hook_addr == _cached_addr[1] then p_id = 1 end
 
-                table.insert(p_id_stack, p_id)
+                p_id_stack_top = p_id_stack_top + 1
+                p_id_stack[p_id_stack_top] = p_id
                 if RuntimeSafety.can_inject_input() then
                     for _, cb in ipairs(_G._shared_input_pre) do
                         pcall(cb, p_id, args)
@@ -270,7 +273,9 @@ if cplayer_type then
                 end
             end,
             function(retval)
-                local p_id = table.remove(p_id_stack) or -1
+                local p_id = p_id_stack[p_id_stack_top] or -1
+                p_id_stack[p_id_stack_top] = nil
+                if p_id_stack_top > 0 then p_id_stack_top = p_id_stack_top - 1 end
                 if RuntimeSafety.can_inject_input() then
                     for _, cb in ipairs(_G._shared_input_post) do
                         pcall(cb, p_id, retval)

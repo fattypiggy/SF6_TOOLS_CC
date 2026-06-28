@@ -121,6 +121,8 @@ local _dv_update_aa_input_state
 -- =========================================================
 local UNIFIED_FILE = "SF6_DistanceViewer_data/SF6Distance_Data_Attacks.json"
 local advanced_data = {}
+local _dv_aa_moves_cache_key = nil
+local _dv_aa_moves_data_revision = 0
 
 local fallback_spacing = { yellow = 2.50, red = 2.00, low = 1.50 }
 local jump_data_store = {}
@@ -629,6 +631,8 @@ local function load_advanced_data()
         end
     end
     advanced_data = atk
+    _dv_aa_moves_data_revision = _dv_aa_moves_data_revision + 1
+    _dv_aa_moves_cache_key = nil
 
     local count = 0
     for _, _ in pairs(advanced_data) do count = count + 1 end
@@ -3425,6 +3429,9 @@ end
 
 local function _dv_rebuild_aa_moves()
     local p2_rname = p2_cache.adv_name or get_real_name(p2_cache.real_name)
+    local cache_key = tostring(p2_cache.real_name or "") .. "|" .. tostring(p2_rname or "") .. "|" .. tostring(_dv_aa_moves_data_revision)
+    if _dv_aa_moves_cache_key == cache_key and _G._dv_aa_moves then return end
+
     local am = {}
     local cd = advanced_data[p2_rname]
     if cd and cd.moves then for _, m in ipairs(cd.moves) do am[#am + 1] = m end end
@@ -3443,6 +3450,7 @@ local function _dv_rebuild_aa_moves()
     local jf = jump_data_store[p2_cache.real_name]
     if jf and jf.cross_up_st then am[#am + 1] = { input = "FORWARD JUMP", ar = jf.cross_up_st, is_jump = true } end
     _G._dv_aa_moves = am
+    _dv_aa_moves_cache_key = cache_key
 end
 
 															  

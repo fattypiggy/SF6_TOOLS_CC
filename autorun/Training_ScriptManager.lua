@@ -352,6 +352,10 @@ local function safe_call(obj, method, arg)
     pcall(obj.call, obj, method, arg)
 end
 
+local TSM_UI_VISIBILITY_REFRESH_FRAMES = 60
+local _tsm_ui_visibility_last_active = nil
+local _tsm_ui_visibility_refresh_wait = 0
+
 local function _tsm_apply_widget_visibility(entries, scripts_active)
     local count = entries:call("get_Count")
     for i = 0, count - 1 do
@@ -373,10 +377,12 @@ local function _tsm_apply_widget_visibility(entries, scripts_active)
                                     for k = 0, len - 1 do
                                         local line = attack_infos:call("GetValue", k)
                                         if line then
-                                            local texts = { line:get_field("LeftText"), line:get_field("CenterText"), line:get_field("RightText") }
-                                            for _, txt_obj in ipairs(texts) do
-                                                if txt_obj then safe_call(txt_obj, "set_Visible", not scripts_active) end
-                                            end
+                                            local left = line:get_field("LeftText")
+                                            local center = line:get_field("CenterText")
+                                            local right = line:get_field("RightText")
+                                            if left then safe_call(left, "set_Visible", not scripts_active) end
+                                            if center then safe_call(center, "set_Visible", not scripts_active) end
+                                            if right then safe_call(right, "set_Visible", not scripts_active) end
                                         end
                                     end
                                 end
@@ -396,6 +402,14 @@ local function _tsm_apply_widget_visibility(entries, scripts_active)
 end
 
 local function manage_ui_visibility(scripts_active)
+    if _tsm_ui_visibility_last_active == scripts_active and _tsm_ui_visibility_refresh_wait > 0 then
+        _tsm_ui_visibility_refresh_wait = _tsm_ui_visibility_refresh_wait - 1
+        return
+    end
+
+    _tsm_ui_visibility_last_active = scripts_active
+    _tsm_ui_visibility_refresh_wait = TSM_UI_VISIBILITY_REFRESH_FRAMES
+
     local mgr = sdk.get_managed_singleton("app.training.TrainingManager")
     if mgr then
         local dict = mgr:get_field("_ViewUIWigetDict")
@@ -566,11 +580,29 @@ local function _tsm_update_hide_rect()
 end
 
 local _TSM_WEBSTATE_INACTIVE = { sf6_running = true, training_active = false, mode = 0 }
-local function _tsm_dump_webstate_inactive()
+local TSM_INACTIVE_WEBSTATE_REFRESH_FRAMES = 300
+local _tsm_inactive_webstate_reason = nil
+local _tsm_inactive_webstate_wait = 0
+
+local function _tsm_dump_webstate_inactive(reason)
+    reason = reason or "inactive"
+    if _tsm_inactive_webstate_reason == reason and _tsm_inactive_webstate_wait > 0 then
+        _tsm_inactive_webstate_wait = _tsm_inactive_webstate_wait - 1
+        return
+    end
+
     json.dump_file("SF6_TrainingRemoteControl_data/TSM_WebState.json", _TSM_WEBSTATE_INACTIVE)
+    _tsm_inactive_webstate_reason = reason
+    _tsm_inactive_webstate_wait = TSM_INACTIVE_WEBSTATE_REFRESH_FRAMES
+end
+
+local function _tsm_mark_webstate_active()
+    _tsm_inactive_webstate_reason = nil
+    _tsm_inactive_webstate_wait = 0
 end
 
 local function _tsm_web_bridge_tick()
+    _tsm_mark_webstate_active()
     json.dump_file("SF6_TrainingRemoteControl_data/TSM_WebState.json", {
         mode = _G.CurrentTrainerMode or 0,
         trial_file = _G.ComboTrials_CurrentFile or "",
@@ -661,7 +693,7 @@ re.on_frame(function()
     if _G.IsInBattleHub then
         if _G.CurrentTrainerMode ~= 0 then _G.CurrentTrainerMode = 0 end
         RuntimeSafety.disable("battle_hub")
-        pcall(_tsm_dump_webstate_inactive)
+        pcall(_tsm_dump_webstate_inactive, "battle_hub")
         return
     end
 
@@ -702,7 +734,7 @@ re.on_frame(function()
             _G.CurrentTrainerMode = 0
         end
         RuntimeSafety.disable("not_training")
-        pcall(_tsm_dump_webstate_inactive)
+        pcall(_tsm_dump_webstate_inactive, "not_training")
         return
     end
     RuntimeSafety.allow_training()
@@ -711,7 +743,7 @@ re.on_frame(function()
             _G.CurrentTrainerMode = 0
         end
         RuntimeSafety.disable("unsafe_training_context")
-        pcall(_tsm_dump_webstate_inactive)
+        pcall(_tsm_dump_webstate_inactive, "unsafe_training_context")
         return
     end
     _G.TrainingModeActive = true

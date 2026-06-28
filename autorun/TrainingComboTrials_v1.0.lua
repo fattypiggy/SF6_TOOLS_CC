@@ -363,8 +363,7 @@ local file_system = {
     auto_load = true,
     forced_position_options = { "GAME SETTINGS", "FORCED", "MIRROR" }
 }
-local COMBO_LIST_AUTO_REFRESH_FRAMES = 60
-local combo_list_auto_refresh_counter = 0
+local combo_list_pending_save_refreshed = false
 local TRIALHUB_SYNC_POLL_FRAMES = 90
 local trialhub_sync_counter = 0
 local trialhub_last_marker = nil
@@ -2134,20 +2133,18 @@ end
 
 local function ct_auto_refresh_combo_list()
     if _G.CurrentTrainerMode ~= 4 then
-        combo_list_auto_refresh_counter = 0
+        combo_list_pending_save_refreshed = false
         return
     end
 
-    combo_list_auto_refresh_counter = combo_list_auto_refresh_counter + 1
-    if combo_list_auto_refresh_counter < COMBO_LIST_AUTO_REFRESH_FRAMES then return end
-    combo_list_auto_refresh_counter = 0
-
     if trial_state._xt_pending_save then
+        if combo_list_pending_save_refreshed then return end
+        combo_list_pending_save_refreshed = true
         refresh_combo_list_preserve_selection(false)
         return
     end
 
-    refresh_combo_list_preserve_selection(true)
+    combo_list_pending_save_refreshed = false
 end
 
 local function read_trialhub_sync_signal()
