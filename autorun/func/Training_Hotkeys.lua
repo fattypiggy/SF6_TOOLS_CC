@@ -1,5 +1,5 @@
 -- =========================================================
--- Training_Hotkeys.lua - Shared keyboard hotkey registry.
+-- Training_Hotkeys.lua - Shared multi-device hotkey registry.
 -- Modules register actions; ScriptManager draws one global menu.
 -- Defaults are intentionally disabled and unbound.
 -- =========================================================
@@ -8,10 +8,12 @@ local json = json
 local fs = fs
 local imgui = imgui
 local reframework = reframework
+local sdk = sdk
 
 local M = {}
 
 local CONFIG_FILE = "Training_ScriptManager_data/TrainingHotkeys_Config.json"
+local CAPTURE_STABLE_SECONDS = 0.12
 
 local MODIFIER_VKS = { 0x10, 0x11, 0x12, 0x5B, 0x5C }
 local MOD_SET = {}
@@ -31,6 +33,25 @@ local VK_NAMES = {
     [0x70]="F1",[0x71]="F2",[0x72]="F3",[0x73]="F4",[0x74]="F5",[0x75]="F6",
     [0x76]="F7",[0x77]="F8",[0x78]="F9",[0x79]="F10",[0x7A]="F11",[0x7B]="F12",
     [0xBA]=";",[0xBB]="=",[0xBC]=",",[0xBD]="-",[0xBE]=".",[0xBF]="/",[0xC0]="`",
+}
+
+local PAD_BUTTON_NAMES = {
+    [1] = "PAD_UP",
+    [2] = "PAD_DOWN",
+    [4] = "PAD_LEFT",
+    [8] = "PAD_RIGHT",
+    [16] = "PAD_L3",
+    [32] = "PAD_A/CROSS",
+    [64] = "PAD_B/CIRCLE",
+    [128] = "PAD_X/SQUARE",
+    [256] = "PAD_Y/TRIANGLE",
+    [512] = "PAD_LB/L1",
+    [1024] = "PAD_RB/R1",
+    [2048] = "PAD_LT/L2",
+    [4096] = "PAD_RT/R2",
+    [8192] = "PAD_BACK/SELECT",
+    [16384] = "PAD_FUNC",
+    [32768] = "PAD_START",
 }
 
 local registry = {}
@@ -82,8 +103,48 @@ local function read_key(vk)
     return ok and down == true
 end
 
+local function read_pad_mask()
+    if not sdk or not sdk.get_native_singleton or not sdk.find_type_definition or not sdk.call_native_func then return 0 end
+    local ok, mask = pcall(function()
+        local gamepad_manager = sdk.get_native_singleton("via.hid.GamePad")
+        local gamepad_type = sdk.find_type_definition("via.hid.GamePad")
+        if not gamepad_manager or not gamepad_type then return 0 end
+        local devices = sdk.call_native_func(gamepad_manager, gamepad_type, "get_ConnectingDevices")
+        if not devices then return 0 end
+        local count = devices:call("get_Count") or 0
+        local combined = 0
+        for i = 0, count - 1 do
+            local pad = devices:call("get_Item", i)
+            if pad then
+                local buttons = pad:call("get_Button") or 0
+                if buttons > 0 then combined = combined | buttons end
+            end
+        end
+        return combined
+    end)
+    return ok and (tonumber(mask) or 0) or 0
+end
+
 function M.vk_name(vk)
     return VK_NAMES[vk] or string.format("0x%02X", tonumber(vk) or 0)
+end
+
+function M.pad_button_name(mask)
+    mask = tonumber(mask) or 0
+    if mask <= 0 then return "PAD_NONE" end
+    if PAD_BUTTON_NAMES[mask] then return PAD_BUTTON_NAMES[mask] end
+
+    local parts = {}
+    local remaining = mask
+    local bit = 1
+    while remaining > 0 and bit <= 0x40000000 do
+        if (mask & bit) ~= 0 then
+            parts[#parts + 1] = PAD_BUTTON_NAMES[bit] or string.format("PAD_0x%X", bit)
+            remaining = remaining & ~bit
+        end
+        bit = bit << 1
+    end
+    return #parts > 0 and table.concat(parts, " + ") or string.format("PAD_0x%X", mask)
 end
 
 local function sort_mods(mods)
@@ -91,8 +152,21 @@ local function sort_mods(mods)
     return mods
 end
 
+local function binding_device(binding)
+    if type(binding) ~= "table" then return nil end
+    if binding.device then return binding.device end
+    if binding.vk then return "keyboard" end
+    if binding.button then return "gamepad" end
+    return nil
+end
+
 function M.combo_name(binding)
-    if type(binding) ~= "table" or not binding.vk then return "未绑定" end
+    if type(binding) ~= "table" then return "未绑定" end
+    local device = binding_device(binding)
+    if device == "gamepad" then
+        return M.pad_button_name(binding.button)
+    end
+    if not binding.vk then return "未绑定" end
     local parts = {}
     for _, m in ipairs(binding.mods or {}) do parts[#parts + 1] = M.vk_name(m) end
     parts[#parts + 1] = M.vk_name(binding.vk)
@@ -100,15 +174,28 @@ function M.combo_name(binding)
 end
 
 local function binding_key(binding)
-    if type(binding) ~= "table" or not binding.vk then return nil end
+    if type(binding) ~= "table" then return nil end
+    local device = binding_device(binding)
+    if device == "gamepad" then
+        local button = tonumber(binding.button) or 0
+        return button > 0 and ("gamepad|" .. tostring(button)) or nil
+    end
+    if not binding.vk then return nil end
     local mods = {}
     for _, m in ipairs(binding.mods or {}) do mods[#mods + 1] = tonumber(m) or m end
     sort_mods(mods)
-    return table.concat(mods, "+") .. "|" .. tostring(binding.vk)
+    return "keyboard|" .. table.concat(mods, "+") .. "|" .. tostring(binding.vk)
 end
 
-local function binding_down(binding)
-    if type(binding) ~= "table" or not binding.vk then return false end
+local function binding_down(binding, pad_mask)
+    if type(binding) ~= "table" then return false end
+    local device = binding_device(binding)
+    if device == "gamepad" then
+        local button = tonumber(binding.button) or 0
+        if button <= 0 then return false end
+        return ((pad_mask or 0) & button) == button
+    end
+    if not binding.vk then return false end
     if not read_key(binding.vk) then return false end
     local required = {}
     for _, m in ipairs(binding.mods or {}) do
@@ -121,21 +208,49 @@ local function binding_down(binding)
     return true
 end
 
-local function scan_binding()
+local function scan_binding(pad_mask)
     if read_key(0x1B) then return "cancel" end
+
+    pad_mask = pad_mask or 0
+    local pad_baseline = (capture and capture.pad_baseline) or 0
+    if capture and pad_mask == 0 and pad_baseline ~= 0 then
+        capture.pad_baseline = 0
+        pad_baseline = 0
+    end
+    local new_pad_mask = pad_mask & ~pad_baseline
+    if new_pad_mask > 0 then
+        if capture then
+            local now = os.clock()
+            if capture.pending_pad ~= new_pad_mask then
+                capture.pending_pad = new_pad_mask
+                capture.pending_pad_time = now
+                return nil
+            end
+            if (now - (capture.pending_pad_time or now)) >= CAPTURE_STABLE_SECONDS then
+                return { device = "gamepad", button = new_pad_mask }
+            end
+            return nil
+        end
+        return { device = "gamepad", button = new_pad_mask }
+    elseif capture then
+        capture.pending_pad = nil
+        capture.pending_pad_time = nil
+    end
+
     local mods = {}
     for _, mk in ipairs(MODIFIER_VKS) do
         if read_key(mk) then mods[#mods + 1] = mk end
     end
     for vk = 0x08, 0xC0 do
         if not MOD_SET[vk] and read_key(vk) then
-            return { vk = vk, mods = sort_mods(mods) }
+            return { device = "keyboard", vk = vk, mods = sort_mods(mods) }
         end
     end
     return nil
 end
 
-local function any_binding_key_down()
+local function any_binding_key_down(pad_mask)
+    if (pad_mask or 0) > 0 then return true end
     for vk = 0x08, 0xC0 do
         if read_key(vk) then return true end
     end
@@ -221,14 +336,15 @@ function M.update(suspended)
     load_config()
 
     if suspended then return end
+    local pad_mask = read_pad_mask()
 
     if capture_release_wait then
-        if not any_binding_key_down() then capture_release_wait = false end
+        if not any_binding_key_down(pad_mask) then capture_release_wait = false end
         return
     end
 
     if capture then
-        local binding = scan_binding()
+        local binding = scan_binding(pad_mask)
         if binding == "cancel" then
             capture = nil
             capture_release_wait = true
@@ -252,7 +368,7 @@ function M.update(suspended)
                 local action = scope.actions[action_id]
                 local binding = scope_cfg.bindings and scope_cfg.bindings[action_id]
                 local key = scope_id .. "." .. action_id
-                local is_down = binding_down(binding)
+                local is_down = binding_down(binding, pad_mask)
                 if is_down and not last_down[key] then
                     local allowed = true
                     if type(action.enabled) == "function" then
@@ -285,10 +401,14 @@ local function draw_scope(scope)
 
             local cap = capture and capture.scope_id == scope.id and capture.action_id == action_id
             if cap then
-                imgui.text_colored("请按下要绑定的键；ESC 取消。", 0xFF00A5FF)
+                imgui.text_colored("请按下键盘键或设备按钮；ESC 取消。", 0xFF00A5FF)
             else
                 if imgui.button("绑定##hk_bind_" .. scope.id .. "_" .. action_id) then
-                    capture = { scope_id = scope.id, action_id = action_id }
+                    capture = {
+                        scope_id = scope.id,
+                        action_id = action_id,
+                        pad_baseline = read_pad_mask(),
+                    }
                 end
                 imgui.same_line()
                 if imgui.button("清除##hk_clear_" .. scope.id .. "_" .. action_id) then
