@@ -71,7 +71,7 @@
     {
       "path": "reframework\\autorun\\func\\Training_Hotkeys.lua",
       "version": "0.9a",
-      "sha256": "591e39484afb549c222543b51ecc4c62bf794e4988ddfeaacc91b6b8c0f207d9",
+      "sha256": "c295d514e757a17e45893387cea77c7f014c1ede5fda13747e697bcddb456ef2",
       "required": true
     },
     {
@@ -107,13 +107,13 @@
     {
       "path": "reframework\\autorun\\Training_ScriptManager.lua",
       "version": "0.9a",
-      "sha256": "2a9c238a137df3d92be13355c2df03add3cfa72ec8948397faa2004214a21591",
+      "sha256": "34f9b5f224d7c66654845b45c9991bd96d60ff519e644aa8d9cc5fb75d64535d",
       "required": true
     },
     {
       "path": "reframework\\autorun\\TrainingComboTrials_v1.0.lua",
       "version": "0.9a",
-      "sha256": "0d2bc46d46a31b997879ee5b41e090bf967d7f5077b51e5aac05edb92c5dde38",
+      "sha256": "b72d05245e8b173064de9fc89f4041a9f6a0bc91c3c8f8f7d7184c275f2e8cc8",
       "required": true
     },
     {

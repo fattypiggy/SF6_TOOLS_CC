@@ -13,7 +13,6 @@ local sdk = sdk
 local M = {}
 
 local CONFIG_FILE = "Training_ScriptManager_data/TrainingHotkeys_Config.json"
-local CAPTURE_STABLE_SECONDS = 0.12
 
 local MODIFIER_VKS = { 0x10, 0x11, 0x12, 0x5B, 0x5C }
 local MOD_SET = {}
@@ -54,6 +53,22 @@ local PAD_BUTTON_NAMES = {
     [32768] = "PAD_START",
 }
 
+local GAME_INPUT_NAMES = {
+    [1] = "GAME_8",
+    [2] = "GAME_2",
+    [4] = "GAME_4",
+    [8] = "GAME_6",
+    [16] = "GAME_LP",
+    [32] = "GAME_MP",
+    [64] = "GAME_HP",
+    [128] = "GAME_LK",
+    [256] = "GAME_MK",
+    [512] = "GAME_HK",
+    [144] = "GAME_THROW",
+    [288] = "GAME_PARRY",
+    [576] = "GAME_DI",
+}
+
 local registry = {}
 local scope_order = {}
 local config = { scopes = {} }
@@ -61,6 +76,11 @@ local loaded = false
 local capture = nil
 local capture_release_wait = false
 local last_down = {}
+local debug_state = {
+    pad_mask = 0,
+    game_mask = 0,
+    last_source = "none",
+}
 
 local function safe_load_json(path)
     if _G.safe_load_json then return _G.safe_load_json(path) end
@@ -125,26 +145,50 @@ local function read_pad_mask()
     return ok and (tonumber(mask) or 0) or 0
 end
 
+local function read_game_input_mask()
+    local gs = _G.GameState
+    local p1 = gs and gs.p1
+    if not p1 then return 0 end
+    local ok, mask = pcall(function()
+        local td = p1:get_type_definition()
+        if not td then return 0 end
+        local f_input = td:get_field("pl_input_new")
+        local f_sw = td:get_field("pl_sw_new")
+        local input = (f_input and f_input:get_data(p1)) or 0
+        local sw = (f_sw and f_sw:get_data(p1)) or 0
+        return (input | sw) & 0xFFFF
+    end)
+    return ok and (tonumber(mask) or 0) or 0
+end
+
 function M.vk_name(vk)
     return VK_NAMES[vk] or string.format("0x%02X", tonumber(vk) or 0)
 end
 
-function M.pad_button_name(mask)
+local function bitmask_name(mask, names, prefix)
     mask = tonumber(mask) or 0
-    if mask <= 0 then return "PAD_NONE" end
-    if PAD_BUTTON_NAMES[mask] then return PAD_BUTTON_NAMES[mask] end
+    if mask <= 0 then return prefix .. "_NONE" end
+    if names[mask] then return names[mask] end
 
     local parts = {}
     local remaining = mask
     local bit = 1
     while remaining > 0 and bit <= 0x40000000 do
         if (mask & bit) ~= 0 then
-            parts[#parts + 1] = PAD_BUTTON_NAMES[bit] or string.format("PAD_0x%X", bit)
+            parts[#parts + 1] = names[bit] or string.format("%s_0x%X", prefix, bit)
             remaining = remaining & ~bit
         end
         bit = bit << 1
     end
-    return #parts > 0 and table.concat(parts, " + ") or string.format("PAD_0x%X", mask)
+    return #parts > 0 and table.concat(parts, " + ") or string.format("%s_0x%X", prefix, mask)
+end
+
+function M.pad_button_name(mask)
+    return bitmask_name(mask, PAD_BUTTON_NAMES, "PAD")
+end
+
+function M.game_input_name(mask)
+    return bitmask_name(mask, GAME_INPUT_NAMES, "GAME")
 end
 
 local function sort_mods(mods)
@@ -157,6 +201,7 @@ local function binding_device(binding)
     if binding.device then return binding.device end
     if binding.vk then return "keyboard" end
     if binding.button then return "gamepad" end
+    if binding.input then return "game_input" end
     return nil
 end
 
@@ -165,6 +210,9 @@ function M.combo_name(binding)
     local device = binding_device(binding)
     if device == "gamepad" then
         return M.pad_button_name(binding.button)
+    end
+    if device == "game_input" then
+        return M.game_input_name(binding.input)
     end
     if not binding.vk then return "未绑定" end
     local parts = {}
@@ -180,6 +228,10 @@ local function binding_key(binding)
         local button = tonumber(binding.button) or 0
         return button > 0 and ("gamepad|" .. tostring(button)) or nil
     end
+    if device == "game_input" then
+        local input = tonumber(binding.input) or 0
+        return input > 0 and ("game_input|" .. tostring(input)) or nil
+    end
     if not binding.vk then return nil end
     local mods = {}
     for _, m in ipairs(binding.mods or {}) do mods[#mods + 1] = tonumber(m) or m end
@@ -187,13 +239,18 @@ local function binding_key(binding)
     return "keyboard|" .. table.concat(mods, "+") .. "|" .. tostring(binding.vk)
 end
 
-local function binding_down(binding, pad_mask)
+local function binding_down(binding, pad_mask, game_mask)
     if type(binding) ~= "table" then return false end
     local device = binding_device(binding)
     if device == "gamepad" then
         local button = tonumber(binding.button) or 0
         if button <= 0 then return false end
         return ((pad_mask or 0) & button) == button
+    end
+    if device == "game_input" then
+        local input = tonumber(binding.input) or 0
+        if input <= 0 then return false end
+        return ((game_mask or 0) & input) == input
     end
     if not binding.vk then return false end
     if not read_key(binding.vk) then return false end
@@ -208,7 +265,7 @@ local function binding_down(binding, pad_mask)
     return true
 end
 
-local function scan_binding(pad_mask)
+local function scan_binding(pad_mask, game_mask)
     if read_key(0x1B) then return "cancel" end
 
     pad_mask = pad_mask or 0
@@ -219,22 +276,18 @@ local function scan_binding(pad_mask)
     end
     local new_pad_mask = pad_mask & ~pad_baseline
     if new_pad_mask > 0 then
-        if capture then
-            local now = os.clock()
-            if capture.pending_pad ~= new_pad_mask then
-                capture.pending_pad = new_pad_mask
-                capture.pending_pad_time = now
-                return nil
-            end
-            if (now - (capture.pending_pad_time or now)) >= CAPTURE_STABLE_SECONDS then
-                return { device = "gamepad", button = new_pad_mask }
-            end
-            return nil
-        end
         return { device = "gamepad", button = new_pad_mask }
-    elseif capture then
-        capture.pending_pad = nil
-        capture.pending_pad_time = nil
+    end
+
+    game_mask = game_mask or 0
+    local game_baseline = (capture and capture.game_baseline) or 0
+    if capture and game_mask == 0 and game_baseline ~= 0 then
+        capture.game_baseline = 0
+        game_baseline = 0
+    end
+    local new_game_mask = game_mask & ~game_baseline
+    if new_game_mask > 0 then
+        return { device = "game_input", input = new_game_mask }
     end
 
     local mods = {}
@@ -249,8 +302,9 @@ local function scan_binding(pad_mask)
     return nil
 end
 
-local function any_binding_key_down(pad_mask)
+local function any_binding_key_down(pad_mask, game_mask)
     if (pad_mask or 0) > 0 then return true end
+    if (game_mask or 0) > 0 then return true end
     for vk = 0x08, 0xC0 do
         if read_key(vk) then return true end
     end
@@ -337,19 +391,23 @@ function M.update(suspended)
 
     if suspended then return end
     local pad_mask = read_pad_mask()
+    local game_mask = read_game_input_mask()
+    debug_state.pad_mask = pad_mask
+    debug_state.game_mask = game_mask
 
     if capture_release_wait then
-        if not any_binding_key_down(pad_mask) then capture_release_wait = false end
+        if not any_binding_key_down(pad_mask, game_mask) then capture_release_wait = false end
         return
     end
 
     if capture then
-        local binding = scan_binding(pad_mask)
+        local binding = scan_binding(pad_mask, game_mask)
         if binding == "cancel" then
             capture = nil
             capture_release_wait = true
             return
         elseif type(binding) == "table" then
+            debug_state.last_source = binding.device or "unknown"
             local scope_cfg = ensure_scope_config(capture.scope_id, false)
             scope_cfg.bindings[capture.action_id] = binding
             save_config()
@@ -368,7 +426,7 @@ function M.update(suspended)
                 local action = scope.actions[action_id]
                 local binding = scope_cfg.bindings and scope_cfg.bindings[action_id]
                 local key = scope_id .. "." .. action_id
-                local is_down = binding_down(binding, pad_mask)
+                local is_down = binding_down(binding, pad_mask, game_mask)
                 if is_down and not last_down[key] then
                     local allowed = true
                     if type(action.enabled) == "function" then
@@ -408,6 +466,7 @@ local function draw_scope(scope)
                         scope_id = scope.id,
                         action_id = action_id,
                         pad_baseline = read_pad_mask(),
+                        game_baseline = read_game_input_mask(),
                     }
                 end
                 imgui.same_line()
@@ -427,6 +486,12 @@ end
 
 function M.draw_menu()
     load_config()
+    imgui.text_colored(string.format(
+        "设备检测: HID=0x%X  游戏输入=0x%X  最近来源=%s",
+        debug_state.pad_mask or 0,
+        debug_state.game_mask or 0,
+        debug_state.last_source or "none"
+    ), 0xFF888888)
     if #scope_order == 0 then
         imgui.text_colored("暂无模块注册快捷键动作。", 0xFF888888)
         return
