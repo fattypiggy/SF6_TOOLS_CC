@@ -66,16 +66,52 @@ local function _sh_get_player_singleton()
     return _td_gBattle:get_field("Player"):get_data(nil)
 end
 
+local function _sh_clear_array(t)
+    if not t then return end
+    for k in pairs(t) do
+        t[k] = nil
+    end
+end
+
+local function _sh_reset_player_info()
+    _G._shared_player_info = _G._shared_player_info or {}
+    for k in pairs(_G._shared_player_info) do
+        if k ~= 0 and k ~= 1 then
+            _G._shared_player_info[k] = nil
+        end
+    end
+    for i = 0, 1 do
+        local info = _G._shared_player_info[i]
+        if type(info) ~= "table" then
+            info = {}
+            _G._shared_player_info[i] = info
+        else
+            _sh_clear_array(info)
+        end
+        info.id = -1
+        info.key = "ESF_000"
+        info.name = "Unknown"
+    end
+end
+
+local _shared_hooks_generation = (_G._shared_hooks_generation or 0) + 1
+_G._shared_hooks_generation = _shared_hooks_generation
+
+local function _sh_is_current_generation()
+    return _G._shared_hooks_generation == _shared_hooks_generation
+end
+
 -- =========================================================
 -- SHARED HOOK: UpdateGameInfo (was in CT, DL, SB separately)
 -- Publishes player character IDs to _G._shared_player_info
 -- =========================================================
-_G._shared_player_info = { [0] = { id = -1, key = "ESF_000", name = "Unknown" }, [1] = { id = -1, key = "ESF_000", name = "Unknown" } }
+_sh_reset_player_info()
 
 if _td_mediator then
     local m = _td_mediator:get_method("UpdateGameInfo")
     if m then
         sdk.hook(m, function(args)
+            if not _sh_is_current_generation() then return end
             local ok, mgr = pcall(sdk.to_managed_object, args[2])
             if not ok or not mgr then return end
             local ok2, pt = pcall(_f_playerType.get_data, _f_playerType, mgr)
@@ -102,8 +138,10 @@ end
 -- SHARED HOOK: pl_input_sub (was in CT and DV separately)
 -- Dispatches to registered callbacks via _G._shared_input_pre/post
 -- =========================================================
-_G._shared_input_pre = {}
-_G._shared_input_post = {}
+_G._shared_input_pre = _G._shared_input_pre or {}
+_G._shared_input_post = _G._shared_input_post or {}
+_sh_clear_array(_G._shared_input_pre)
+_sh_clear_array(_G._shared_input_post)
 
 local p_id_stack = {}
 local p_id_stack_top = 0
@@ -244,6 +282,7 @@ if cplayer_type then
     if method then
         sdk.hook(method,
             function(args)
+                if not _sh_is_current_generation() then return end
                 local hook_addr = sdk.to_int64(args[2])
                 local p_id = -1
 
@@ -273,6 +312,7 @@ if cplayer_type then
                 end
             end,
             function(retval)
+                if not _sh_is_current_generation() then return retval end
                 local p_id = p_id_stack[p_id_stack_top] or -1
                 p_id_stack[p_id_stack_top] = nil
                 if p_id_stack_top > 0 then p_id_stack_top = p_id_stack_top - 1 end
@@ -292,12 +332,30 @@ end
 -- CENTRALIZED GC: one step per frame, smooths out GC pauses
 -- =========================================================
 re.on_application_entry("UpdateBehavior", function()
+    if not _sh_is_current_generation() then return end
     finalize_distance_viewer_p2_input(1)
     collectgarbage("step", 1)
 end)
 
+local function reset_shared_hook_runtime()
+    _sh_clear_array(_G._shared_input_pre)
+    _sh_clear_array(_G._shared_input_post)
+    _sh_clear_array(p_id_stack)
+    p_id_stack_top = 0
+    _cached_addr[0] = nil
+    _cached_addr[1] = nil
+    _addr_refresh = 0
+    _sh_reset_player_info()
+    _dv_p2_input_owned = false
+    _dv_last_release_frame = nil
+    _G._dv_ensure_shared_input_finalizer_tail = nil
+    _G._dv_shared_input_post = nil
+end
+
 if re.on_script_reset then
     re.on_script_reset(function()
         reset_distance_viewer_p2_input()
+        _G._shared_hooks_generation = (_G._shared_hooks_generation or _shared_hooks_generation) + 1
+        reset_shared_hook_runtime()
     end)
 end
