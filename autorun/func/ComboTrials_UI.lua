@@ -801,11 +801,65 @@ end
 
 local ui_dirty = false
 local ui_save_timer = 0
+local ui_dirty_age = 0
+local ui_save_retry_timer = 0
+local D2D_SAVE_DEBOUNCE_FRAMES = 60
+local D2D_SAVE_MAX_DIRTY_FRAMES = 60
 local last_sw, last_sh = 0, 0
 local res_cooldown = 0
 local force_float_resize = 0
 
 local _was_bars_drawn = true
+
+local function _ctui_mark_d2d_dirty()
+    if not ui_dirty then ui_dirty_age = 0 end
+    ui_dirty = true
+    ui_save_timer = 0
+end
+
+local function _ctui_flush_d2d_config()
+    if not ui_dirty or not save_d2d_config then return true end
+    local ok, saved = pcall(save_d2d_config)
+    if ok and saved then
+        ui_dirty = false
+        ui_save_timer = 0
+        ui_dirty_age = 0
+        ui_save_retry_timer = 0
+        return true
+    end
+    ui_save_timer = 0
+    ui_dirty_age = 0
+    ui_save_retry_timer = D2D_SAVE_DEBOUNCE_FRAMES
+    return false
+end
+
+local function _ctui_flush_d2d_config_for_exit()
+    if not ui_dirty then return true end
+    if ui_save_retry_timer > 0 then
+        ui_save_retry_timer = ui_save_retry_timer - 1
+        if ui_save_retry_timer > 0 then
+            return false
+        end
+    end
+    return _ctui_flush_d2d_config()
+end
+
+local function _ctui_tick_d2d_save()
+    if not ui_dirty then return end
+    if ui_save_retry_timer > 0 then
+        ui_save_retry_timer = ui_save_retry_timer - 1
+        if ui_save_retry_timer > 0 then
+            return
+        end
+        _ctui_flush_d2d_config()
+        return
+    end
+    ui_save_timer = ui_save_timer + 1
+    ui_dirty_age = ui_dirty_age + 1
+    if ui_save_timer >= D2D_SAVE_DEBOUNCE_FRAMES or ui_dirty_age >= D2D_SAVE_MAX_DIRTY_FRAMES then
+        _ctui_flush_d2d_config()
+    end
+end
 
 local function _ctui_flush_trial_display()
     local ts = ctx and ctx.trial_state
@@ -832,6 +886,7 @@ end
 
 re.on_frame(function()
     if not RuntimeSafety.is_allowed() then
+        _ctui_flush_d2d_config_for_exit()
         _ctui_clear_visual_state()
         return
     end
@@ -859,13 +914,17 @@ re.on_frame(function()
     local should_enable_ct_ui = in_training_context and is_game_active
     _G.ComboTrialsD2DEnabled = should_enable_ct_ui
     if not should_enable_ct_ui then
+        _ctui_flush_d2d_config_for_exit()
         _ctui_clear_visual_state()
         return
     end
 
     -- Use exact ImGui API for window positioning
     local sw, sh = get_imgui_screen_size()
-    if sw == nil or sh == nil or sw <= 0 or sh <= 0 then return end
+    if sw == nil or sh == nil or sw <= 0 or sh <= 0 then
+        _ctui_flush_d2d_config_for_exit()
+        return
+    end
 
     -- DETECTION AND COOLDOWN
     local res_changed = false
@@ -1061,6 +1120,7 @@ re.on_frame(function()
         if _G._tsm_hide_ui or (_G._ct_bar_collapsed and is_replay_ctx) then
             _G.TrainingBarsDrawn = true
             sf6_menu_state.active = false
+            _ctui_flush_d2d_config_for_exit()
             return
         end
 
@@ -1099,7 +1159,7 @@ re.on_frame(function()
                 d2d_cfg.float_pos.y = norm_y
                 d2d_cfg.float_size.w = norm_w
                 d2d_cfg.float_size.h = norm_h
-                ui_dirty = true
+                _ctui_mark_d2d_dirty()
             end
         end
 
@@ -1186,15 +1246,14 @@ re.on_frame(function()
         sf6_menu_state.active = false
     end
 
-    if ui_dirty then
-        ui_save_timer = ui_save_timer + 1
-        if ui_save_timer > 60 then
-            save_d2d_config()
-            ui_dirty = false
-            ui_save_timer = 0
-        end
-    end
+    _ctui_tick_d2d_save()
 end)
+
+if re.on_script_reset then
+    re.on_script_reset(function()
+        _ctui_flush_d2d_config()
+    end)
+end
 
 -- =========================================================
 -- GLOBAL UI MENU DRAWING
@@ -1484,7 +1543,7 @@ local function draw_combo_trials_menu_ui()
 
             imgui.separator()
 
-            if changed then save_d2d_config() end
+            if changed then _ctui_mark_d2d_dirty() end
             imgui.spacing()
         end
 

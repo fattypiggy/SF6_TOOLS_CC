@@ -494,7 +494,7 @@ local function load_d2d_config()
 end
 
 local function save_d2d_config()
-    json.dump_file(D2D_CONFIG_FILE, d2d_cfg)
+    return json.dump_file(D2D_CONFIG_FILE, d2d_cfg)
 end
 load_d2d_config()
 
