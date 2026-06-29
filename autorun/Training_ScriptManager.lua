@@ -15,6 +15,7 @@ local TrainingHotkeys = require("func/Training_Hotkeys")
 -- CUSTOM TICKER SYSTEM
 -- ==========================================
 local _ticker = { mReq = nil, message = {}, queue = {} }
+local TICKER_QUEUE_MAX = 20
 local function _ticker_is_ready()
     local mgr = sdk.get_managed_singleton("app.bFlowManager")
     return mgr and mgr:get_MainFlowID() ~= 1
@@ -29,7 +30,8 @@ local function show_custom_ticker(message, time, category)
     if category == nil then category = 6 end
     if time == nil or time <= 0 then time = 3.5 end
     if not _ticker_is_ready() then
-        table.insert(_ticker.queue, {message, time, category})
+        if #_ticker.queue >= TICKER_QUEUE_MAX then table.remove(_ticker.queue, 1) end
+        _ticker.queue[#_ticker.queue + 1] = {message, time, category}
         return
     end
     sdk.find_type_definition("app.TickerUtil"):get_method(".cctor"):call(nil)
@@ -46,15 +48,20 @@ _G.show_custom_ticker = show_custom_ticker
 
 sdk.hook(sdk.find_type_definition("app.TickerUtil"):get_method(".cctor"), _ticker_init_req)
 sdk.hook(sdk.find_type_definition("app.TickerRequestData"):get_method("GetMessage"), function(args)
-    for k, v in pairs(_ticker.message) do
-        if k == sdk.to_managed_object(args[2]).RequestId.mData4L then
-            if type(v) == "function" then
-                thread.get_hook_storage()["message"] = v()
-            else
-                thread.get_hook_storage()["message"] = v
-            end
-            return sdk.PreHookResult.SKIP_ORIGINAL
+    local storage = thread.get_hook_storage()
+    storage["message"] = nil
+
+    local req = sdk.to_managed_object(args[2])
+    local req_id = req and req.RequestId and req.RequestId.mData4L
+    local v = req_id and _ticker.message[req_id]
+    if v ~= nil then
+        _ticker.message[req_id] = nil
+        if type(v) == "function" then
+            storage["message"] = v()
+        else
+            storage["message"] = v
         end
+        return sdk.PreHookResult.SKIP_ORIGINAL
     end
 end, function(retval)
     local m = thread.get_hook_storage()["message"]

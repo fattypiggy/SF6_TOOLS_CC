@@ -1550,6 +1550,9 @@ local function is_trial_action_grace_active()
     return trial_state._action_grace and trial_state._action_grace > 0
 end
 
+local reset_combo_visual_runtime
+local step_combo_reset_gc
+
 local function clear_trial_attempt_state(player_idx)
     trial_state.success_timer = 0
     trial_state.fail_timer = 0
@@ -1576,6 +1579,18 @@ local function clear_trial_attempt_state(player_idx)
         item.has_hit = false
         item.last_frame_diff = nil
     end
+    reset_combo_visual_runtime()
+    step_combo_reset_gc()
+end
+
+reset_combo_visual_runtime = function()
+    if not ComboTrials_D2D then return end
+    pcall(function() ComboTrials_D2D.reset_anim() end)
+    pcall(function() ComboTrials_D2D.reset_raw() end)
+end
+
+step_combo_reset_gc = function()
+    pcall(function() collectgarbage("step", 16) end)
 end
 
 -- =========================================================
@@ -1600,10 +1615,7 @@ local function start_recording(player_idx)
     players[player_idx].prev_act_frame = -1
     players[player_idx].last_combo_count = 0
     players[player_idx].last_direct_input = 0
-    if ComboTrials_D2D then
-        pcall(function() ComboTrials_D2D.reset_anim() end)
-        pcall(function() ComboTrials_D2D.reset_raw() end)
-    end
+    reset_combo_visual_runtime()
 
     -- LOGGER EXPORT RECORDING INIT
     if player_idx == 0 then
@@ -1653,10 +1665,7 @@ local function start_trial(player_idx)
     trial_state.live_start_pos_p1, trial_state.live_start_pos_p2, trial_state.live_start_pos_p1_raw, trial_state.live_start_pos_p2_raw = capture_current_positions()
 
     -- Full display reset (Text log + D2D Raw and Animated)
-    if ComboTrials_D2D then
-        pcall(function() ComboTrials_D2D.reset_anim() end)
-        pcall(function() ComboTrials_D2D.reset_raw() end)
-    end
+    reset_combo_visual_runtime()
 
     save_dummy_counter_type()
     save_dummy_guard_type()
@@ -1674,7 +1683,8 @@ local function cancel_recording()
     trial_state.sequence = {}
     trial_state.current_step = 1
     -- Flush displayed input history
-    pcall(function() ComboTrials_D2D.reset_raw() end)
+    reset_combo_visual_runtime()
+    step_combo_reset_gc()
 end
 
 local function stop_recording_and_save()
@@ -2222,10 +2232,7 @@ local function ct_handle_mode_exit()
         _G.ComboTrials_HideNativeHUD = false
         _G._ct_bar_geometry = nil
         _G.TrainingBarsDrawn = false
-        if ComboTrials_D2D then
-            pcall(function() ComboTrials_D2D.reset_anim() end)
-            pcall(function() ComboTrials_D2D.reset_raw() end)
-        end
+        reset_combo_visual_runtime()
         -- Clean shutdown if switching scripts during an active Trial/Demo
         if trial_state.is_playing or (demo_state and demo_state.is_playing) then
             trial_state.is_playing = false
@@ -3922,8 +3929,8 @@ ctx.dump_last_fail = function()
     return path
 end
 ctx.reset_visuals = function()
-    ComboTrials_D2D.reset_anim()
-    ComboTrials_D2D.reset_raw()
+    reset_combo_visual_runtime()
+    step_combo_reset_gc()
 end
 ctx.reset_trial_steps_and_load = function(player_idx)
     if #trial_state.sequence > 0 then
@@ -3997,10 +4004,7 @@ local function start_demo()
     -- Full history purge at Demo launch
     players[0].log = {}
     players[0].input_history_queue = {}
-    if ComboTrials_D2D then
-        pcall(function() ComboTrials_D2D.reset_anim() end)
-        pcall(function() ComboTrials_D2D.reset_raw() end)
-    end
+    reset_combo_visual_runtime()
     
     update_trial_flip_state()
     reset_trial_steps()
@@ -4160,7 +4164,7 @@ local function apply_restore()
             item.actual_combo = 0
         end
     end
-    ComboTrials_D2D.reset_anim()
+    reset_combo_visual_runtime()
 end
 
 local function clear_trial_snapshot()
