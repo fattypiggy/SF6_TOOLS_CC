@@ -1064,11 +1064,13 @@ re.on_frame(function()
             return
         end
 
-        imgui.push_style_color(2, 0x00000000)   -- WindowBg transparent
-        imgui.push_style_color(5, 0x00000000)   -- Border transparent
+        local SharedUI = require("func/Training_SharedUI")
+        local bar_colors = SharedUI.neon_colors
+        imgui.push_style_color(2, bar_colors.bg)      -- WindowBg
+        imgui.push_style_color(5, bar_colors.border)  -- Border
         imgui.push_style_color(7, 0x00000000)   -- FrameBg transparent
         imgui.push_style_color(8, 0x00000000)   -- TitleBg transparent
-        imgui.push_style_var(4, 0.0)            -- WindowBorderSize = 0
+        imgui.push_style_var(4, 1.0)            -- WindowBorderSize
 		imgui.push_style_var(2, Vector2f.new(sw * 0.01, sh * 0.02))
 
         -- Centered, fixed at bottom
@@ -1077,22 +1079,11 @@ re.on_frame(function()
 
         if custom_ui_font then imgui.push_font(custom_ui_font) end
 
-        -- 143 = NoTitleBar(1) + NoResize(2) + NoMove(4) + NoScrollbar(8) + NoBackground(128)
-        local visible = imgui.begin_window("ComboTrialsFloating", true, 143)
+        -- 15 = NoTitleBar(1) + NoResize(2) + NoMove(4) + NoScrollbar(8)
+        local visible = imgui.begin_window("ComboTrialsFloating", true, 15)
 
         local pos = imgui.get_window_pos()
         local size = imgui.get_window_size()
-
-        -- Draw neon border via ImGui draw list
-        local draw = imgui.get_window_draw_list()
-        if draw then
-            local SharedUI = require("func/Training_SharedUI")
-            local c = SharedUI.neon_colors
-            local function to_abgr(v) local a=(v>>24)&0xFF; local r=(v>>16)&0xFF; local g=(v>>8)&0xFF; local b=v&0xFF; return (a<<24)|(b<<16)|(g<<8)|r end
-            local mx, my, mw, mh = pos.x, pos.y, size.x, size.y
-            draw:add_rect_filled(Vector2f.new(mx, my), Vector2f.new(mx + mw, my + mh), to_abgr(c.bg))
-            draw:add_rect(Vector2f.new(mx, my), Vector2f.new(mx + mw, my + mh), to_abgr(c.border))
-        end
         _G.TrainingBarsDrawn = true
 
         -- SAVE BLOCKED DURING COOLDOWN (Prevents coordinate corruption)
