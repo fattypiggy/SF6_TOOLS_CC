@@ -306,6 +306,16 @@ local function _push_bar_style(sw, sh)
     if float_ui_font then imgui.push_font(float_ui_font) end
 end
 
+local function _push_top_bar_style(sw, sh)
+    imgui.push_style_color(2,  0x00000000)   -- WindowBg transparent
+    imgui.push_style_color(5,  0x00000000)   -- Border transparent
+    imgui.push_style_color(7,  0x00000000)   -- FrameBg transparent
+    imgui.push_style_color(8,  0x00000000)   -- TitleBg transparent
+    imgui.push_style_var(4, 0.0)             -- WindowBorderSize = 0
+    imgui.push_style_var(2, Vector2f.new(sw * 0.01, sh * 0.02))  -- WindowPadding
+    if float_ui_font then imgui.push_font(float_ui_font) end
+end
+
 local function _pop_bar_style()
     if float_ui_font then imgui.pop_font() end
     imgui.pop_style_var(2)   -- WindowPadding + WindowBorderSize
@@ -339,7 +349,7 @@ function UI.begin_floating_window_top(window_name, width_pct, height_pct)
     height_pct = height_pct or 0.0444
 
     _load_float_fonts(sh)
-    _push_bar_style(sw, sh)
+    _push_top_bar_style(sw, sh)
 
     local real_w, real_h = sw, sh
     if imgui.get_display_size then
@@ -353,7 +363,7 @@ function UI.begin_floating_window_top(window_name, width_pct, height_pct)
     local target_h = real_h * height_pct
     imgui.set_next_window_size(Vector2f.new(target_w, target_h))
     imgui.set_next_window_pos(Vector2f.new((real_w - target_w) / 2, 0))
-    local visible = imgui.begin_window(window_name, true, 15)
+    local visible = imgui.begin_window(window_name, true, 143)  -- NoBackground
     return visible, sw, sh
 end
 
