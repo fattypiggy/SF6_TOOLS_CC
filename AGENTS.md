@@ -98,6 +98,14 @@ upstream = Wael3rd/SF6_Tools
 
 Never push directly to upstream.
 
+Commit messages must be written in Chinese.
+
+Commit messages should include a clear subject and detailed body explaining:
+
+* what changed
+* why it changed
+* important runtime, release or compatibility impact
+
 ---
 
 # Development Priorities
