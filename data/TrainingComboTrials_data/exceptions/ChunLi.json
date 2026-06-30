@@ -107,6 +107,15 @@
         "is_holdable": false,
         "override_name": "214+P"
     },
+    "685": {
+        "absorb_ids": "",
+        "force": true,
+        "hold_partial_check": true,
+        "ignore": false,
+        "ignore_prev_frames": 5,
+        "is_holdable": false,
+        "override_name": "214+P"
+    },
     "686": {
         "absorb_ids": "",
         "force": true,
