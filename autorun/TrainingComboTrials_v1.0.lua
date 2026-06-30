@@ -376,7 +376,16 @@ local file_system = {
     trialhub_sync_poll_frames = 90,
     trialhub_sync_counter = 0,
     trialhub_last_marker = nil,
-    trialhub_sync_warn_counter = 0
+    trialhub_sync_warn_counter = 0,
+
+    diag_enabled = true,
+    diag_frame = 0,
+    diag_last_runtime_allowed = nil,
+    diag_last_mode = nil,
+    diag_last_busy_reason = nil,
+    diag_no_signal_counter = 0,
+    diag_invalid_signal_counter = 0,
+    diag_signature_counter = 0
 }
 
 local function clear_pending_position_injection()
@@ -1802,6 +1811,26 @@ function file_system.log_combo_save(message)
     pcall(print, "[ComboTrials.Save] " .. tostring(message))
 end
 
+function file_system.diag_log(message)
+    if not file_system.diag_enabled then return end
+    pcall(print, "[ComboTrials.Diag] " .. tostring(message))
+end
+
+file_system.diag_log("diagnostic build loaded")
+
+function file_system.combo_list_busy_reason(include_playing)
+    if trial_state.is_recording then return "recording" end
+    if include_playing and trial_state.is_playing then return "playing" end
+    if demo_state and demo_state.is_playing then return "demo_playing" end
+    if trial_state._xt_pending_save then return "xt_pending_save" end
+    if trial_state.pending_exact_pos and trial_state.pending_exact_pos > 0 then
+        return "pending_exact_pos=" .. tostring(trial_state.pending_exact_pos)
+    end
+    if trial_state._pending_reinject_settings == true then return "pending_reinject_settings" end
+    if is_trial_action_grace_active() then return "action_grace" end
+    return nil
+end
+
 function file_system.combo_list_total_count()
     return #(file_system.saved_combos_paths_p1 or {}) + #(file_system.saved_combos_paths_p2 or {})
 end
@@ -1817,12 +1846,13 @@ function file_system.request_combo_list_refresh(reason, reload_current_file)
     file_system.combo_list_refresh_pending = true
     file_system.combo_list_refresh_pending_reload = file_system.combo_list_refresh_pending_reload or (reload_current_file == true)
     file_system.combo_list_refresh_pending_reason = file_system.combo_list_refresh_pending_reason or reason or "external change"
+    file_system.diag_log("refresh requested reason=" .. tostring(reason)
+        .. " reload=" .. tostring(reload_current_file)
+        .. " pending_reload=" .. tostring(file_system.combo_list_refresh_pending_reload))
 end
 
 function file_system.combo_list_external_refresh_busy()
-    return combo_list_refresh_busy()
-        or trial_state.is_playing
-        or trial_state._xt_pending_save
+    return file_system.combo_list_busy_reason(true) ~= nil
 end
 
 function file_system.combo_file_signature_for_player(player_idx)
@@ -1849,6 +1879,8 @@ function file_system.combo_file_signature_for_player(player_idx)
         end
     end
     table.sort(paths)
+    file_system["diag_signature_char_p" .. tostring(player_idx)] = char_name
+    file_system["diag_signature_count_p" .. tostring(player_idx)] = #paths
 
     return "P" .. tostring(player_idx) .. ":" .. tostring(char_name) .. ":" .. tostring(#paths) .. ":" .. table.concat(paths, "|")
 end
@@ -1859,6 +1891,14 @@ function file_system.build_combo_file_signature()
     local p2_sig, p2_err = file_system.combo_file_signature_for_player(1)
     if not p2_sig then return nil, p2_err end
     file_system.combo_list_signature_warn_counter = 0
+    file_system.diag_signature_counter = file_system.diag_signature_counter + 1
+    if file_system.diag_signature_counter == 1 or file_system.diag_signature_counter >= 10 then
+        file_system.diag_log("signature check p1=" .. tostring(file_system.diag_signature_char_p0)
+            .. " count=" .. tostring(file_system.diag_signature_count_p0)
+            .. " p2=" .. tostring(file_system.diag_signature_char_p1)
+            .. " count=" .. tostring(file_system.diag_signature_count_p1))
+        file_system.diag_signature_counter = 1
+    end
     return p1_sig .. "\n" .. p2_sig
 end
 
@@ -1874,7 +1914,9 @@ function file_system.run_pending_combo_list_refresh()
     if not file_system.combo_list_refresh_pending then return false end
     if not trial_state._vital_initialized or file_system.combo_list_external_refresh_busy() then
         if not file_system.combo_list_refresh_deferred_logged then
-            file_system.log_combo_refresh("refresh deferred: busy")
+            local reason = file_system.combo_list_busy_reason(true)
+            if not trial_state._vital_initialized then reason = "not_initialized" end
+            file_system.log_combo_refresh("refresh deferred: busy reason=" .. tostring(reason))
             file_system.combo_list_refresh_deferred_logged = true
         end
         return true
@@ -2315,6 +2357,11 @@ local function ct_handle_web_commands()
 end
 
 local function ct_auto_refresh_combo_list()
+    if file_system.diag_last_mode ~= _G.CurrentTrainerMode then
+        file_system.diag_last_mode = _G.CurrentTrainerMode
+        file_system.diag_log("mode changed current=" .. tostring(_G.CurrentTrainerMode))
+    end
+
     if _G.CurrentTrainerMode ~= 4 then
         file_system.combo_list_pending_save_refreshed = false
         file_system.combo_list_auto_refresh_counter = 0
@@ -2324,10 +2371,19 @@ local function ct_auto_refresh_combo_list()
     end
 
     local busy = combo_list_refresh_busy()
+    local busy_reason = file_system.combo_list_busy_reason(false)
+    if file_system.diag_last_busy_reason ~= busy_reason then
+        file_system.diag_last_busy_reason = busy_reason
+        file_system.diag_log("refresh busy reason=" .. tostring(busy_reason or "none"))
+    end
+
     if not file_system.combo_list_was_active then
         file_system.combo_list_was_active = true
         file_system.combo_list_auto_refresh_counter = 0
         file_system.combo_list_pending_save_refreshed = false
+        file_system.diag_log("combo list became active viewed_player=" .. tostring(ui_state.viewed_player)
+            .. " p1=" .. tostring(players[0] and players[0].profile_name)
+            .. " p2=" .. tostring(players[1] and players[1].profile_name))
         if not busy and not trial_state._xt_pending_save then
             refresh_combo_list_preserve_selection(true)
             local signature, signature_error = file_system.build_combo_file_signature()
@@ -2342,6 +2398,7 @@ local function ct_auto_refresh_combo_list()
     if trial_state._xt_pending_save then
         if file_system.combo_list_pending_save_refreshed then return end
         file_system.combo_list_pending_save_refreshed = true
+        file_system.diag_log("xt pending save refresh path")
         refresh_combo_list_preserve_selection(false)
         return
     end
@@ -2360,6 +2417,7 @@ local function ct_auto_refresh_combo_list()
         end
         if file_system.combo_list_last_signature == nil then
             file_system.combo_list_last_signature = signature
+            file_system.diag_log("signature baseline initialized")
             return
         end
         if signature ~= file_system.combo_list_last_signature then
@@ -2379,12 +2437,12 @@ local function read_trialhub_sync_signal()
         local ok, data = pcall(json.load_file, path)
         if ok and type(data) == "table" then
             file_system.trialhub_sync_warn_counter = 0
-            return data, nil
+            return data, nil, path
         elseif not ok then
-            return nil, data
+            return nil, data, path
         end
     end
-    return nil, nil
+    return nil, nil, nil
 end
 
 local function ct_poll_trialhub_sync_signal()
@@ -2397,31 +2455,52 @@ local function ct_poll_trialhub_sync_signal()
     if file_system.trialhub_sync_counter < file_system.trialhub_sync_poll_frames then return end
     file_system.trialhub_sync_counter = 0
 
-    local signal, read_error = read_trialhub_sync_signal()
+    local signal, read_error, signal_path = read_trialhub_sync_signal()
     if not signal then
         if read_error then
             file_system.trialhub_sync_warn_counter = file_system.trialhub_sync_warn_counter + 1
             if file_system.trialhub_sync_warn_counter == 1 or file_system.trialhub_sync_warn_counter >= 20 then
-                file_system.log_combo_refresh("sync signal read failed: " .. tostring(read_error))
+                file_system.log_combo_refresh("sync signal read failed path=" .. tostring(signal_path) .. " error=" .. tostring(read_error))
                 file_system.trialhub_sync_warn_counter = 1
+            end
+        else
+            file_system.diag_no_signal_counter = file_system.diag_no_signal_counter + 1
+            if file_system.diag_no_signal_counter == 1 or file_system.diag_no_signal_counter >= 20 then
+                file_system.diag_log("sync signal not found")
+                file_system.diag_no_signal_counter = 1
             end
         end
         return
     end
+    file_system.diag_no_signal_counter = 0
 
     local version = signal.version
     local time_value = signal.time or signal.updated_at
-    if version == nil and time_value == nil then return end
+    if version == nil and time_value == nil then
+        file_system.diag_invalid_signal_counter = file_system.diag_invalid_signal_counter + 1
+        if file_system.diag_invalid_signal_counter == 1 or file_system.diag_invalid_signal_counter >= 20 then
+            file_system.diag_log("sync signal invalid path=" .. tostring(signal_path)
+                .. " version=nil time=nil updated_at=nil")
+            file_system.diag_invalid_signal_counter = 1
+        end
+        return
+    end
+    file_system.diag_invalid_signal_counter = 0
 
     local marker = tostring(version or "") .. "|" .. tostring(time_value or "")
     if not file_system.trialhub_last_marker then
         file_system.trialhub_last_marker = marker
         file_system.request_combo_list_refresh("marker initialized", true)
         file_system.log_combo_refresh("marker initialized, refresh requested")
+        file_system.diag_log("sync marker initialized path=" .. tostring(signal_path)
+            .. " marker=" .. tostring(marker))
         return
     end
     if marker == file_system.trialhub_last_marker then return end
 
+    file_system.diag_log("sync marker changed path=" .. tostring(signal_path)
+        .. " old=" .. tostring(file_system.trialhub_last_marker)
+        .. " new=" .. tostring(marker))
     file_system.trialhub_last_marker = marker
     local busy = trial_state.is_recording or trial_state.is_playing or trial_state._xt_pending_save or (demo_state and demo_state.is_playing)
     if busy then
@@ -3843,7 +3922,17 @@ end
 -- MAIN ON_FRAME — ORCHESTRATOR
 -- =========================================================
 re.on_frame(function()
-    if not RuntimeSafety.is_allowed() then
+    file_system.diag_frame = (file_system.diag_frame or 0) + 1
+    file_system.diag_runtime_allowed = RuntimeSafety.is_allowed()
+    if file_system.diag_last_runtime_allowed ~= file_system.diag_runtime_allowed then
+        file_system.diag_last_runtime_allowed = file_system.diag_runtime_allowed
+        file_system.diag_log("runtime allowed=" .. tostring(file_system.diag_runtime_allowed)
+            .. " mode=" .. tostring(_G.CurrentTrainerMode)
+            .. " battlehub=" .. tostring(_G.IsInBattleHub)
+            .. " flow=" .. tostring(_G.FlowMapID))
+    end
+
+    if not file_system.diag_runtime_allowed then
         if demo_state then
             demo_state.is_playing = false
             demo_state.p1_mask = 0
