@@ -1391,6 +1391,8 @@ local function apply_trial_training_environment()
     local first_ct = trial_state.sequence and trial_state.sequence[1] and trial_state.sequence[1].counter_type or 0
     if trial_requires_dummy_crouch() then
         set_dummy_action_type(DUMMY_ACTION_CROUCH)
+    else
+        set_dummy_action_type(DUMMY_ACTION_STAND)
     end
     set_dummy_counter_type(first_ct or 0)
     set_dummy_guard_type(2)
@@ -1881,9 +1883,7 @@ local function start_trial(player_idx)
 
     save_dummy_counter_type()
     save_dummy_guard_type()
-    if trial_requires_dummy_crouch() then
-        save_dummy_action_type()
-    end
+    save_dummy_action_type()
 
     -- INJECT FIRST-STEP TRAINING ENVIRONMENT
     apply_trial_training_environment()
