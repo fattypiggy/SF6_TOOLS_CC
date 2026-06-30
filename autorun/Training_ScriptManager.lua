@@ -637,9 +637,31 @@ local function _tsm_update_hide_rect()
 end
 
 local _TSM_WEBSTATE_INACTIVE = { sf6_running = true, training_active = false, mode = 0 }
+local TSM_WEBBRIDGE_FILE = "SF6_TrainingRemoteControl_data/TSM_WebBridge.json"
 local TSM_INACTIVE_WEBSTATE_REFRESH_FRAMES = 300
 local _tsm_inactive_webstate_reason = nil
 local _tsm_inactive_webstate_wait = 0
+
+local function _tsm_load_web_bridge()
+    local ok_open, f = pcall(io.open, TSM_WEBBRIDGE_FILE, "r")
+    if not ok_open or not f then return nil end
+
+    local raw = f:read("*a") or ""
+    f:close()
+
+    local trimmed = raw:match("^%s*(.-)%s*$") or ""
+    if trimmed == "" then return nil end
+    if trimmed:sub(1, 1) ~= "{" then return nil end
+    if not trimmed:match("}%s*$") then return nil end
+
+    local ok_load, data = pcall(json.load_file, TSM_WEBBRIDGE_FILE)
+    if ok_load and type(data) == "table" then return data end
+    return nil
+end
+
+local function _tsm_dump_web_bridge(data)
+    return json.dump_file(TSM_WEBBRIDGE_FILE, data)
+end
 
 local function _tsm_dump_webstate_inactive(reason)
     reason = reason or "inactive"
@@ -680,12 +702,12 @@ local function _tsm_web_bridge_tick()
         sf6_running = true,
         training_active = _G.TrainingModeActive or false,
     })
-    local b = json.load_file("SF6_TrainingRemoteControl_data/TSM_WebBridge.json")
+    local b = _tsm_load_web_bridge()
     if b and b._web_timestamp and (not _G._tsm_bridge_ts or b._web_timestamp > _G._tsm_bridge_ts) then
         _G._tsm_bridge_ts = b._web_timestamp
         if not _G.TrainingModeActive then
             b.cmd = nil
-            json.dump_file("SF6_TrainingRemoteControl_data/TSM_WebBridge.json", b)
+            _tsm_dump_web_bridge(b)
         end
         if _G.TrainingModeActive and b.mode ~= nil and is_enabled_trainer_mode(b.mode) then _G.CurrentTrainerMode = b.mode end
         if _G.TrainingModeActive and b.cmd then
@@ -695,12 +717,12 @@ local function _tsm_web_bridge_tick()
                 _G._tsm_web_cmd = b.cmd
             end
             b.cmd = nil
-            json.dump_file("SF6_TrainingRemoteControl_data/TSM_WebBridge.json", b)
+            _tsm_dump_web_bridge(b)
         end
         if _G.TrainingModeActive and b.teleport and _G._dv_teleport then
             pcall(_G._dv_teleport, b.teleport.distance)
             b.teleport = nil
-            json.dump_file("SF6_TrainingRemoteControl_data/TSM_WebBridge.json", b)
+            _tsm_dump_web_bridge(b)
         end
     end
 end
@@ -860,7 +882,7 @@ re.on_frame(function()
     if not _G._tsm_web_counter then
         _G._tsm_web_counter = 0
         pcall(function()
-            local b = json.load_file("SF6_TrainingRemoteControl_data/TSM_WebBridge.json")
+            local b = _tsm_load_web_bridge()
             if b and b._web_timestamp then _G._tsm_bridge_ts = b._web_timestamp end
         end)
     end
