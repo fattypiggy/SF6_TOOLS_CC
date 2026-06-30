@@ -1797,6 +1797,10 @@ local function log_combo_refresh(message)
     pcall(print, "[ComboTrials.Refresh] " .. tostring(message))
 end
 
+local function log_combo_save(message)
+    pcall(print, "[ComboTrials.Save] " .. tostring(message))
+end
+
 local function combo_list_total_count()
     return #(file_system.saved_combos_paths_p1 or {}) + #(file_system.saved_combos_paths_p2 or {})
 end
@@ -1903,22 +1907,6 @@ local function run_pending_combo_list_refresh()
     return true
 end
 
-local function get_safe_filename_motion(sequence)
-    local motion = sequence and sequence[1] and sequence[1].motion or ""
-    motion = tostring(motion):match("^%s*(.-)%s*$") or ""
-    if motion == "" then return "UNKNOWN" end
-
-    motion = motion:gsub("^>%s*", "")
-    motion = motion:gsub("%s+", "")
-    motion = motion:gsub("[<>:\"/\\|%?%*]", "_")
-    motion = motion:gsub("[%c]", "")
-    motion = motion:gsub("_+", "_")
-    motion = motion:gsub("^_+", ""):gsub("_+$", "")
-
-    if motion == "" then motion = "UNKNOWN" end
-    return motion
-end
-
 local function trim_string(value)
     return (tostring(value or ""):match("^%s*(.-)%s*$") or "")
 end
@@ -1936,13 +1924,67 @@ local function truncate_utf8(value, max_chars)
     return table.concat(out)
 end
 
-local function sanitize_ascii_filename_part(value, max_chars)
+local WINDOWS_RESERVED_FILENAMES = {
+    CON = true, PRN = true, AUX = true, NUL = true,
+    COM1 = true, COM2 = true, COM3 = true, COM4 = true, COM5 = true,
+    COM6 = true, COM7 = true, COM8 = true, COM9 = true,
+    LPT1 = true, LPT2 = true, LPT3 = true, LPT4 = true, LPT5 = true,
+    LPT6 = true, LPT7 = true, LPT8 = true, LPT9 = true,
+}
+
+local function sanitize_filename_component(value, max_chars, fallback)
+    if fallback == nil then fallback = "UNKNOWN" end
     local s = trim_string(value)
     if max_chars then s = truncate_utf8(s, max_chars) end
-    s = s:gsub("[^%w%+%-_%.]", "_")
+    s = s:gsub("[%c]", "")
+    s = s:gsub("%s+", "_")
+    s = s:gsub("[<>:\"/\\|%?%*%.]", "_")
+
+    local out = {}
+    for i = 1, #s do
+        local b = s:byte(i)
+        if (b >= 48 and b <= 57) or (b >= 65 and b <= 90) or (b >= 97 and b <= 122) or b == 45 or b == 95 then
+            out[#out + 1] = s:sub(i, i)
+        elseif b < 128 then
+            out[#out + 1] = "_"
+        end
+    end
+
+    s = table.concat(out)
     s = s:gsub("_+", "_")
     s = s:gsub("^_+", ""):gsub("_+$", "")
+    if s == "" then return fallback end
+    if WINDOWS_RESERVED_FILENAMES[s:upper()] then
+        s = s .. "_FILE"
+    end
     return s
+end
+
+local function get_safe_filename_motion(sequence)
+    local raw_motion = sequence and sequence[1] and sequence[1].motion or ""
+    local motion = trim_string(raw_motion)
+    if motion == "" then return "UNKNOWN" end
+
+    local upper_motion = motion:upper()
+    local is_whiff = motion:find("空挥", 1, true) ~= nil
+        or motion:find("绌烘尌", 1, true) ~= nil
+        or upper_motion:find("WHIFF", 1, true) ~= nil
+
+    motion = motion:gsub("^>%s*", "")
+    motion = motion:gsub("%s*%(空挥%)", "")
+    motion = motion:gsub("%s*%(绌烘尌%)", "")
+    motion = motion:gsub("%s*%([Ww][Hh][Ii][Ff][Ff]%)", "")
+    motion = motion:gsub("空挥", "")
+    motion = motion:gsub("绌烘尌", "")
+    motion = motion:gsub("[Ww][Hh][Ii][Ff][Ff]", "")
+
+    local motion_id = sanitize_filename_component(motion, nil, "")
+    if is_whiff then
+        if motion_id == "" then return "WHIFF" end
+        return motion_id .. "_WHIFF"
+    end
+
+    return sanitize_filename_component(motion)
 end
 
 local POS_TICKER_NAMES = { "任意位置", "原始位置", "镜像位置" }
@@ -4032,11 +4074,14 @@ function save_trial_sequence(meta)
     end
 
     local type_tag = has_oki and "_OKI" or "_COMBO"
+    local starter_motion_raw = trial_state.sequence[1] and trial_state.sequence[1].motion or ""
     local starter_motion = get_safe_filename_motion(trial_state.sequence)
+    log_combo_save("starter motion raw=" .. tostring(starter_motion_raw))
+    log_combo_save("starter motion id=" .. tostring(starter_motion))
     local title_suffix = ""
     local meta_title = type(meta) == "table" and meta.title or nil
     if trim_string(meta_title) ~= "" then
-        local safe_title = sanitize_ascii_filename_part(meta_title, 32)
+        local safe_title = sanitize_filename_component(meta_title, 32, "")
         if safe_title ~= "" then
             title_suffix = "_" .. safe_title
         end
@@ -4052,6 +4097,8 @@ function save_trial_sequence(meta)
         fname = base_name .. "_" .. ts .. ".json"
         path = "TrainingComboTrials_data/CustomCombos/" .. char_name .. "/" .. fname
     end
+
+    log_combo_save("output filename=" .. tostring(fname))
 
     assign_groups(trial_state.sequence)
     json.dump_file(path, trial_state.sequence)
