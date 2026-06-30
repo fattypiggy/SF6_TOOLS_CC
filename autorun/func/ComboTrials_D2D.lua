@@ -1077,11 +1077,8 @@ local function d2d_draw_inner()
         end
     end
 
-    -- Custom mouse cursor
-    if assets.imgs["cursor"] and (reframework:is_draw_ui() or (ctx.sf6_menu_state and ctx.sf6_menu_state.active)) then
-        local mp = imgui.get_mouse()
-        if mp then d2d.image(assets.imgs["cursor"], mp.x, mp.y, 32, 32) end
-    end
+    -- Mouse clicks use ImGui coordinates. Do not draw a D2D software cursor here:
+    -- the game/system cursor is already visible and drawing another one creates double cursors.
 
     end -- close "if should_draw and not is_paused and CurrentTrainerMode == 4"
 
