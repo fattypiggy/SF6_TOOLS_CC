@@ -12,6 +12,7 @@ local M = {}
 local ctx
 local trial_state, players, file_system
 local normalize_sequence_counter_types, assign_groups
+local restore_trial_dummy_action_type
 
 local function warn_combo_file_once(path, reason)
     local warnings = file_system.combo_file_warnings
@@ -70,6 +71,10 @@ function M.load_combo_from_file(path, force)
         return false
     end
 
+    if restore_trial_dummy_action_type then
+        pcall(restore_trial_dummy_action_type)
+    end
+
     trial_state.sequence = loaded
     trial_state.current_step = 1
     trial_state.is_playing = false
@@ -83,6 +88,10 @@ function M.load_combo_from_file(path, force)
 end
 
 function M.clear_combo_state()
+    if restore_trial_dummy_action_type then
+        pcall(restore_trial_dummy_action_type)
+    end
+
     trial_state.sequence = {}
     trial_state.current_step = 1
     trial_state.is_playing = false
@@ -379,6 +388,7 @@ function M.init(context, opts)
     file_system = assert(ctx.file_system, "ComboTrials_Files requires ctx.file_system")
     normalize_sequence_counter_types = assert(opts.normalize_sequence_counter_types, "ComboTrials_Files requires normalize_sequence_counter_types")
     assign_groups = assert(opts.assign_groups, "ComboTrials_Files requires assign_groups")
+    restore_trial_dummy_action_type = opts.restore_trial_dummy_action_type
 
     file_system.combo_file_warnings = file_system.combo_file_warnings or {}
     file_system.warn_combo_file_once = warn_combo_file_once

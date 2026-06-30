@@ -1695,13 +1695,16 @@ local ComboTrials_Files = require("func/ComboTrials_Files")
 ComboTrials_Files.init(ctx, {
     normalize_sequence_counter_types = normalize_sequence_counter_types,
     assign_groups = assign_groups,
+    restore_trial_dummy_action_type = restore_dummy_action_type,
 })
 
 local function load_combo_from_file(path, force)
+    restore_dummy_action_type()
     return ComboTrials_Files.load_combo_from_file(path, force)
 end
 
 local function clear_combo_state()
+    restore_dummy_action_type()
     return ComboTrials_Files.clear_combo_state()
 end
 
@@ -1852,6 +1855,7 @@ local function start_recording(player_idx)
 end
 
 local function start_trial(player_idx)
+    restore_dummy_action_type()
     local was_playing = trial_state.is_playing
     clear_pending_position_injection()
     if was_playing then
