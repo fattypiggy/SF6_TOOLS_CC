@@ -24,6 +24,12 @@ local function warn_combo_file_once(path, reason)
     if log and log.warn then pcall(log.warn, message) end
 end
 
+local function diag_combo_files(message)
+    if file_system and file_system.diag_enabled and file_system.diag_log then
+        file_system.diag_log("[Files] " .. tostring(message))
+    end
+end
+
 local function is_valid_combo_sequence(sequence)
     if type(sequence) ~= "table" or type(sequence[1]) ~= "table" then
         return false, "not a combo sequence"
@@ -177,21 +183,33 @@ end
 local function scan_combo_files(player_idx)
     local display_list, path_list = {}, {}
     local skipped_count = 0
-    if not players[player_idx] then return display_list, path_list, false, skipped_count end
+    if not players[player_idx] then
+        diag_combo_files("scan skipped player=" .. tostring(player_idx) .. " reason=missing_player")
+        return display_list, path_list, false, skipped_count
+    end
 
     local char_name = players[player_idx].profile_name
-    if char_name == "Unknown" then return display_list, path_list, false, skipped_count end
+    if char_name == "Unknown" then
+        diag_combo_files("scan skipped player=" .. tostring(player_idx) .. " reason=unknown_character")
+        return display_list, path_list, false, skipped_count
+    end
 
     if fs.create_dir then
         pcall(fs.create_dir, "TrainingComboTrials_data/CustomCombos")
         pcall(fs.create_dir, "TrainingComboTrials_data/CustomCombos/" .. char_name)
     end
 
-    local glob_ok, files = pcall(fs.glob, "TrainingComboTrials_data\\\\CustomCombos\\\\" .. char_name .. "\\\\.*json")
+    local glob_pattern = "TrainingComboTrials_data\\\\CustomCombos\\\\" .. char_name .. "\\\\.*json"
+    diag_combo_files("scan begin player=" .. tostring(player_idx) .. " char=" .. tostring(char_name) .. " pattern=" .. tostring(glob_pattern))
+    local glob_ok, files = pcall(fs.glob, glob_pattern)
     if not glob_ok or type(files) ~= "table" then
         warn_combo_file_once(char_name, glob_ok and "glob returned invalid data" or files)
+        diag_combo_files("glob failed player=" .. tostring(player_idx) .. " char=" .. tostring(char_name)
+            .. " ok=" .. tostring(glob_ok) .. " error=" .. tostring(files))
         return display_list, path_list, false, skipped_count
     end
+    diag_combo_files("glob result player=" .. tostring(player_idx) .. " char=" .. tostring(char_name)
+        .. " found=" .. tostring(#files))
 
     if files then
         local function filename_only(filepath)
@@ -258,6 +276,11 @@ local function scan_combo_files(player_idx)
         end
     end
 
+    diag_combo_files("scan result player=" .. tostring(player_idx) .. " char=" .. tostring(char_name)
+        .. " found=" .. tostring(files and #files or 0)
+        .. " loaded=" .. tostring(#path_list)
+        .. " skipped=" .. tostring(skipped_count)
+        .. " displayed=" .. tostring(#display_list))
     return display_list, path_list, true, skipped_count
 end
 

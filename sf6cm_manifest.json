@@ -135,12 +135,6 @@
       "required": true
     },
     {
-      "path": "reframework\\data\\SF6_DistanceViewer_data\\SF6DistanceLogger_Config.json",
-      "version": "0.9a",
-      "sha256": "7e7a9e28994e1ca378e73f66f0b39e21827dd8cfb0852a922810b58c41ef1502",
-      "required": true
-    },
-    {
       "path": "reframework\\data\\SF6_DistanceViewer_data\\SF6DistanceViewer_Config.json",
       "version": "0.9a",
       "sha256": "d6fbaf4f68111a309a87dc88f800bc0cd89cd0881bfab2bec112cf60eaa46163",
@@ -549,12 +543,6 @@
       "required": true
     },
     {
-      "path": "reframework\\images\\buttonsAndArrows\\followup 拷贝.png",
-      "version": "0.9a",
-      "sha256": "fcd44021400d86eec0ff8894b889b777edac415f571dcc705e88f8682d2bda6f",
-      "required": true
-    },
-    {
       "path": "reframework\\images\\buttonsAndArrows\\followup.png",
       "version": "0.9a",
       "sha256": "6ca62ed219ac31ebf459544bce58adf14dd57ad6a1d1953ef7ff47dbc582472f",
@@ -648,12 +636,6 @@
       "path": "reframework\\images\\buttonsAndArrows\\THROW.png",
       "version": "0.9a",
       "sha256": "d23b64189d3ba6ad7df1a57f5a0f96c3e25eff8540f9fe26c9f2198d2895c7c6",
-      "required": true
-    },
-    {
-      "path": "reframework\\images\\buttonsAndArrows\\validfollowup 拷贝.png",
-      "version": "0.9a",
-      "sha256": "57842256532dced23b78990e3e5d0eac7a5b2d92d8af6ada2143cc617385769d",
       "required": true
     },
     {

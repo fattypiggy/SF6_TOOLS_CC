@@ -22,6 +22,10 @@ sync_signal.json
 /data/Stats/
 /data/TrainingComboTrials_data/Backups/
 
+# Accidental copied image assets
+/images/buttonsAndArrows/* 拷贝.png
+/images/buttonsAndArrows/* 鎷疯礉.png
+
 # Debug/dump files
 /exam/
 
