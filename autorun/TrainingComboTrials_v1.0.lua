@@ -256,6 +256,64 @@ local function logger_get_btn_string(val)
     return str
 end
 
+function _G.ComboTrials_sanitize_filename_component(value, max_chars, fallback)
+    if fallback == nil then fallback = "UNKNOWN" end
+
+    local function local_trim_string(v)
+        return (tostring(v or ""):match("^%s*(.-)%s*$") or "")
+    end
+
+    local function local_truncate_utf8(v, max_len)
+        local s = tostring(v or "")
+        if s == "" then return s end
+        local out, count = {}, 0
+        for ch in s:gmatch("[%z\1-\127\194-\244][\128-\191]*") do
+            count = count + 1
+            if count > max_len then break end
+            out[#out + 1] = ch
+        end
+        if #out == 0 then return s:sub(1, max_len) end
+        return table.concat(out)
+    end
+
+    local reserved = _G.ComboTrials_windows_reserved_filenames
+    if not reserved then
+        reserved = {
+            CON = true, PRN = true, AUX = true, NUL = true,
+            COM1 = true, COM2 = true, COM3 = true, COM4 = true, COM5 = true,
+            COM6 = true, COM7 = true, COM8 = true, COM9 = true,
+            LPT1 = true, LPT2 = true, LPT3 = true, LPT4 = true, LPT5 = true,
+            LPT6 = true, LPT7 = true, LPT8 = true, LPT9 = true,
+        }
+        _G.ComboTrials_windows_reserved_filenames = reserved
+    end
+
+    local s = local_trim_string(value)
+    if max_chars then s = local_truncate_utf8(s, max_chars) end
+    s = s:gsub("[%c]", "")
+    s = s:gsub("%s+", "_")
+    s = s:gsub("[<>:\"/\\|%?%*%.]", "_")
+
+    local out = {}
+    for i = 1, #s do
+        local b = s:byte(i)
+        if (b >= 48 and b <= 57) or (b >= 65 and b <= 90) or (b >= 97 and b <= 122) or b == 45 or b == 95 then
+            out[#out + 1] = s:sub(i, i)
+        elseif b < 128 then
+            out[#out + 1] = "_"
+        end
+    end
+
+    s = table.concat(out)
+    s = s:gsub("_+", "_")
+    s = s:gsub("^_+", ""):gsub("_+$", "")
+    if s == "" then return fallback end
+    if reserved[s:upper()] then
+        s = s .. "_FILE"
+    end
+    return s
+end
+
 local function logger_export(rec_struct, suffix)
     local output = { 
         ReplayInputRecord = true, 
@@ -272,8 +330,11 @@ local function logger_export(rec_struct, suffix)
     
     local timestamp = os.date("%Y%m%d%H%M%S")
     local name = rec_struct.char_name or "Unknown"
-    local safe_name = name:gsub("%s+", "")
-    if suffix then safe_name = safe_name .. suffix end
+    local safe_name = _G.ComboTrials_sanitize_filename_component(name, 32, "Unknown")
+    if suffix then
+        local safe_suffix = _G.ComboTrials_sanitize_filename_component(suffix, 16, "")
+        if safe_suffix ~= "" then safe_name = safe_name .. "_" .. safe_suffix end
+    end
     
     local short_filename = "ReplayInputRecord_" .. safe_name .. "_" .. timestamp .. ".json"
     local full_path = "TrainingComboTrials_data/ReplayRecords/" .. short_filename
@@ -1954,53 +2015,15 @@ local function trim_string(value)
     return (tostring(value or ""):match("^%s*(.-)%s*$") or "")
 end
 
-local function truncate_utf8(value, max_chars)
-    local s = tostring(value or "")
-    if s == "" then return s end
-    local out, count = {}, 0
-    for ch in s:gmatch("[%z\1-\127\194-\244][\128-\191]*") do
-        count = count + 1
-        if count > max_chars then break end
-        out[#out + 1] = ch
-    end
-    if #out == 0 then return s:sub(1, max_chars) end
-    return table.concat(out)
+function file_system.sanitize_filename_component(value, max_chars, fallback)
+    return _G.ComboTrials_sanitize_filename_component(value, max_chars, fallback)
 end
 
-file_system.windows_reserved_filenames = {
-    CON = true, PRN = true, AUX = true, NUL = true,
-    COM1 = true, COM2 = true, COM3 = true, COM4 = true, COM5 = true,
-    COM6 = true, COM7 = true, COM8 = true, COM9 = true,
-    LPT1 = true, LPT2 = true, LPT3 = true, LPT4 = true, LPT5 = true,
-    LPT6 = true, LPT7 = true, LPT8 = true, LPT9 = true,
-}
-
-function file_system.sanitize_filename_component(value, max_chars, fallback)
-    if fallback == nil then fallback = "UNKNOWN" end
-    local s = trim_string(value)
-    if max_chars then s = truncate_utf8(s, max_chars) end
-    s = s:gsub("[%c]", "")
-    s = s:gsub("%s+", "_")
-    s = s:gsub("[<>:\"/\\|%?%*%.]", "_")
-
-    local out = {}
-    for i = 1, #s do
-        local b = s:byte(i)
-        if (b >= 48 and b <= 57) or (b >= 65 and b <= 90) or (b >= 97 and b <= 122) or b == 45 or b == 95 then
-            out[#out + 1] = s:sub(i, i)
-        elseif b < 128 then
-            out[#out + 1] = "_"
-        end
-    end
-
-    s = table.concat(out)
-    s = s:gsub("_+", "_")
-    s = s:gsub("^_+", ""):gsub("_+$", "")
-    if s == "" then return fallback end
-    if file_system.windows_reserved_filenames[s:upper()] then
-        s = s .. "_FILE"
-    end
-    return s
+function file_system.file_exists(path)
+    local f = io.open(path, "rb")
+    if not f then return false end
+    f:close()
+    return true
 end
 
 function file_system.get_safe_filename_motion(sequence)
@@ -2008,26 +2031,32 @@ function file_system.get_safe_filename_motion(sequence)
     local motion = trim_string(raw_motion)
     if motion == "" then return "UNKNOWN" end
 
-    local upper_motion = motion:upper()
-    local is_whiff = motion:find("空挥", 1, true) ~= nil
-        or motion:find("绌烘尌", 1, true) ~= nil
-        or upper_motion:find("WHIFF", 1, true) ~= nil
-
     motion = motion:gsub("^>%s*", "")
-    motion = motion:gsub("%s*%(空挥%)", "")
-    motion = motion:gsub("%s*%(绌烘尌%)", "")
-    motion = motion:gsub("%s*%([Ww][Hh][Ii][Ff][Ff]%)", "")
+    motion = motion:gsub("%s*%(([^%)]*)%)", function(tag)
+        local upper_tag = tostring(tag or ""):upper()
+        if tag == "空挥" or tag == "绌烘尌" or tag == "打康" or tag == "确反康"
+            or upper_tag == "WHIFF" or upper_tag == "CH" or upper_tag == "PC"
+            or upper_tag == "COUNTER" or upper_tag == "COUNTER HIT"
+            or upper_tag == "PUNISH" or upper_tag == "PUNISH COUNTER" then
+            return ""
+        end
+        return "(" .. tag .. ")"
+    end)
     motion = motion:gsub("空挥", "")
     motion = motion:gsub("绌烘尌", "")
-    motion = motion:gsub("[Ww][Hh][Ii][Ff][Ff]", "")
+    motion = motion:gsub("打康", "")
+    motion = motion:gsub("确反康", "")
+    motion = motion:gsub("%f[%a][Ww][Hh][Ii][Ff][Ff]%f[%A]", "")
+    motion = motion:gsub("%f[%a][Cc][Hh]%f[%A]", "")
+    motion = motion:gsub("%f[%a][Pp][Cc]%f[%A]", "")
+    motion = motion:gsub("%f[%a][Cc][Oo][Uu][Nn][Tt][Ee][Rr]%s+[Hh][Ii][Tt]%f[%A]", "")
+    motion = motion:gsub("%f[%a][Pp][Uu][Nn][Ii][Ss][Hh]%s+[Cc][Oo][Uu][Nn][Tt][Ee][Rr]%f[%A]", "")
+    motion = motion:gsub("%f[%a][Cc][Oo][Uu][Nn][Tt][Ee][Rr]%f[%A]", "")
+    motion = motion:gsub("%f[%a][Pp][Uu][Nn][Ii][Ss][Hh]%f[%A]", "")
 
     local motion_id = file_system.sanitize_filename_component(motion, nil, "")
-    if is_whiff then
-        if motion_id == "" then return "WHIFF" end
-        return motion_id .. "_WHIFF"
-    end
-
-    return file_system.sanitize_filename_component(motion)
+    if motion_id == "" then return "UNKNOWN" end
+    return motion_id
 end
 
 local POS_TICKER_NAMES = { "任意位置", "原始位置", "镜像位置" }
@@ -4176,13 +4205,13 @@ function save_trial_sequence(meta)
             title_suffix = "_" .. safe_title
         end
     end
-    local base_name = char_name .. type_tag .. "_" .. starter_motion .. "_" .. dmg .. "_D" .. drive_bars .. "_SA" .. sa_bars .. title_suffix
+    local safe_char_name = file_system.sanitize_filename_component(char_name, 32, "Unknown")
+    local base_name = safe_char_name .. type_tag .. "_" .. starter_motion .. "_" .. dmg .. "_D" .. drive_bars .. "_SA" .. sa_bars .. title_suffix
     local fname = base_name .. ".json"
     local path = "TrainingComboTrials_data/CustomCombos/" .. char_name .. "/" .. fname
 
     -- Avoid overwriting: append timestamp if file exists
-    local existing = json.load_file(path)
-    if existing then
+    if file_system.file_exists(path) then
         local ts = os.date("%Y%m%d_%H%M%S")
         fname = base_name .. "_" .. ts .. ".json"
         path = "TrainingComboTrials_data/CustomCombos/" .. char_name .. "/" .. fname
@@ -4239,7 +4268,8 @@ ctx.dump_last_fail = function()
     if not trial_state.last_fail_dump then return nil end
     local char_name = players[trial_state.playing_player].profile_name or "Unknown"
     local ts = os.date("%Y%m%d_%H%M%S")
-    local fname = char_name .. "_FAIL_" .. ts .. ".json"
+    local safe_char_name = file_system.sanitize_filename_component(char_name, 32, "Unknown")
+    local fname = safe_char_name .. "_FAIL_" .. ts .. ".json"
     
     if fs.create_dir then 
         pcall(fs.create_dir, "TrainingComboTrials_data/CustomCombos")
