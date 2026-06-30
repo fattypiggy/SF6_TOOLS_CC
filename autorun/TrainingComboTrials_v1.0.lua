@@ -361,22 +361,23 @@ local file_system = {
 
     last_p1_id = -1,
     auto_load = true,
-    forced_position_options = { "GAME SETTINGS", "FORCED", "MIRROR" }
+    forced_position_options = { "GAME SETTINGS", "FORCED", "MIRROR" },
+
+    combo_list_auto_refresh_frames = 120,
+    combo_list_auto_refresh_counter = 0,
+    combo_list_was_active = false,
+    combo_list_pending_save_refreshed = false,
+    combo_list_refresh_pending = false,
+    combo_list_refresh_pending_reload = false,
+    combo_list_refresh_pending_reason = nil,
+    combo_list_refresh_deferred_logged = false,
+    combo_list_last_signature = nil,
+    combo_list_signature_warn_counter = 0,
+    trialhub_sync_poll_frames = 90,
+    trialhub_sync_counter = 0,
+    trialhub_last_marker = nil,
+    trialhub_sync_warn_counter = 0
 }
-local COMBO_LIST_AUTO_REFRESH_FRAMES = 120
-local combo_list_auto_refresh_counter = 0
-local combo_list_was_active = false
-local combo_list_pending_save_refreshed = false
-local combo_list_refresh_pending = false
-local combo_list_refresh_pending_reload = false
-local combo_list_refresh_pending_reason = nil
-local combo_list_refresh_deferred_logged = false
-local combo_list_last_signature = nil
-local combo_list_signature_warn_counter = 0
-local TRIALHUB_SYNC_POLL_FRAMES = 90
-local trialhub_sync_counter = 0
-local trialhub_last_marker = nil
-local trialhub_sync_warn_counter = 0
 
 local function clear_pending_position_injection()
     trial_state.exact_inject_r1 = nil
@@ -1793,38 +1794,38 @@ local function combo_list_refresh_busy()
         or is_trial_action_grace_active()
 end
 
-local function log_combo_refresh(message)
+function file_system.log_combo_refresh(message)
     pcall(print, "[ComboTrials.Refresh] " .. tostring(message))
 end
 
-local function log_combo_save(message)
+function file_system.log_combo_save(message)
     pcall(print, "[ComboTrials.Save] " .. tostring(message))
 end
 
-local function combo_list_total_count()
+function file_system.combo_list_total_count()
     return #(file_system.saved_combos_paths_p1 or {}) + #(file_system.saved_combos_paths_p2 or {})
 end
 
-local function selected_combo_path_for_view()
+function file_system.selected_combo_path_for_view()
     local player_idx = ui_state.viewed_player or trial_state.playing_player or 0
     local paths = (player_idx == 0) and file_system.saved_combos_paths_p1 or file_system.saved_combos_paths_p2
     local idx = (player_idx == 0) and (file_system.selected_file_idx_p1 or 1) or (file_system.selected_file_idx_p2 or 1)
     return paths and paths[idx] or nil
 end
 
-local function request_combo_list_refresh(reason, reload_current_file)
-    combo_list_refresh_pending = true
-    combo_list_refresh_pending_reload = combo_list_refresh_pending_reload or (reload_current_file == true)
-    combo_list_refresh_pending_reason = combo_list_refresh_pending_reason or reason or "external change"
+function file_system.request_combo_list_refresh(reason, reload_current_file)
+    file_system.combo_list_refresh_pending = true
+    file_system.combo_list_refresh_pending_reload = file_system.combo_list_refresh_pending_reload or (reload_current_file == true)
+    file_system.combo_list_refresh_pending_reason = file_system.combo_list_refresh_pending_reason or reason or "external change"
 end
 
-local function combo_list_external_refresh_busy()
+function file_system.combo_list_external_refresh_busy()
     return combo_list_refresh_busy()
         or trial_state.is_playing
         or trial_state._xt_pending_save
 end
 
-local function combo_file_signature_for_player(player_idx)
+function file_system.combo_file_signature_for_player(player_idx)
     local p_state = players[player_idx]
     if not p_state then return "P" .. tostring(player_idx) .. ":missing" end
 
@@ -1852,56 +1853,56 @@ local function combo_file_signature_for_player(player_idx)
     return "P" .. tostring(player_idx) .. ":" .. tostring(char_name) .. ":" .. tostring(#paths) .. ":" .. table.concat(paths, "|")
 end
 
-local function build_combo_file_signature()
-    local p1_sig, p1_err = combo_file_signature_for_player(0)
+function file_system.build_combo_file_signature()
+    local p1_sig, p1_err = file_system.combo_file_signature_for_player(0)
     if not p1_sig then return nil, p1_err end
-    local p2_sig, p2_err = combo_file_signature_for_player(1)
+    local p2_sig, p2_err = file_system.combo_file_signature_for_player(1)
     if not p2_sig then return nil, p2_err end
-    combo_list_signature_warn_counter = 0
+    file_system.combo_list_signature_warn_counter = 0
     return p1_sig .. "\n" .. p2_sig
 end
 
-local function warn_combo_signature_failure(reason)
-    combo_list_signature_warn_counter = combo_list_signature_warn_counter + 1
-    if combo_list_signature_warn_counter == 1 or combo_list_signature_warn_counter >= 600 then
-        log_combo_refresh("signature check failed: " .. tostring(reason))
-        combo_list_signature_warn_counter = 1
+function file_system.warn_combo_signature_failure(reason)
+    file_system.combo_list_signature_warn_counter = file_system.combo_list_signature_warn_counter + 1
+    if file_system.combo_list_signature_warn_counter == 1 or file_system.combo_list_signature_warn_counter >= 600 then
+        file_system.log_combo_refresh("signature check failed: " .. tostring(reason))
+        file_system.combo_list_signature_warn_counter = 1
     end
 end
 
-local function run_pending_combo_list_refresh()
-    if not combo_list_refresh_pending then return false end
-    if not trial_state._vital_initialized or combo_list_external_refresh_busy() then
-        if not combo_list_refresh_deferred_logged then
-            log_combo_refresh("refresh deferred: busy")
-            combo_list_refresh_deferred_logged = true
+function file_system.run_pending_combo_list_refresh()
+    if not file_system.combo_list_refresh_pending then return false end
+    if not trial_state._vital_initialized or file_system.combo_list_external_refresh_busy() then
+        if not file_system.combo_list_refresh_deferred_logged then
+            file_system.log_combo_refresh("refresh deferred: busy")
+            file_system.combo_list_refresh_deferred_logged = true
         end
         return true
     end
 
-    local old_count = combo_list_total_count()
-    local reload_current_file = combo_list_refresh_pending_reload
-    local reason = combo_list_refresh_pending_reason or "external change"
-    combo_list_refresh_pending = false
-    combo_list_refresh_pending_reload = false
-    combo_list_refresh_pending_reason = nil
-    combo_list_refresh_deferred_logged = false
+    local old_count = file_system.combo_list_total_count()
+    local reload_current_file = file_system.combo_list_refresh_pending_reload
+    local reason = file_system.combo_list_refresh_pending_reason or "external change"
+    file_system.combo_list_refresh_pending = false
+    file_system.combo_list_refresh_pending_reload = false
+    file_system.combo_list_refresh_pending_reason = nil
+    file_system.combo_list_refresh_deferred_logged = false
 
     refresh_combo_list_preserve_selection(reload_current_file)
 
-    local refreshed_signature, signature_error = build_combo_file_signature()
+    local refreshed_signature, signature_error = file_system.build_combo_file_signature()
     if refreshed_signature then
-        combo_list_last_signature = refreshed_signature
+        file_system.combo_list_last_signature = refreshed_signature
     elseif signature_error then
-        warn_combo_signature_failure(signature_error)
+        file_system.warn_combo_signature_failure(signature_error)
     end
 
-    local new_count = combo_list_total_count()
-    log_combo_refresh("refresh completed old_count=" .. tostring(old_count) .. " new_count=" .. tostring(new_count) .. " reason=" .. tostring(reason))
+    local new_count = file_system.combo_list_total_count()
+    file_system.log_combo_refresh("refresh completed old_count=" .. tostring(old_count) .. " new_count=" .. tostring(new_count) .. " reason=" .. tostring(reason))
 
-    local restored_path = selected_combo_path_for_view()
+    local restored_path = file_system.selected_combo_path_for_view()
     if restored_path then
-        log_combo_refresh("selection restored path=" .. tostring(restored_path))
+        file_system.log_combo_refresh("selection restored path=" .. tostring(restored_path))
     end
 
     return true
@@ -1924,7 +1925,7 @@ local function truncate_utf8(value, max_chars)
     return table.concat(out)
 end
 
-local WINDOWS_RESERVED_FILENAMES = {
+file_system.windows_reserved_filenames = {
     CON = true, PRN = true, AUX = true, NUL = true,
     COM1 = true, COM2 = true, COM3 = true, COM4 = true, COM5 = true,
     COM6 = true, COM7 = true, COM8 = true, COM9 = true,
@@ -1932,7 +1933,7 @@ local WINDOWS_RESERVED_FILENAMES = {
     LPT6 = true, LPT7 = true, LPT8 = true, LPT9 = true,
 }
 
-local function sanitize_filename_component(value, max_chars, fallback)
+function file_system.sanitize_filename_component(value, max_chars, fallback)
     if fallback == nil then fallback = "UNKNOWN" end
     local s = trim_string(value)
     if max_chars then s = truncate_utf8(s, max_chars) end
@@ -1954,13 +1955,13 @@ local function sanitize_filename_component(value, max_chars, fallback)
     s = s:gsub("_+", "_")
     s = s:gsub("^_+", ""):gsub("_+$", "")
     if s == "" then return fallback end
-    if WINDOWS_RESERVED_FILENAMES[s:upper()] then
+    if file_system.windows_reserved_filenames[s:upper()] then
         s = s .. "_FILE"
     end
     return s
 end
 
-local function get_safe_filename_motion(sequence)
+function file_system.get_safe_filename_motion(sequence)
     local raw_motion = sequence and sequence[1] and sequence[1].motion or ""
     local motion = trim_string(raw_motion)
     if motion == "" then return "UNKNOWN" end
@@ -1978,13 +1979,13 @@ local function get_safe_filename_motion(sequence)
     motion = motion:gsub("绌烘尌", "")
     motion = motion:gsub("[Ww][Hh][Ii][Ff][Ff]", "")
 
-    local motion_id = sanitize_filename_component(motion, nil, "")
+    local motion_id = file_system.sanitize_filename_component(motion, nil, "")
     if is_whiff then
         if motion_id == "" then return "WHIFF" end
         return motion_id .. "_WHIFF"
     end
 
-    return sanitize_filename_component(motion)
+    return file_system.sanitize_filename_component(motion)
 end
 
 local POS_TICKER_NAMES = { "任意位置", "原始位置", "镜像位置" }
@@ -2315,56 +2316,56 @@ end
 
 local function ct_auto_refresh_combo_list()
     if _G.CurrentTrainerMode ~= 4 then
-        combo_list_pending_save_refreshed = false
-        combo_list_auto_refresh_counter = 0
-        combo_list_was_active = false
-        combo_list_last_signature = nil
+        file_system.combo_list_pending_save_refreshed = false
+        file_system.combo_list_auto_refresh_counter = 0
+        file_system.combo_list_was_active = false
+        file_system.combo_list_last_signature = nil
         return
     end
 
     local busy = combo_list_refresh_busy()
-    if not combo_list_was_active then
-        combo_list_was_active = true
-        combo_list_auto_refresh_counter = 0
-        combo_list_pending_save_refreshed = false
+    if not file_system.combo_list_was_active then
+        file_system.combo_list_was_active = true
+        file_system.combo_list_auto_refresh_counter = 0
+        file_system.combo_list_pending_save_refreshed = false
         if not busy and not trial_state._xt_pending_save then
             refresh_combo_list_preserve_selection(true)
-            local signature, signature_error = build_combo_file_signature()
+            local signature, signature_error = file_system.build_combo_file_signature()
             if signature then
-                combo_list_last_signature = signature
+                file_system.combo_list_last_signature = signature
             elseif signature_error then
-                warn_combo_signature_failure(signature_error)
+                file_system.warn_combo_signature_failure(signature_error)
             end
         end
     end
 
     if trial_state._xt_pending_save then
-        if combo_list_pending_save_refreshed then return end
-        combo_list_pending_save_refreshed = true
+        if file_system.combo_list_pending_save_refreshed then return end
+        file_system.combo_list_pending_save_refreshed = true
         refresh_combo_list_preserve_selection(false)
         return
     end
 
-    combo_list_pending_save_refreshed = false
-    if run_pending_combo_list_refresh() then return end
+    file_system.combo_list_pending_save_refreshed = false
+    if file_system.run_pending_combo_list_refresh() then return end
     if busy then return end
 
-    combo_list_auto_refresh_counter = combo_list_auto_refresh_counter + 1
-    if combo_list_auto_refresh_counter >= COMBO_LIST_AUTO_REFRESH_FRAMES then
-        combo_list_auto_refresh_counter = 0
-        local signature, signature_error = build_combo_file_signature()
+    file_system.combo_list_auto_refresh_counter = file_system.combo_list_auto_refresh_counter + 1
+    if file_system.combo_list_auto_refresh_counter >= file_system.combo_list_auto_refresh_frames then
+        file_system.combo_list_auto_refresh_counter = 0
+        local signature, signature_error = file_system.build_combo_file_signature()
         if not signature then
-            warn_combo_signature_failure(signature_error or "unknown signature error")
+            file_system.warn_combo_signature_failure(signature_error or "unknown signature error")
             return
         end
-        if combo_list_last_signature == nil then
-            combo_list_last_signature = signature
+        if file_system.combo_list_last_signature == nil then
+            file_system.combo_list_last_signature = signature
             return
         end
-        if signature ~= combo_list_last_signature then
-            log_combo_refresh("external file signature changed")
-            request_combo_list_refresh("external file signature changed", true)
-            run_pending_combo_list_refresh()
+        if signature ~= file_system.combo_list_last_signature then
+            file_system.log_combo_refresh("external file signature changed")
+            file_system.request_combo_list_refresh("external file signature changed", true)
+            file_system.run_pending_combo_list_refresh()
         end
     end
 end
@@ -2377,7 +2378,7 @@ local function read_trialhub_sync_signal()
     for _, path in ipairs(paths) do
         local ok, data = pcall(json.load_file, path)
         if ok and type(data) == "table" then
-            trialhub_sync_warn_counter = 0
+            file_system.trialhub_sync_warn_counter = 0
             return data, nil
         elseif not ok then
             return nil, data
@@ -2388,21 +2389,21 @@ end
 
 local function ct_poll_trialhub_sync_signal()
     if _G.CurrentTrainerMode ~= 4 then
-        trialhub_sync_counter = 0
+        file_system.trialhub_sync_counter = 0
         return
     end
 
-    trialhub_sync_counter = trialhub_sync_counter + 1
-    if trialhub_sync_counter < TRIALHUB_SYNC_POLL_FRAMES then return end
-    trialhub_sync_counter = 0
+    file_system.trialhub_sync_counter = file_system.trialhub_sync_counter + 1
+    if file_system.trialhub_sync_counter < file_system.trialhub_sync_poll_frames then return end
+    file_system.trialhub_sync_counter = 0
 
     local signal, read_error = read_trialhub_sync_signal()
     if not signal then
         if read_error then
-            trialhub_sync_warn_counter = trialhub_sync_warn_counter + 1
-            if trialhub_sync_warn_counter == 1 or trialhub_sync_warn_counter >= 20 then
-                log_combo_refresh("sync signal read failed: " .. tostring(read_error))
-                trialhub_sync_warn_counter = 1
+            file_system.trialhub_sync_warn_counter = file_system.trialhub_sync_warn_counter + 1
+            if file_system.trialhub_sync_warn_counter == 1 or file_system.trialhub_sync_warn_counter >= 20 then
+                file_system.log_combo_refresh("sync signal read failed: " .. tostring(read_error))
+                file_system.trialhub_sync_warn_counter = 1
             end
         end
         return
@@ -2413,23 +2414,23 @@ local function ct_poll_trialhub_sync_signal()
     if version == nil and time_value == nil then return end
 
     local marker = tostring(version or "") .. "|" .. tostring(time_value or "")
-    if not trialhub_last_marker then
-        trialhub_last_marker = marker
-        request_combo_list_refresh("marker initialized", true)
-        log_combo_refresh("marker initialized, refresh requested")
+    if not file_system.trialhub_last_marker then
+        file_system.trialhub_last_marker = marker
+        file_system.request_combo_list_refresh("marker initialized", true)
+        file_system.log_combo_refresh("marker initialized, refresh requested")
         return
     end
-    if marker == trialhub_last_marker then return end
+    if marker == file_system.trialhub_last_marker then return end
 
-    trialhub_last_marker = marker
+    file_system.trialhub_last_marker = marker
     local busy = trial_state.is_recording or trial_state.is_playing or trial_state._xt_pending_save or (demo_state and demo_state.is_playing)
     if busy then
-        request_combo_list_refresh("external sync marker changed", true)
+        file_system.request_combo_list_refresh("external sync marker changed", true)
         ct_ticker("训练库已更新")
         return
     end
 
-    request_combo_list_refresh("external sync marker changed", true)
+    file_system.request_combo_list_refresh("external sync marker changed", true)
 end
 
 local function ct_handle_replay_cleanup(_in_replay)
@@ -4075,13 +4076,13 @@ function save_trial_sequence(meta)
 
     local type_tag = has_oki and "_OKI" or "_COMBO"
     local starter_motion_raw = trial_state.sequence[1] and trial_state.sequence[1].motion or ""
-    local starter_motion = get_safe_filename_motion(trial_state.sequence)
-    log_combo_save("starter motion raw=" .. tostring(starter_motion_raw))
-    log_combo_save("starter motion id=" .. tostring(starter_motion))
+    local starter_motion = file_system.get_safe_filename_motion(trial_state.sequence)
+    file_system.log_combo_save("starter motion raw=" .. tostring(starter_motion_raw))
+    file_system.log_combo_save("starter motion id=" .. tostring(starter_motion))
     local title_suffix = ""
     local meta_title = type(meta) == "table" and meta.title or nil
     if trim_string(meta_title) ~= "" then
-        local safe_title = sanitize_filename_component(meta_title, 32, "")
+        local safe_title = file_system.sanitize_filename_component(meta_title, 32, "")
         if safe_title ~= "" then
             title_suffix = "_" .. safe_title
         end
@@ -4098,7 +4099,7 @@ function save_trial_sequence(meta)
         path = "TrainingComboTrials_data/CustomCombos/" .. char_name .. "/" .. fname
     end
 
-    log_combo_save("output filename=" .. tostring(fname))
+    file_system.log_combo_save("output filename=" .. tostring(fname))
 
     assign_groups(trial_state.sequence)
     json.dump_file(path, trial_state.sequence)
