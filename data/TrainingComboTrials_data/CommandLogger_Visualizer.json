@@ -1,12 +1,14 @@
 {
-    "arrow_size": 0.06800000369548798,
+    "arrow_size": 0.050999999046325684,
     "auto_launch_idx": 2,
     "auto_load": true,
-    "bar_width_pct": 0.949999988079071,
-    "cartouche_height": 0.800000011920929,
-    "cartouche_offset_x": -0.013000000268220901,
-    "cartouche_offset_y": 0.0010000000474974513,
-    "cartouche_width": 0.25999999046325684,
+    "bar_img_offset_x": -0.02500000037252903,
+    "bar_img_offset_y": -0.01899999938905239,
+    "bar_width_pct": 0.5699999928474426,
+    "cartouche_height": 1.5700000524520874,
+    "cartouche_offset_x": -0.020999999716877937,
+    "cartouche_offset_y": 0.006000000052154064,
+    "cartouche_width": 0.26499998569488525,
     "colors": {
         "bg_active": 2690650224,
         "bg_active_line": 4291834096,
@@ -36,34 +38,34 @@
     },
     "combo_text_y_offset": 0.0,
     "enabled": true,
-    "fail_display_frames": 60,
+    "fail_display_frames": 102,
     "fail_reset_delay": 1.5,
     "float_pos": {
-        "x": 0.025,
+        "x": 0.21484375,
         "y": 0.9555555555555556
     },
     "float_size": {
-        "h": 0.04351851851851852,
-        "w": 0.95
+        "h": 0.04375,
+        "w": 0.569921875
     },
-    "font_size": 0.020999999716877937,
-    "forced_position_idx": 3,
+    "font_size": 0.017000000923871994,
+    "forced_position_idx": 2,
     "ghost_filter_frames": 4,
-    "hud_font_size": 20,
-    "hud_global_y": -0.3370000123977661,
-    "hud_show": true,
-    "hud_spacing_y": 0.028,
-    "icon_size": 0.02329999953508377,
-    "idle_max_history": 15,
+    "hud_font_size": 21.0,
+    "hud_global_y": -0.33799999952316284,
+    "hud_show": false,
+    "hud_spacing_y": 0.02800000086426735,
+    "icon_size": 0.026000000536441803,
+    "idle_max_history": 13,
     "idle_mirror_p1": false,
     "idle_mirror_p2": false,
     "idle_pos_p1": {
-        "x": 0.019999999552965164,
+        "x": 0.04500000178813934,
         "y": 0.1770000010728836
     },
     "idle_pos_p2": {
         "x": 0.9800000190734863,
-        "y": 0.1770000010728836
+        "y": 0.1599999964237213
     },
     "idle_raw_max_history": 19,
     "idle_raw_p1": false,
@@ -76,17 +78,17 @@
         "x": 0.85,
         "y": 0.35
     },
-    "idle_show_p1": true,
+    "idle_show_p1": false,
     "idle_show_p2": false,
     "ignore_auto": true,
-    "max_history": 15,
+    "max_history": 13,
     "mirror_p1": false,
     "mirror_p2": false,
-    "offset_x_arrow": -0.0430000014603138,
-    "offset_y_arrow": -0.00800000037997961,
+    "offset_x_arrow": -0.03099999949336052,
+    "offset_y_arrow": 0.013000000268220901,
     "pos_combo_stats": {
-        "x": 0.5,
-        "y": 0.085
+        "x": 0.6000000238418579,
+        "y": 0.1599999964237213
     },
     "pos_live_single_p1": {
         "x": 0.15000000596046448,
@@ -109,23 +111,23 @@
         "y": 0.15
     },
     "pos_trial_header": {
-        "x": 0.5,
-        "y": 0.0
+        "x": 0.5049999952316284,
+        "y": 0.14000000059604645
     },
     "pos_trial_p1": {
-        "x": 0.05000000074505806,
-        "y": 0.1770000010728836
+        "x": 0.10499999672174454,
+        "y": 0.21199999749660492
     },
     "pos_trial_p2": {
-        "x": 0.85,
+        "x": 0.675000011920929,
         "y": 0.014999999664723873
     },
     "raw": {
         "col_dir": -0.02500000037252903,
         "col_frame": 0.03500000014901161,
-        "font_size": 0.017000000923871994,
+        "font_size": 0.027000000700354576,
         "icon_size": 0.024000000208616257,
-        "slot1": -0.054999999701976776,
+        "slot1": 0.06499999761581421,
         "slot2": -0.08250000327825546,
         "slot3": -0.11100000143051147,
         "slot4": -0.13899999856948853,
@@ -134,25 +136,27 @@
         "spacing_y": 0.03200000151991844,
         "text_y_offset": -0.014499999582767487
     },
-    "raw_max_history": 19,
+    "raw_max_history": 16,
     "raw_p1": false,
     "raw_p2": false,
     "raw_pos_p1": {
-        "x": 0.9610000252723694,
-        "y": 0.1770000010728836
+        "x": 0.9700000286102295,
+        "y": 0.1720000058412552
     },
     "raw_pos_p2": {
         "x": 0.85,
         "y": 0.35
     },
-    "show_combo_count": true,
+    "show_combo_count": false,
     "show_live_single_p1": true,
     "show_live_single_p2": true,
-    "show_p1": true,
+    "show_p1": false,
     "show_p2": false,
-    "spacing_x": 0.0044999998062849045,
+    "spacing_x": 0.0020000000949949026,
     "spacing_y": 0.03999999910593033,
-    "special_icon_scale": 1.5,
-    "text_y_offset": -0.014999999664723873,
-    "trial_visible_steps": 13
+    "special_icon_scale": 1.0499999523162842,
+    "text_y_offset": -0.0010000000474974513,
+    "trial_title_font_size": 0.028999999165534973,
+    "trial_title_show": true,
+    "trial_visible_steps": 30
 }

@@ -1332,6 +1332,17 @@ local function read_dummy_action_state()
     return action_type, jump_type
 end
 
+local function capture_trial_environment()
+    local action_type, jump_type = read_dummy_action_state()
+    local stance = (action_type == DUMMY_ACTION_CROUCH) and "crouch" or "stand"
+    return {
+        schema = "xt.training_environment.v1",
+        dummy_action_type = action_type,
+        dummy_jump_type = jump_type,
+        dummy_stance = stance,
+    }
+end
+
 local function save_dummy_action_type()
     if trial_state._saved_dummy_action_type == nil then
         local action_type, jump_type = read_dummy_action_state()
@@ -1366,6 +1377,41 @@ local function text_mentions_dummy_crouch(value)
         or text:find("crouch", 1, true) ~= nil
 end
 
+local function has_recorded_dummy_action_environment(env)
+    return type(env) == "table"
+        and (env.dummy_action_type ~= nil
+            or env.dummy_stance ~= nil
+            or env.dummy_posture ~= nil
+            or env.dummy_action ~= nil)
+end
+
+local function environment_requests_dummy_crouch(env)
+    if not has_recorded_dummy_action_environment(env) then return false end
+    if tonumber(env.dummy_action_type) == DUMMY_ACTION_CROUCH then return true end
+    if value_requests_dummy_crouch(env.dummy_stance) then return true end
+    if value_requests_dummy_crouch(env.dummy_posture) then return true end
+    if value_requests_dummy_crouch(env.dummy_action) then return true end
+    return false
+end
+
+local function apply_recording_environment_to_meta(meta)
+    meta = (type(meta) == "table") and meta or {}
+    local env = trial_state._rec_environment
+    if type(env) ~= "table" then env = capture_trial_environment() end
+
+    meta.environment = env
+    meta.dummy_stance = env.dummy_stance
+    meta.dummy_action_type = env.dummy_action_type
+
+    if environment_requests_dummy_crouch(env) then
+        meta.requires_dummy_crouch = true
+    else
+        meta.requires_dummy_crouch = false
+    end
+
+    return meta
+end
+
 local function trial_requires_dummy_crouch()
     local first = trial_state.sequence and trial_state.sequence[1]
     if type(first) ~= "table" then return false end
@@ -1377,6 +1423,9 @@ local function trial_requires_dummy_crouch()
 
     local meta = type(first._xt_meta) == "table" and first._xt_meta or nil
     if meta then
+        if has_recorded_dummy_action_environment(meta.environment) then
+            return environment_requests_dummy_crouch(meta.environment)
+        end
         if meta.requires_dummy_crouch == true then return true end
         if value_requests_dummy_crouch(meta.dummy_stance) then return true end
         if value_requests_dummy_crouch(meta.dummy_posture) then return true end
@@ -1821,6 +1870,7 @@ local function start_recording(player_idx)
     trial_state._xt_pending_save_player = nil
     trial_state._xt_pending_save_error = nil
     trial_state._xt_meta_input_hint_shown = false
+    trial_state._rec_environment = capture_trial_environment()
 
     players[player_idx].log = {}
     players[player_idx].input_history_queue = {}
@@ -1870,6 +1920,7 @@ local function start_trial(player_idx)
     trial_state.is_recording = false
     trial_state._rec_gauges = nil
     trial_state._rec_hit_type = nil
+    trial_state._rec_environment = nil
     trial_state.is_playing = true
     trial_state.playing_player = player_idx
     trial_state._was_playing = false
@@ -1897,6 +1948,7 @@ local function cancel_recording()
     trial_state.is_playing = false
     trial_state.sequence = {}
     trial_state.current_step = 1
+    trial_state._rec_environment = nil
     -- Flush displayed input history
     reset_combo_visual_runtime()
     step_combo_reset_gc()
@@ -2461,6 +2513,47 @@ local function is_post_hit_setup_step(step_idx)
         end
     end
     return false
+end
+
+local function is_same_action_continuation_step(prev_step, step, combo_count)
+    if not prev_step or not step then return false end
+    if prev_step.has_hit ~= true then return false end
+    if prev_step.id == nil or step.id == nil then return false end
+    if prev_step.id ~= step.id then return false end
+
+    local prev_combo = tonumber(prev_step.expected_combo) or 0
+    local expected_combo = tonumber(step.expected_combo) or 0
+    return expected_combo > 0 and expected_combo > prev_combo and (combo_count or 0) >= expected_combo
+end
+
+local function advance_same_action_continuation_steps(combo_count)
+    if not trial_state.sequence or not trial_state.current_step then return false end
+
+    local advanced = false
+    while trial_state.current_step > 1 and trial_state.current_step <= #trial_state.sequence do
+        local prev_step = trial_state.sequence[trial_state.current_step - 1]
+        local step = trial_state.sequence[trial_state.current_step]
+        if not is_same_action_continuation_step(prev_step, step, combo_count) then break end
+
+        step.has_hit = true
+        step.actual_combo = math.max(tonumber(step.actual_combo) or 0, combo_count or 0)
+        step.last_frame_diff = 0
+        trial_state.current_step = trial_state.current_step + 1
+        trial_state.last_played_frame = engine_frame_count
+        trial_state.ui_visual_step = trial_state.current_step
+        trial_state.floating_info = nil
+
+        local next_step = trial_state.sequence[trial_state.current_step]
+        if next_step and next_step.counter_type then
+            set_dummy_counter_type(next_step.counter_type)
+        else
+            set_dummy_counter_type(0)
+        end
+
+        advanced = true
+    end
+
+    return advanced
 end
 
 local function is_optional_parent_for_followup(actual_motion, expected_step)
@@ -3078,6 +3171,7 @@ local function ct_player_tracking(p_idx, p_state)
                 prev_step.actual_combo = _pf.current_combo
                 prev_step.has_hit = true
                 if hit_is_projectile then prev_step.is_projectile_hit = true end
+                advance_same_action_continuation_steps(_pf.current_combo or 0)
 
                 -- Hit confirmed: apply the counter_type of the next step
                 local next_step = trial_state.sequence[trial_state.current_step]
@@ -4363,7 +4457,7 @@ function save_trial_sequence(meta)
     end
 
     if type(meta) == "table" and type(trial_state.sequence[1]) == "table" then
-        trial_state.sequence[1]._xt_meta = meta
+        trial_state.sequence[1]._xt_meta = apply_recording_environment_to_meta(meta)
     end
     normalize_sequence_counter_types(trial_state.sequence)
 
@@ -4420,6 +4514,7 @@ function save_trial_sequence(meta)
 
     assign_groups(trial_state.sequence)
     json.dump_file(path, trial_state.sequence)
+    trial_state._rec_environment = nil
     refresh_combo_list_preserve_selection(false)
     local paths = rec_p == 0 and file_system.saved_combos_paths_p1 or file_system.saved_combos_paths_p2
     for idx, combo_path in ipairs(paths) do
