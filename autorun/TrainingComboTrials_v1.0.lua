@@ -3588,103 +3588,13 @@ local function ct_player_validation(p_idx, p_state)
     end
     if trial_state.is_playing and p_idx == trial_state.playing_player and not is_demo_playing and not trial_state.manual_reset_pending then
         local is_hold_pending = (trial_state.active_universal_hold ~= nil)
-        local function build_final_finish_debug(params)
-            params = params or {}
-            local seq = trial_state.sequence or {}
-            local total_steps = #seq
-            local final_step = seq[total_steps]
-            local last_validated_idx = trial_state.current_step and (trial_state.current_step - 1) or nil
-            local last_validated = last_validated_idx and seq[last_validated_idx] or nil
-            local validation_debug = trial_state._validation_debug or {}
-            local observed_combo = math.max(
-                _pf.current_combo or 0,
-                p_state.last_combo_count or 0,
-                final_step and (final_step.actual_combo or 0) or 0
-            )
-            trial_state._final_finish_max_observed_combo = math.max(
-                trial_state._final_finish_max_observed_combo or 0,
-                observed_combo or 0
-            )
-            local should_finish_success = total_steps > 0
-                and trial_state.current_step > total_steps
-                and final_step
-                and trial_state.success_timer == 0
-                and not is_hold_pending
-                and not (trial_state.fail_timer and trial_state.fail_timer > 0)
-                and (not final_step.expected_combo or final_step.expected_combo == 0 or observed_combo >= final_step.expected_combo)
-
-            local reject_reason = nil
-            if total_steps <= 0 then
-                reject_reason = "missing_sequence"
-            elseif not (trial_state.current_step > total_steps) then
-                reject_reason = "not_past_final_step"
-            elseif not final_step then
-                reject_reason = "missing_final_step"
-            elseif trial_state.success_timer ~= 0 then
-                reject_reason = "success_timer_active"
-            elseif is_hold_pending then
-                reject_reason = "hold_pending"
-            elseif trial_state.fail_timer and trial_state.fail_timer > 0 then
-                reject_reason = "fail_timer_active"
-            elseif final_step.expected_combo and final_step.expected_combo > 0 and observed_combo < final_step.expected_combo then
-                reject_reason = "combo_not_reached"
-            end
-
-            local victim_hp = nil
-            pcall(function()
-                if _pf.victim_obj then victim_hp = _pf.victim_obj.vital_new end
-            end)
-
-            return {
-                phase = "final_finish_check",
-                frame = engine_frame_count,
-                current_step = trial_state.current_step,
-                step = trial_state.current_step,
-                total_steps = total_steps,
-                trial_total = total_steps,
-                final_expected_id = final_step and final_step.id or nil,
-                final_expected_motion = final_step and final_step.motion or nil,
-                final_expected_combo = final_step and final_step.expected_combo or nil,
-                final_expected_damage = final_step and final_step.damage_at_step or nil,
-                final_damage_at_step = final_step and final_step.damage_at_step or nil,
-                final_is_projectile_hit = final_step and final_step.is_projectile_hit or nil,
-                last_validated_step = last_validated_idx,
-                last_validated_action_id = last_validated and last_validated.id or nil,
-                last_validated_actual_action_id = validation_debug.actual_action_id,
-                last_validated_match_reason = validation_debug.match_reason,
-                last_validated_combo_count = validation_debug.combo_count,
-                current_combo = _pf.current_combo or 0,
-                p_state_last_combo_count = p_state.last_combo_count or 0,
-                observed_combo = observed_combo,
-                max_observed_combo_after_finish = trial_state._final_finish_max_observed_combo,
-                current_hp = _pf.p_char and _pf.p_char.vital_new or nil,
-                victim_hp = victim_hp,
-                actual_action_id = _pf.act_id,
-                actual_motion = (_pf.act_id and p_state.bcm_cache and p_state.bcm_cache[_pf.act_id]) or (act_id_reverse_enum[_pf.act_id] or "Unknown"),
-                is_projectile = final_step and final_step.is_projectile_hit or nil,
-                projectile_hit = final_step and final_step.is_projectile_hit or nil,
-                success_timer = trial_state.success_timer,
-                finish_timer = trial_state.success_timer,
-                waiting_finish_timer = trial_state.success_timer,
-                fail_timer = trial_state.fail_timer,
-                combo_drop_detected = params.combo_drop_detected == true,
-                combo_drop_reason = params.combo_drop_reason,
-                finish_success_candidate = should_finish_success,
-                should_finish_success = should_finish_success,
-                finish_success_reject_reason = reject_reason,
-                trial_file = trial_state.current_file or trial_state.current_file_path,
-                trial_filename = trial_state.current_file_name
-            }
-        end
 
         if #trial_state.sequence > 0 and trial_state.current_step > #trial_state.sequence then
             local last_step = trial_state.sequence[#trial_state.sequence]
             local observed_combo = math.max(_pf.current_combo or 0, p_state.last_combo_count or 0, last_step.actual_combo or 0)
             local should_finish_success = trial_state.success_timer == 0 and not is_hold_pending and not (trial_state.fail_timer and trial_state.fail_timer > 0) and (not last_step.expected_combo or last_step.expected_combo == 0 or observed_combo >= last_step.expected_combo)
-            DebugTrace.record_match_probe(trial_state, build_final_finish_debug())
             if should_finish_success then
                 trial_state.success_timer = d2d_cfg.fail_display_frames or 120
-                DebugTrace.record_match_probe(trial_state, build_final_finish_debug())
             end
         end
 
