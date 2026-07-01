@@ -14,6 +14,7 @@ local ComboTrialsModules = {
 local DebugTrace = ComboTrialsModules.DebugTrace
 local ActionMatcher = ComboTrialsModules.ActionMatcher
 local CharacterRules = ComboTrialsModules.CharacterRules
+local Validator = ComboTrialsModules.Validator
 
 pcall(function()
     if fs and fs.create_dir then fs.create_dir("TrainingComboTrials_data/exceptions") end
@@ -3757,7 +3758,7 @@ local function ct_player_process_actions(p_idx, p_state, actions_to_process)
                                         last_played
                                 end
                                 trial_state.last_played_frame = engine_frame_count
-                                local frame_diff = actual_delay - (expected.delay_from_prev or 0)
+                                local frame_diff = Validator.calculate_frame_diff(actual_delay, expected.delay_from_prev)
 
                                 -- IMMEDIATE timing display at the input frame
                                 if frame_diff < 0 then
@@ -3776,52 +3777,23 @@ local function ct_player_process_actions(p_idx, p_state, actions_to_process)
                                     trial_state.ui_visual_step = trial_state.current_step + 1
                                 end
 
-                                local combo_ok = true
                                 local validation_prev_step = nil
                                 if trial_state.current_step > 1 then
                                     local prev_step = trial_state.sequence[trial_state.current_step - 1]
                                     validation_prev_step = prev_step
-                                    if prev_step and prev_step.expected_combo ~= nil then
-                                        local skip_strict_check = (prev_step.is_projectile_hit == true)
-                                        if not skip_strict_check and (_pf.current_combo or 0) ~= prev_step.expected_combo then
-                                            local combo_now = _pf.current_combo or 0
-                                            local current_hit_already_counted =
-                                                (expected.expected_combo or 0) > prev_step.expected_combo
-                                                and combo_now > prev_step.expected_combo
-                                                and combo_now <= expected.expected_combo
-                                            if current_hit_already_counted then
-                                                -- The current move can update combo_cnt on the same frame as its action.
-                                                combo_ok = true
-                                            elseif _pf.opponent_knocked_down and (_pf.current_combo or 0) == 0 and prev_step.expected_combo == 0 then
-                                                combo_ok = true
-                                            elseif prev_step.expected_combo == 0 and (_pf.current_combo or 0) > 0 then
-                                                combo_ok = true
-                                            elseif (_pf.current_combo or 0) == 0 and prev_step.expected_combo > 0 then
-                                                -- Oki / cross-up setup: combo dropped naturally (opponent got up)
-                                                combo_ok = true
-                                            elseif expected and expected.expected_combo == 0 then
-                                                -- RESET TOLERANCE 2.0 (Standing Reset / Oki):
-                                                -- The sequence intends for the combo to drop to 0 after this move.
-                                                -- So it doesn't matter if the combo counter is still running (early input) 
-                                                -- or has just naturally dropped to 0. Both states are valid.
-                                                combo_ok = true
-                                            else
-                                                combo_ok = false
-                                            end
-                                        end
-                                    end
                                 end
+                                local combo_ok = Validator.check_combo({
+                                    expected = expected,
+                                    prev_step = validation_prev_step,
+                                    current_combo = _pf.current_combo or 0,
+                                    opponent_knocked_down = _pf.opponent_knocked_down
+                                })
 
-                                local hp_ok = true
-                                if expected.expected_hp ~= nil and process_act.current_hp ~= nil then
-                                    -- HP Validation is strict only for post-hit setup/oki phases.
-                                    local is_oki = is_post_hit_setup_step(trial_state.current_step - 1)
-                                    if is_oki then
-                                        if process_act.current_hp ~= expected.expected_hp then
-                                            hp_ok = false
-                                        end
-                                    end
-                                end
+                                local hp_ok = Validator.check_hp(
+                                    expected.expected_hp,
+                                    process_act.current_hp,
+                                    is_post_hit_setup_step(trial_state.current_step - 1)
+                                )
 
                                 DebugTrace.record_validation_debug(trial_state, {
                                     frame = engine_frame_count,
