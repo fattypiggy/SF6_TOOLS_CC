@@ -4072,6 +4072,7 @@ local function ct_player_process_actions(p_idx, p_state, actions_to_process)
                         match_reason = match_reason,
                         recent_index = match_details and match_details.recent_index or nil,
                         absorb_ids = match_details and match_details.absorb_ids or nil,
+                        source = match_details and match_details.source or nil
                     })
 
                     if combo_ok and hp_ok then
@@ -4454,6 +4455,35 @@ local function ct_player_process_actions(p_idx, p_state, actions_to_process)
             end
             -- CODE OK 							
 
+            if trial_state.is_playing and p_idx == trial_state.playing_player
+                and not is_intentional
+                and #trial_state.sequence > 0
+                and not trial_state.manual_reset_pending
+                and trial_state.success_timer == 0
+                and not (trial_state.fail_timer and trial_state.fail_timer > 0) then
+                local expected = trial_state.sequence[trial_state.current_step]
+                local current_absorb = CharacterRules.match_current_absorb_confirmation(
+                    p_state.exceptions,
+                    common_exceptions,
+                    expected,
+                    act_id,
+                    _pf.current_combo or 0,
+                    p_state.profile_name
+                )
+                if current_absorb.matched then
+                    apply_matched_step(
+                        expected,
+                        current_absorb.actual_action_id,
+                        current_absorb.motion or "Unknown",
+                        current_absorb.real_input or "None",
+                        engine_frame_count,
+                        current_absorb.combo_count or 0,
+                        process_act.current_hp,
+                        current_absorb.match_reason,
+                        current_absorb
+                    )
+                end
+            end
 
             -- AUTOMATIC ACTION HANDLING AFTER A HOLD (outside is_intentional block)
             -- This must be OUTSIDE the is_intentional block because auto actions are not intentional

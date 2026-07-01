@@ -99,6 +99,49 @@ function CharacterRules.find_recent_absorb_confirmation(character_rules, common_
     return { matched = false, block_reason = "absorb_id_not_recent", absorb_ids = exception.absorb_ids }
 end
 
+function CharacterRules.match_current_absorb_confirmation(character_rules, common_rules, expected, action_id, combo_count, character_name)
+    if character_name ~= "EHonda" and character_name ~= "Honda" then
+        return { matched = false, block_reason = "character_not_ehonda" }
+    end
+    if not expected then return { matched = false, block_reason = "missing_expected" } end
+
+    local exception = CharacterRules.get_exception(character_rules, common_rules, expected.id)
+    local absorb_ids = parse_absorb_ids(exception)
+    if not absorb_ids then return { matched = false, block_reason = "missing_absorb_ids" } end
+
+    local current_id = tonumber(action_id)
+    if not current_id or not absorb_ids[current_id] then
+        return { matched = false, block_reason = "current_id_not_absorbed", absorb_ids = exception.absorb_ids }
+    end
+
+    local expected_combo = tonumber(expected.expected_combo)
+    if expected_combo == nil then return { matched = false, block_reason = "missing_expected_combo" } end
+
+    local current_combo = tonumber(combo_count) or 0
+    if current_combo < expected_combo then
+        return {
+            matched = false,
+            block_reason = "combo_not_reached",
+            actual_action_id = current_id,
+            combo_count = current_combo,
+            expected_combo = expected_combo,
+            absorb_ids = exception.absorb_ids
+        }
+    end
+
+    return {
+        matched = true,
+        actual_action_id = current_id,
+        match_reason = "ehonda_current_absorb",
+        combo_count = current_combo,
+        expected_id = expected.id,
+        expected_combo = expected_combo,
+        absorb_ids = exception.absorb_ids,
+        source = "current_non_intentional_absorb",
+        motion = "Unknown",
+        real_input = "None"
+    }
+end
 
 function CharacterRules.apply_runtime_overrides(character_name, action_id, exception, log)
     if character_name == "Cammy" and (action_id == 908 or action_id == 922) then
