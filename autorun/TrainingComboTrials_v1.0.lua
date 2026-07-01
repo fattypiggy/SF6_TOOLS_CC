@@ -83,6 +83,100 @@ local common_exceptions = CharacterRules.load_common()
 
 local DR_IDS = { [500]=true, [501]=true, [502]=true, [504]=true, [730]=true, [731]=true, [739]=true, [740]=true, [741]=true, [760]=true, [761]=true }
 
+local unique_resources = {
+    by_fighter_id = {
+        [1] = {
+        name = "Ryu",
+        resources = {
+            { id = "timer_0_001", kind = "timer", min = 0, max = 2 }
+        }
+    },
+    [3] = {
+        name = "Kimberly",
+        resources = {
+            { id = "stock_0_003", kind = "stock", min = 0, max = 2, allow_infinite = true }
+        }
+    },
+    [5] = {
+        name = "Manon",
+        resources = {
+            { id = "stock_0_005", kind = "stock", min = 0, max = 4 }
+        }
+    },
+    [12] = {
+        name = "Lily",
+        resources = {
+            { id = "stock_0_012", kind = "stock", min = 0, max = 3, allow_infinite = true }
+        }
+    },
+    [15] = {
+        name = "Blanka",
+        resources = {
+            { id = "timer_0_015", kind = "timer", min = 0, max = 2 },
+            { id = "stock_0_015", kind = "stock", min = 0, max = 3, allow_infinite = true }
+        }
+    },
+    [16] = {
+        name = "Juri",
+        resources = {
+            { id = "timer_0_016", kind = "timer", min = 0, max = 2 },
+            { id = "stock_0_016", kind = "stock", min = 0, max = 3, allow_infinite = true }
+        }
+    },
+    [18] = {
+        name = "Guile",
+        resources = {
+            { id = "timer_0_018", kind = "timer", min = 0, max = 2 }
+        }
+    },
+    [20] = {
+        name = "EHonda",
+        resources = {
+            { id = "stock_0_020", kind = "stock", min = 0, max = 1, allow_infinite = true }
+        }
+    },
+    [21] = {
+        name = "Jamie",
+        resources = {
+            { id = "timer_0_021", kind = "timer", min = 0, max = 2 },
+            { id = "stock_0_021", kind = "stock", min = 0, max = 4 }
+        }
+    },
+    [28] = {
+        name = "Mai",
+        resources = {
+            { id = "stock_0_028", kind = "stock", min = 0, max = 5, allow_infinite = true }
+        }
+    },
+    [30] = {
+        name = "CViper",
+        resources = {
+            { id = "timer_0_030", kind = "timer", min = 0, max = 2 }
+        }
+    },
+    [32] = {
+        name = "Ingrid",
+        resources = {
+            { id = "stock_0_032", kind = "stock", min = 0, max = 4, allow_infinite = true }
+        }
+    }
+    },
+    by_id = nil
+}
+
+function unique_resources.resource_by_id(resource_id)
+    if not unique_resources.by_id then
+        local by_id = {}
+        for _, char_data in pairs(unique_resources.by_fighter_id) do
+            for _, resource in ipairs(char_data.resources or {}) do
+                by_id[resource.id] = resource
+            end
+        end
+        unique_resources.by_id = by_id
+    end
+    return unique_resources.by_id[resource_id]
+end
+
 local function is_drive_rush_id(act_id)
     return DR_IDS[act_id] == true
 end
@@ -1338,6 +1432,129 @@ local function read_dummy_action_state()
     return action_type, jump_type
 end
 
+function unique_resources.get_training_data_objects()
+    local result = {}
+    pcall(function()
+        result.training_manager = sdk.get_managed_singleton("app.training.TrainingManager")
+        if not result.training_manager then return end
+        result.training_data = result.training_manager:get_field("_tData")
+        if not result.training_data then return end
+        result.parameter_setting = result.training_data:get_field("ParameterSetting")
+        result.select_menu = result.training_data:get_field("SelectMenu")
+    end)
+    if result.parameter_setting then
+        pcall(function() result.unique_data = result.parameter_setting:get_field("UniqueData") end)
+        if not result.unique_data then
+            pcall(function() result.unique_data = result.parameter_setting.UniqueData end)
+        end
+    end
+    return result
+end
+
+function unique_resources.read_training_fighter_id(player_idx)
+    local fighter_id = nil
+    pcall(function()
+        local data = unique_resources.get_training_data_objects()
+        local sm = data.select_menu
+        if not sm or not sm.PlayerDatas then return end
+        local player_data = sm.PlayerDatas[player_idx]
+        if not player_data then return end
+        fighter_id = tonumber(player_data.FighterID)
+    end)
+    return fighter_id
+end
+
+function unique_resources.read_value(unique_data, resource_id)
+    if not unique_data or not resource_id then return nil end
+
+    local ok, value = pcall(function() return unique_data[resource_id] end)
+    if ok and value ~= nil then return tonumber(value) end
+
+    ok, value = pcall(function() return unique_data:get_field(resource_id) end)
+    if ok and value ~= nil then return tonumber(value) end
+
+    return nil
+end
+
+function unique_resources.write_value(unique_data, resource_id, value)
+    if not unique_data or not resource_id or value == nil then return false end
+
+    local ok = pcall(function()
+        unique_data[resource_id] = value
+    end)
+    if ok then return true end
+
+    ok = pcall(function()
+        unique_data:set_field(resource_id, value)
+    end)
+    return ok == true
+end
+
+function unique_resources.normalize_value(resource, value)
+    if not resource then return nil end
+    local n = tonumber(value)
+    if n == nil then return nil end
+    n = math.floor(n + 0.5)
+
+    if n == 7 and resource.allow_infinite then
+        return 7
+    end
+
+    local min_value = resource.min or 0
+    local max_value = resource.max or min_value
+    if n < min_value then n = min_value end
+    if n > max_value then n = max_value end
+    return n
+end
+
+function unique_resources.capture_for_fighter(fighter_id, unique_data)
+    local char_data = unique_resources.by_fighter_id[tonumber(fighter_id)]
+    if not char_data or not unique_data then return nil end
+
+    local unique = {}
+    for _, resource in ipairs(char_data.resources or {}) do
+        local value = unique_resources.normalize_value(resource, unique_resources.read_value(unique_data, resource.id))
+        if value ~= nil then
+            unique[resource.id] = value
+        end
+    end
+
+    if next(unique) == nil then return nil end
+    return unique
+end
+
+function unique_resources.capture_by_side()
+    local data = unique_resources.get_training_data_objects()
+    local unique_data = data.unique_data
+    if not unique_data then return nil end
+
+    local players_state = {}
+    local has_unique = false
+
+    for player_idx = 0, 1 do
+        local fighter_id = unique_resources.read_training_fighter_id(player_idx)
+        local side_key = player_idx == 0 and "p1" or "p2"
+        local side_state = nil
+
+        if fighter_id ~= nil then
+            local unique = unique_resources.capture_for_fighter(fighter_id, unique_data)
+            if unique then
+                side_state = {
+                    fighter_id = fighter_id,
+                    unique = unique
+                }
+                has_unique = true
+            end
+        end
+
+        if side_state then
+            players_state[side_key] = side_state
+        end
+    end
+
+    if not has_unique then return nil end
+    return players_state
+end
 local function capture_trial_environment()
     local action_type, jump_type = read_dummy_action_state()
     local stance = (action_type == DUMMY_ACTION_CROUCH) and "crouch" or "stand"
