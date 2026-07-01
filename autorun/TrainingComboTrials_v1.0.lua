@@ -4034,6 +4034,178 @@ local function ct_player_hold_charge(p_state)
     end			
 end
 
+_G.CTSameActionTrace = _G.CTSameActionTrace or {}
+_G.CTSameActionTrace.path = "TrainingComboTrials_data/SameActionTrace.json"
+_G.CTSameActionTrace.max_events = 500
+
+function _G.CTSameActionTrace.enabled()
+    local same_flag = rawget(_G, "CT_SAME_ACTION_TRACE")
+    if same_flag ~= nil then return same_flag == true end
+    return rawget(_G, "CT_VERIFY_TRACE") ~= false
+end
+
+function _G.CTSameActionTrace.target()
+    local name = tostring(trial_state.current_file_name or trial_state.current_file or trial_state.current_file_path or "")
+    return name:find("Mai_OKI_DI_2858_D1_6_SA0", 1, true) ~= nil
+        or name:find("Mai_OKI_DI_3158_D1_6_SA1", 1, true) ~= nil
+end
+
+function _G.CTSameActionTrace.build_base(phase, p_state)
+    if not (_G.CTSameActionTrace.enabled() and _G.CTSameActionTrace.target()) then return nil end
+    if not trial_state.is_playing then return nil end
+    if p_state and p_state ~= players[trial_state.playing_player] then return nil end
+
+    local expected = trial_state.sequence and trial_state.sequence[trial_state.current_step] or nil
+    local prev_step = trial_state.current_step and trial_state.current_step > 1
+        and trial_state.sequence[trial_state.current_step - 1] or nil
+    local last_played = trial_state.last_played_frame or engine_frame_count
+    local expected_delay = expected and expected.delay_from_prev or nil
+    local frames_since_prev_step = trial_state.current_step and trial_state.current_step > 1
+        and (engine_frame_count - last_played) or 0
+
+    return {
+        phase = phase,
+        trial_name = trial_state.current_file_name,
+        trial_file = trial_state.current_file or trial_state.current_file_path,
+        frame = engine_frame_count,
+        current_step = trial_state.current_step,
+        expected_id = expected and expected.id or nil,
+        expected_motion = expected and expected.motion or nil,
+        previous_verified_step = trial_state.current_step and trial_state.current_step - 1 or nil,
+        previous_expected_id = prev_step and prev_step.id or nil,
+        previous_expected_motion = prev_step and prev_step.motion or nil,
+        same_as_previous_expected = expected and prev_step and expected.id == prev_step.id or false,
+        same_as_current_expected = expected and _pf and _pf.act_id == expected.id or false,
+        frames_since_prev_step = frames_since_prev_step,
+        expected_delay = expected_delay,
+        frame_diff = expected_delay and (frames_since_prev_step - expected_delay) or nil
+    }
+end
+
+function _G.CTSameActionTrace.record(event)
+    if type(event) ~= "table" then return end
+    trial_state._same_action_trace = trial_state._same_action_trace or {
+        timestamp = os.date("%Y-%m-%d %H:%M:%S"),
+        note = "Temporary trace for consecutive same-action validation. Enable with _G.CT_SAME_ACTION_TRACE=true.",
+        path = _G.CTSameActionTrace.path,
+        events = {}
+    }
+
+    local dump = trial_state._same_action_trace
+    dump.updated_at = os.date("%Y-%m-%d %H:%M:%S")
+    dump.enabled = true
+    table.insert(dump.events, event)
+    while #dump.events > _G.CTSameActionTrace.max_events do
+        table.remove(dump.events, 1)
+    end
+    if rawget(_G, "CT_SAME_ACTION_TRACE_FILE") == true then
+        pcall(function()
+            DebugTrace.write_json(_G.CTSameActionTrace.path, dump)
+        end)
+    end
+end
+
+function _G.CTSameActionTrace.trace(phase, p_state, fields)
+    local event = _G.CTSameActionTrace.build_base(phase, p_state)
+    if not event then return end
+    if type(fields) == "table" then
+        for k, v in pairs(fields) do
+            event[k] = v
+        end
+    end
+    _G.CTSameActionTrace.record(event)
+end
+
+_G.CTSameDashFallback = _G.CTSameDashFallback or {}
+
+function _G.CTSameDashFallback.edge_type_for_step(step)
+    if type(step) ~= "table" then return nil end
+    local motion = ActionMatcher.normalize_motion_token(step.motion)
+    if tonumber(step.id) == 17 and motion == "66" then return "66" end
+    if tonumber(step.id) == 18 and motion == "44" then return "44" end
+    if type(step.motion_aliases) == "table" then
+        for _, alias in ipairs(step.motion_aliases) do
+            local normalized = ActionMatcher.normalize_motion_token(alias)
+            if tonumber(step.id) == 17 and normalized == "66" then return "66" end
+            if tonumber(step.id) == 18 and normalized == "44" then return "44" end
+        end
+    end
+    return nil
+end
+
+function _G.CTSameDashFallback.build_candidate(p_state, detected_66_edge, detected_44_edge)
+    if not (trial_state.is_playing and p_state == players[trial_state.playing_player]) then return nil end
+    if trial_state.manual_reset_pending or (trial_state.success_timer and trial_state.success_timer > 0) then return nil end
+    if trial_state.fail_timer and trial_state.fail_timer > 0 then return nil end
+    if not trial_state.sequence or not trial_state.current_step or trial_state.current_step <= 1 then return nil end
+
+    local expected = trial_state.sequence[trial_state.current_step]
+    local prev_step = trial_state.sequence[trial_state.current_step - 1]
+    if not expected or not prev_step or expected.id ~= prev_step.id then return nil end
+
+    local edge_type = _G.CTSameDashFallback.edge_type_for_step(expected)
+    if not edge_type then return nil end
+    if _G.CTSameDashFallback.edge_type_for_step(prev_step) ~= edge_type then return nil end
+    if edge_type == "66" and not detected_66_edge then return nil end
+    if edge_type == "44" and not detected_44_edge then return nil end
+
+    local consume_key = tostring(trial_state.current_step) .. ":" .. tostring(trial_state.last_played_frame or 0)
+    if p_state._same_dash_fallback_key == consume_key then
+        _G.CTSameActionTrace.trace("same_dash_fallback_rejected", p_state, {
+            fallback_source = "input_same_dash_edge",
+            edge_type = edge_type,
+            accepted = false,
+            reject_reason = "already_consumed"
+        })
+        return nil
+    end
+
+    local last_played = trial_state.last_played_frame or engine_frame_count
+    local frames_since_prev_step = engine_frame_count - last_played
+    local expected_delay = expected.delay_from_prev or 0
+    local frame_diff = Validator.calculate_frame_diff(frames_since_prev_step, expected_delay)
+    local accepted = math.abs(frame_diff) <= 2
+    local trace_fields = {
+        step_index = trial_state.current_step,
+        expected_id = expected.id,
+        expected_motion = expected.motion,
+        previous_step_id = prev_step.id,
+        fallback_source = "input_same_dash_edge",
+        edge_type = edge_type,
+        frames_since_prev_step = frames_since_prev_step,
+        expected_delay = expected_delay,
+        frame_diff = frame_diff,
+        accepted = accepted,
+        reject_reason = accepted and nil or "timing_window"
+    }
+    p_state._same_dash_fallback_last_eval = trace_fields
+    _G.CTSameActionTrace.trace("same_dash_fallback_evaluate", p_state, trace_fields)
+
+    if not accepted then return nil end
+
+    p_state._same_dash_fallback_key = consume_key
+    local p1, p2, r1, r2 = capture_current_positions()
+    return {
+        id = expected.id,
+        flags = 0,
+        action_code = _pf.action_code or 0,
+        direct_input = _pf.direct_input or 0,
+        b_type = _pf.b_type or 0,
+        engine_frame = engine_frame_count,
+        buffer_hold_frames = 0,
+        p1 = p1, p2 = p2,
+        r1 = r1, r2 = r2,
+        current_hp = _pf.p_char and _pf.p_char.vital_new or nil,
+        synthetic = true,
+        source = "input_same_dash_edge",
+        fallback_source = "input_same_dash_edge",
+        edge_type = edge_type,
+        frames_since_prev_step = frames_since_prev_step,
+        expected_delay = expected_delay,
+        frame_diff = frame_diff
+    }
+end
+
 local function ct_player_input_buffer(p_state)
     if trial_state.is_playing and p_state == players[trial_state.playing_player]
         and trial_state._action_grace and trial_state._action_grace > 0 then
@@ -4053,6 +4225,9 @@ local function ct_player_input_buffer(p_state)
     local current_dir_val = _pf.direct_input & 0xF
     local current_dir = DIR_MAP[current_dir_val] or "5"
     if current_dir == "5" then current_dir = "" end
+    local newly_pressed_dir = newly_pressed & 0xF
+    local detected_66_edge = current_dir == "6" and newly_pressed_dir ~= 0
+    local detected_44_edge = current_dir == "4" and newly_pressed_dir ~= 0
 
     if newly_pressed > 0 then
         table.insert(p_state.input_history_queue,
@@ -4062,6 +4237,56 @@ local function ct_player_input_buffer(p_state)
 
     while #p_state.input_history_queue > 0 and (engine_frame_count - p_state.input_history_queue[1].frame_tick) > 60 do
         table.remove(p_state.input_history_queue, 1)
+    end
+
+    if _G.CTSameActionTrace.enabled() and _G.CTSameActionTrace.target()
+        and trial_state.is_playing and p_state == players[trial_state.playing_player] then
+        if p_state._same_action_trace_step ~= trial_state.current_step then
+            p_state._same_action_trace_step = trial_state.current_step
+            p_state._same_action_trace_summary = {
+                saw_66_edge = false,
+                saw_44_edge = false,
+                saw_act17 = false,
+                act17_min_frame = nil,
+                act17_max_frame = nil,
+                act17_rewound = false,
+                previous_act17_frame = nil
+            }
+        end
+
+        local same_trace_summary = p_state._same_action_trace_summary
+        if same_trace_summary then
+            if detected_66_edge then same_trace_summary.saw_66_edge = true end
+            if detected_44_edge then same_trace_summary.saw_44_edge = true end
+            if _pf.act_id == 17 then
+                same_trace_summary.saw_act17 = true
+                local act_frame = tonumber(_pf.act_frame) or 0
+                if same_trace_summary.act17_min_frame == nil or act_frame < same_trace_summary.act17_min_frame then
+                    same_trace_summary.act17_min_frame = act_frame
+                end
+                if same_trace_summary.act17_max_frame == nil or act_frame > same_trace_summary.act17_max_frame then
+                    same_trace_summary.act17_max_frame = act_frame
+                end
+                if same_trace_summary.previous_act17_frame and act_frame < same_trace_summary.previous_act17_frame then
+                    same_trace_summary.act17_rewound = true
+                end
+                same_trace_summary.previous_act17_frame = act_frame
+            end
+        end
+
+        _G.CTSameActionTrace.trace("input_sample", p_state, {
+            direct_input = _pf.direct_input,
+            direction_input = current_dir,
+            direction_bits = current_dir_val,
+            newly_pressed = newly_pressed,
+            newly_pressed_dir = newly_pressed_dir,
+            current_input_bits = _pf.direct_input,
+            detected_66_edge = detected_66_edge,
+            detected_44_edge = detected_44_edge,
+            input_history_size = #p_state.input_history_queue,
+            current_act_id = _pf.act_id,
+            current_act_frame = _pf.act_frame
+        })
     end
 
     -- ANTI-GHOSTING DEBOUNCE LOGIC
@@ -4078,10 +4303,49 @@ local function ct_player_input_buffer(p_state)
     if p_state.buffer_is_committed == nil then p_state.buffer_is_committed = true end
 
     local actions_to_process = {}
-    local started_new_action = false
-    if _pf.act_id ~= p_state.buffer_act_id or (_pf.act_frame < p_state.buffer_act_frame and _pf.act_frame < 2) then
-        started_new_action = true
+    if p_state._same_dash_fallback_eval_step ~= trial_state.current_step then
+        p_state._same_dash_fallback_eval_step = trial_state.current_step
+        p_state._same_dash_fallback_last_eval = nil
     end
+    local same_dash_candidate = _G.CTSameDashFallback.build_candidate(p_state, detected_66_edge, detected_44_edge)
+    if same_dash_candidate then
+        table.insert(actions_to_process, same_dash_candidate)
+        _G.CTSameActionTrace.trace("action_candidate_pushed", p_state, {
+            push_reason = "input_same_dash_edge",
+            pushed_action_id = same_dash_candidate.id,
+            pushed_engine_frame = same_dash_candidate.engine_frame,
+            pushed_to_actions_to_process = true,
+            fallback_source = same_dash_candidate.fallback_source,
+            edge_type = same_dash_candidate.edge_type,
+            frames_since_prev_step = same_dash_candidate.frames_since_prev_step,
+            expected_delay = same_dash_candidate.expected_delay,
+            frame_diff = same_dash_candidate.frame_diff,
+            synthetic = true
+        })
+    end
+    local started_new_action = false
+    local started_new_action_reason = "no_new_action"
+    if _pf.act_id ~= p_state.buffer_act_id then
+        started_new_action = true
+        started_new_action_reason = "id_changed"
+    elseif _pf.act_frame < p_state.buffer_act_frame and _pf.act_frame < 2 then
+        started_new_action = true
+        started_new_action_reason = "act_frame_rewind"
+    end
+    _G.CTSameActionTrace.trace("action_sample", p_state, {
+        current_action_id = _pf.act_id,
+        current_action_frame = _pf.act_frame,
+        buffer_act_id = p_state.buffer_act_id,
+        buffer_act_frame = p_state.buffer_act_frame,
+        last_act_id = p_state.prev_act_id,
+        last_act_frame = p_state.prev_act_frame,
+        started_new_action = started_new_action,
+        started_new_action_reason = started_new_action_reason,
+        skipped_due_to_duplicate = not started_new_action and _pf.act_id == p_state.buffer_act_id,
+        skipped_due_to_same_action = not started_new_action and _pf.act_id == p_state.buffer_act_id,
+        candidate_window_open = p_state.buffer_is_committed == false,
+        pushed_to_actions_to_process = false
+    })
     p_state.buffer_act_frame = _pf.act_frame
 
     if started_new_action then
@@ -4149,6 +4413,16 @@ local function ct_player_input_buffer(p_state)
                     r1 = p_state.buffer_r1, r2 = p_state.buffer_r2,
                     current_hp = p_state.buffer_current_hp
                 })
+                _G.CTSameActionTrace.trace("action_candidate_pushed", p_state, {
+                    push_reason = "started_new_action_commit_previous",
+                    current_action_id = _pf.act_id,
+                    current_action_frame = _pf.act_frame,
+                    pushed_action_id = p_state.buffer_act_id,
+                    pushed_engine_frame = p_state.buffer_start_frame,
+                    pushed_to_actions_to_process = true,
+                    started_new_action = started_new_action,
+                    started_new_action_reason = started_new_action_reason
+                })
             end
         end
         p_state.buffer_act_id = _pf.act_id
@@ -4187,6 +4461,14 @@ local function ct_player_input_buffer(p_state)
             p1 = p_state.buffer_p1, p2 = p_state.buffer_p2,
             r1 = p_state.buffer_r1, r2 = p_state.buffer_r2,
             current_hp = p_state.buffer_current_hp
+        })
+        _G.CTSameActionTrace.trace("action_candidate_pushed", p_state, {
+            push_reason = "ghost_wait_elapsed",
+            pushed_action_id = p_state.buffer_act_id,
+            pushed_engine_frame = p_state.buffer_start_frame,
+            pushed_to_actions_to_process = true,
+            started_new_action = started_new_action,
+            started_new_action_reason = started_new_action_reason
         })
     end
     return actions_to_process
@@ -4398,6 +4680,12 @@ local function ct_player_process_actions(p_idx, p_state, actions_to_process)
                         actual_hp = process_act.current_hp,
                         frames_since_prev_step = frames_since_prev_step,
                         frame_diff = expected_delay and (frames_since_prev_step - expected_delay) or nil,
+                        synthetic = process_act.synthetic == true,
+                        fallback_source = process_act.fallback_source or process_act.source,
+                        edge_type = process_act.edge_type,
+                        fallback_frames_since_prev_step = process_act.frames_since_prev_step,
+                        fallback_expected_delay = process_act.expected_delay,
+                        fallback_frame_diff = process_act.frame_diff,
                         intentional = is_intentional,
                         is_ignored = is_ignored,
                         ignore_reason = ignore_reason,
@@ -4633,13 +4921,53 @@ local function ct_player_process_actions(p_idx, p_state, actions_to_process)
 
                         if allow_input then
                             local action_match = ActionMatcher.match_expected_action(expected, act_id, motion_str, real_input_str)
+                            if process_act.synthetic then
+                                action_match.source = process_act.fallback_source or process_act.source
+                                action_match.edge_type = process_act.edge_type
+                                action_match.synthetic = true
+                                action_match.frames_since_prev_step = process_act.frames_since_prev_step
+                                action_match.expected_delay = process_act.expected_delay
+                                action_match.frame_diff = process_act.frame_diff
+                            end
                             local match_probe = build_match_probe(expected, "intentional_action")
+                            local trace_prev_step = trial_state.current_step and trial_state.current_step > 1
+                                and trial_state.sequence[trial_state.current_step - 1] or nil
+                            local trace_combo_ok = expected and Validator.check_combo({
+                                expected = expected,
+                                prev_step = trace_prev_step,
+                                current_combo = _pf.current_combo or 0,
+                                opponent_knocked_down = _pf.opponent_knocked_down
+                            }) or nil
+                            local trace_hp_ok = expected and Validator.check_hp(
+                                expected.expected_hp,
+                                process_act.current_hp,
+                                is_post_hit_setup_step((trial_state.current_step or 1) - 1)
+                            ) or nil
                             match_probe.action_match = {
                                 matched = action_match.matched,
                                 match_reason = action_match.match_reason,
                                 expected_id = action_match.expected_id,
-                                actual_action_id = action_match.actual_action_id
+                                actual_action_id = action_match.actual_action_id,
+                                source = action_match.source,
+                                edge_type = action_match.edge_type,
+                                synthetic = action_match.synthetic
                             }
+                            _G.CTSameActionTrace.trace("action_match_entry", p_state, {
+                                candidate_action_id = act_id,
+                                candidate_motion = motion_str,
+                                candidate_input = real_input_str,
+                                previous_step_id = trace_prev_step and trace_prev_step.id or nil,
+                                action_match_matched = action_match.matched,
+                                action_match_reason = action_match.match_reason,
+                                match_result = action_match.matched,
+                                reject_reason = action_match.matched and nil or "action_mismatch",
+                                combo_ok = trace_combo_ok,
+                                hp_ok = trace_hp_ok,
+                                direct_input = direct_input,
+                                flags = flags,
+                                action_code = action_code,
+                                branch_type = b_type
+                            })
                             local skip_current_action = false
                             if expected and not action_match.matched then
                                 local recent_absorb = CharacterRules.find_recent_absorb_confirmation(
@@ -4820,14 +5148,14 @@ local function ct_player_process_actions(p_idx, p_state, actions_to_process)
                                 match_probe.reject_reason = "optional_parent_for_followup"
                                 DebugTrace.record_match_probe(trial_state, match_probe)
                             elseif action_match.matched then
-                                match_probe.branch = "direct_match"
+                                match_probe.branch = process_act.synthetic and "same_dash_fallback" or "direct_match"
                                 DebugTrace.record_match_probe(trial_state, match_probe)
                                 apply_matched_step(
                                     expected,
                                     act_id,
                                     motion_str,
                                     real_input_str,
-                                    engine_frame_count,
+                                    process_act.synthetic and (process_act.engine_frame or engine_frame_count) or engine_frame_count,
                                     _pf.current_combo or 0,
                                     process_act.current_hp,
                                     action_match.match_reason,
@@ -4909,11 +5237,43 @@ local function ct_player_process_actions(p_idx, p_state, actions_to_process)
                                         DebugTrace.record_match_probe(trial_state, match_probe)
                                         trial_state._step1_wrong_pending = true
                                     else
-                                    match_probe.reject_reason = "wrong_move"
-                                    DebugTrace.record_match_probe(trial_state, match_probe)
-                                    ComboTrialsModules.PendingAbsorb.clear(trial_state, "wrong_move")
-                                    trial_state.fail_timer = d2d_cfg.fail_display_frames or 120
-                                    trial_state.fail_reason = "WRONG MOVE"
+                                        match_probe.reject_reason = "wrong_move"
+                                        local same_summary = p_state._same_action_trace_summary or {}
+                                        match_probe.same_action_trace = {
+                                            expected_same_as_previous = expected and trace_prev_step and expected.id == trace_prev_step.id or false,
+                                            expected_is_dash = expected and (expected.id == 17 or expected.id == 18
+                                                or expected.motion == "66" or expected.motion == "44") or false,
+                                            saw_66_edge_since_prev_step = same_summary.saw_66_edge,
+                                            saw_44_edge_since_prev_step = same_summary.saw_44_edge,
+                                            saw_act17_since_prev_step = same_summary.saw_act17,
+                                            act17_min_frame = same_summary.act17_min_frame,
+                                            act17_max_frame = same_summary.act17_max_frame,
+                                            act17_rewound = same_summary.act17_rewound,
+                                            same_dash_fallback_last_eval = p_state._same_dash_fallback_last_eval
+                                        }
+                                        _G.CTSameActionTrace.trace("wrong_move", p_state, {
+                                            candidate_action_id = act_id,
+                                            candidate_motion = motion_str,
+                                            candidate_input = real_input_str,
+                                            previous_step_id = trace_prev_step and trace_prev_step.id or nil,
+                                            match_result = false,
+                                            reject_reason = "wrong_move",
+                                            combo_ok = trace_combo_ok,
+                                            hp_ok = trace_hp_ok,
+                                            expected_id_equals_previous_expected_id = expected and trace_prev_step and expected.id == trace_prev_step.id or false,
+                                            expected_motion_is_dash = expected and (expected.motion == "66" or expected.motion == "44") or false,
+                                            saw_66_edge_since_prev_step = same_summary.saw_66_edge,
+                                            saw_44_edge_since_prev_step = same_summary.saw_44_edge,
+                                            saw_act17_since_prev_step = same_summary.saw_act17,
+                                            act17_min_frame = same_summary.act17_min_frame,
+                                            act17_max_frame = same_summary.act17_max_frame,
+                                            act17_rewound = same_summary.act17_rewound,
+                                            same_dash_fallback_last_eval = p_state._same_dash_fallback_last_eval
+                                        })
+                                        DebugTrace.record_match_probe(trial_state, match_probe)
+                                        ComboTrialsModules.PendingAbsorb.clear(trial_state, "wrong_move")
+                                        trial_state.fail_timer = d2d_cfg.fail_display_frames or 120
+                                        trial_state.fail_reason = "WRONG MOVE"
                                     end
                                 end
                             end
