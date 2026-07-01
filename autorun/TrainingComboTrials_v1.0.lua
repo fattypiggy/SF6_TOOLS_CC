@@ -4000,6 +4000,150 @@ local function ct_player_process_actions(p_idx, p_state, actions_to_process)
                     end
                 end)
 
+                local function apply_matched_step(matched_expected, matched_act_id, matched_motion, matched_input, matched_frame, matched_combo, matched_hp, match_reason, match_details)
+                    trial_state._step1_wrong_pending = false
+                    local actual_delay = 0
+                    local validation_frame = matched_frame or engine_frame_count
+                    local last_played = trial_state.last_played_frame or validation_frame
+                    if trial_state.current_step > 1 then
+                        actual_delay = validation_frame -
+                            last_played
+                    end
+                    trial_state.last_played_frame = validation_frame
+                    local frame_diff = Validator.calculate_frame_diff(actual_delay, matched_expected.delay_from_prev)
+
+                    -- IMMEDIATE timing display at the input frame
+                    if frame_diff < 0 then
+                        trial_state.floating_info = string.format("%d frames too early", math.abs(frame_diff))
+                        trial_state.floating_color = 0xFF00FFAD -- Green-Yellow (ABGR)
+                    elseif frame_diff > 0 then
+                        trial_state.floating_info = string.format("%d frames too late", frame_diff)
+                        trial_state.floating_color = 0xFF00A5FF -- Light Orange (ABGR)
+                    else
+                        trial_state.floating_info = "Perfect timing"
+                        trial_state.floating_color = 0xFF00FFFF -- Pure Yellow (ABGR)
+                    end
+
+                    -- If it's a setup with no expected hit, validate the visual step immediately
+                    if is_post_hit_setup_step(trial_state.current_step) then
+                        trial_state.ui_visual_step = trial_state.current_step + 1
+                    end
+
+                    local validation_prev_step = nil
+                    if trial_state.current_step > 1 then
+                        local prev_step = trial_state.sequence[trial_state.current_step - 1]
+                        validation_prev_step = prev_step
+                    end
+                    local combo_ok = Validator.check_combo({
+                        expected = matched_expected,
+                        prev_step = validation_prev_step,
+                        current_combo = matched_combo or 0,
+                        opponent_knocked_down = _pf.opponent_knocked_down
+                    })
+
+                    local hp_ok = Validator.check_hp(
+                        matched_expected.expected_hp,
+                        matched_hp,
+                        is_post_hit_setup_step(trial_state.current_step - 1)
+                    )
+
+                    DebugTrace.record_validation_debug(trial_state, {
+                        frame = validation_frame,
+                        step = trial_state.current_step,
+                        act_id = matched_act_id,
+                        actual_action_id = matched_act_id,
+                        motion = matched_motion,
+                        real_input = matched_input,
+                        expected_id = matched_expected.id,
+                        expected_motion = matched_expected.motion,
+                        current_combo = matched_combo or 0,
+                        combo_count = matched_combo or 0,
+                        previous_expected_combo = validation_prev_step
+                            and validation_prev_step.expected_combo or nil,
+                        previous_previous_expected_combo = trial_state.current_step > 2
+                            and trial_state.sequence[trial_state.current_step - 2].expected_combo or nil,
+                        combo_ok = combo_ok,
+                        hp_ok = hp_ok,
+                        current_hp = matched_hp,
+                        expected_hp = matched_expected.expected_hp,
+                        previous_is_setup = is_post_hit_setup_step(trial_state.current_step - 1),
+                        current_is_setup = is_post_hit_setup_step(trial_state.current_step),
+                        frame_diff = frame_diff,
+                        match_reason = match_reason,
+                        recent_index = match_details and match_details.recent_index or nil,
+                        absorb_ids = match_details and match_details.absorb_ids or nil,
+                    })
+
+                    if combo_ok and hp_ok then
+                        trial_step_idx = trial_state.current_step
+                        trial_state.sequence[trial_step_idx].has_hit = false
+                        trial_state.sequence[trial_step_idx].last_frame_diff = frame_diff
+                        trial_state.current_step = trial_state.current_step + 1
+
+                        -- Apply the counter of the next step to execute
+                        -- Unless the step we just validated still needs to land as CH/PC
+                        local just_validated = trial_state.sequence[trial_state.current_step - 1]
+                        if not just_validated or just_validated.counter_type == 0 then
+                            local next_step = trial_state.sequence[trial_state.current_step]
+                            if next_step and next_step.counter_type then
+                                set_dummy_counter_type(next_step.counter_type)
+                            end
+                        end
+
+                        -- INIT UNIVERSAL HOLD: memorize the expected level
+                        if matched_expected.is_holdable and matched_expected.charge_status then
+                            local safe_mask = hold_mask
+                            if not safe_mask or safe_mask == 0 then safe_mask = direct_input & 0xFFF0 end
+                            trial_state.active_universal_hold = {
+                                expected_status = matched_expected.charge_status,
+                                hold_mask = safe_mask,
+                                frames = hold_frames or 0,
+                                charge_min = matched_expected.charge_min,
+                                charge_max = matched_expected.charge_max,
+                                profile_name = p_state.profile_name,
+                                linked_transition_id = matched_expected.linked_transition_id,
+                                expected_frames = matched_expected.hold_frames,
+                                hold_partial_check = matched_expected.hold_partial_check
+                            }
+                        end
+                        return true
+                    else
+                        trial_state.fail_timer = d2d_cfg.fail_display_frames or 20
+                        if not hp_ok then
+                            local custom_reason = "WRONG HP (Setup Dropped)"
+                            local prev_step = trial_state.sequence[trial_state.current_step - 1]
+                            if is_post_hit_setup_step(trial_state.current_step - 1) and prev_step and prev_step.last_frame_diff then
+                                if prev_step.last_frame_diff > 2 then
+                                    custom_reason = string.format("SETUP TOO LATE (%df)", prev_step.last_frame_diff)
+                                elseif prev_step.last_frame_diff < -2 then
+                                    custom_reason = string.format("SETUP TOO EARLY (%df)", math.abs(prev_step.last_frame_diff))
+                                else
+                                    custom_reason = "MEATY TIMING FAILED"
+                                end
+                            end
+                            trial_state.fail_reason = custom_reason
+                        elseif frame_diff < -2 then
+                            trial_state.fail_reason = string.format("TOO EARLY (%df)", math.abs(frame_diff))
+                        elseif frame_diff > 2 then
+                            trial_state.fail_reason = string.format("TOO LATE (%df)", frame_diff)
+                        elseif trial_state._hit_grace and trial_state._hit_grace > 0 then
+                            trial_state.fail_timer = 0
+                        else
+                            trial_state.fail_reason = "COMBO DROPPED"
+                        end
+                        if trial_state.fail_timer and trial_state.fail_timer > 0 then
+                            DebugTrace.log_trial_failure(file_system, trial_state, engine_frame_count, _pf, not hp_ok and "action_hp_setup_validation" or "action_step_validation", {
+                                expected_motion = matched_expected.motion,
+                                player_action_id = matched_act_id,
+                                player_action_name = act_id_reverse_enum[matched_act_id] or "Unknown",
+                                timeline_frame = trial_state.current_step,
+                                playback_state = "playing"
+                            })
+                        end
+                        return false
+                    end
+                end
+
                 if is_intentional then
                 -- 1. Calculate charge properties
                 if exc and exc.is_holdable then
@@ -4207,142 +4351,57 @@ local function ct_player_process_actions(p_idx, p_state, actions_to_process)
 
                         if allow_input then
                             local action_match = ActionMatcher.match_expected_action(expected, act_id, motion_str, real_input_str)
-                            if expected and ActionMatcher.is_optional_parent_for_followup(motion_str, expected) then
+                            local skip_current_action = false
+                            if expected and not action_match.matched then
+                                local recent_absorb = CharacterRules.find_recent_absorb_confirmation(
+                                    p_state.exceptions,
+                                    common_exceptions,
+                                    expected,
+                                    p_state.log,
+                                    p_state.profile_name
+                                )
+                                if recent_absorb.matched then
+                                    local confirmed = apply_matched_step(
+                                        expected,
+                                        recent_absorb.actual_action_id,
+                                        recent_absorb.motion or "Unknown",
+                                        recent_absorb.real_input or "None",
+                                        recent_absorb.start_frame or engine_frame_count,
+                                        recent_absorb.combo_count or 0,
+                                        process_act.current_hp,
+                                        recent_absorb.match_reason,
+                                        recent_absorb
+                                    )
+                                    if confirmed then
+                                        expected = trial_state.sequence[trial_state.current_step]
+                                        if expected then
+                                            action_match = ActionMatcher.match_expected_action(expected, act_id, motion_str, real_input_str)
+                                        else
+                                            skip_current_action = true
+                                        end
+                                    else
+                                        skip_current_action = true
+                                    end
+                                end
+                            end
+
+                            if skip_current_action then
+                                -- EHonda recent absorb already consumed the pending expected step.
+                            elseif expected and ActionMatcher.is_optional_parent_for_followup(motion_str, expected) then
                                 -- Older combo JSON may omit the stance entry before a > follow-up.
                                 -- Do not let the parent action match the follow-up by button input.
                             elseif action_match.matched then
-                                trial_state._step1_wrong_pending = false
-                                local actual_delay = 0
-                                local last_played = trial_state.last_played_frame or engine_frame_count
-                                if trial_state.current_step > 1 then
-                                    actual_delay = engine_frame_count -
-                                        last_played
-                                end
-                                trial_state.last_played_frame = engine_frame_count
-                                local frame_diff = Validator.calculate_frame_diff(actual_delay, expected.delay_from_prev)
-
-                                -- IMMEDIATE timing display at the input frame
-                                if frame_diff < 0 then
-                                    trial_state.floating_info = string.format("%d frames too early", math.abs(frame_diff))
-                                    trial_state.floating_color = 0xFF00FFAD -- Green-Yellow (ABGR)
-                                elseif frame_diff > 0 then
-                                    trial_state.floating_info = string.format("%d frames too late", frame_diff)
-                                    trial_state.floating_color = 0xFF00A5FF -- Light Orange (ABGR)
-                                else
-                                    trial_state.floating_info = "Perfect timing"
-                                    trial_state.floating_color = 0xFF00FFFF -- Pure Yellow (ABGR)
-                                end
-
-                                -- If it's a setup with no expected hit, validate the visual step immediately
-                                if is_post_hit_setup_step(trial_state.current_step) then
-                                    trial_state.ui_visual_step = trial_state.current_step + 1
-                                end
-
-                                local validation_prev_step = nil
-                                if trial_state.current_step > 1 then
-                                    local prev_step = trial_state.sequence[trial_state.current_step - 1]
-                                    validation_prev_step = prev_step
-                                end
-                                local combo_ok = Validator.check_combo({
-                                    expected = expected,
-                                    prev_step = validation_prev_step,
-                                    current_combo = _pf.current_combo or 0,
-                                    opponent_knocked_down = _pf.opponent_knocked_down
-                                })
-
-                                local hp_ok = Validator.check_hp(
-                                    expected.expected_hp,
+                                apply_matched_step(
+                                    expected,
+                                    act_id,
+                                    motion_str,
+                                    real_input_str,
+                                    engine_frame_count,
+                                    _pf.current_combo or 0,
                                     process_act.current_hp,
-                                    is_post_hit_setup_step(trial_state.current_step - 1)
+                                    action_match.match_reason,
+                                    action_match
                                 )
-
-                                DebugTrace.record_validation_debug(trial_state, {
-                                    frame = engine_frame_count,
-                                    step = trial_state.current_step,
-                                    act_id = act_id,
-                                    motion = motion_str,
-                                    expected_id = expected.id,
-                                    expected_motion = expected.motion,
-                                    current_combo = _pf.current_combo or 0,
-                                    previous_expected_combo = validation_prev_step
-                                        and validation_prev_step.expected_combo or nil,
-                                    previous_previous_expected_combo = trial_state.current_step > 2
-                                        and trial_state.sequence[trial_state.current_step - 2].expected_combo or nil,
-                                    combo_ok = combo_ok,
-                                    hp_ok = hp_ok,
-                                    current_hp = process_act.current_hp,
-                                    expected_hp = expected.expected_hp,
-                                    previous_is_setup = is_post_hit_setup_step(trial_state.current_step - 1),
-                                    current_is_setup = is_post_hit_setup_step(trial_state.current_step),
-                                    frame_diff = frame_diff
-                                })
-
-                                if combo_ok and hp_ok then
-                                    trial_step_idx = trial_state.current_step
-                                    trial_state.sequence[trial_step_idx].has_hit = false
-                                    trial_state.sequence[trial_step_idx].last_frame_diff = frame_diff
-                                    trial_state.current_step = trial_state.current_step + 1
-
-                                    -- Apply the counter of the next step to execute
-                                    -- Unless the step we just validated still needs to land as CH/PC
-                                    local just_validated = trial_state.sequence[trial_state.current_step - 1]
-                                    if not just_validated or just_validated.counter_type == 0 then
-                                        local next_step = trial_state.sequence[trial_state.current_step]
-                                        if next_step and next_step.counter_type then
-                                            set_dummy_counter_type(next_step.counter_type)
-                                        end
-                                    end
-
-                                    -- INIT UNIVERSAL HOLD: memorize the expected level
-                                    if expected.is_holdable and expected.charge_status then
-                                        local safe_mask = hold_mask
-                                        if not safe_mask or safe_mask == 0 then safe_mask = direct_input & 0xFFF0 end
-                                        trial_state.active_universal_hold = {
-                                            expected_status = expected.charge_status,
-                                            hold_mask = safe_mask,
-                                            frames = hold_frames or 0,
-                                            charge_min = expected.charge_min,
-                                            charge_max = expected.charge_max,
-                                            profile_name = p_state.profile_name,
-                                            linked_transition_id = expected.linked_transition_id,
-                                            expected_frames = expected.hold_frames,
-                                            hold_partial_check = expected.hold_partial_check
-                                        }
-                                    end
-                                else
-                                    trial_state.fail_timer = d2d_cfg.fail_display_frames or 20
-                                    if not hp_ok then
-                                        local custom_reason = "WRONG HP (Setup Dropped)"
-                                        local prev_step = trial_state.sequence[trial_state.current_step - 1]
-                                        if is_post_hit_setup_step(trial_state.current_step - 1) and prev_step and prev_step.last_frame_diff then
-                                            if prev_step.last_frame_diff > 2 then
-                                                custom_reason = string.format("SETUP TOO LATE (%df)", prev_step.last_frame_diff)
-                                            elseif prev_step.last_frame_diff < -2 then
-                                                custom_reason = string.format("SETUP TOO EARLY (%df)", math.abs(prev_step.last_frame_diff))
-                                            else
-                                                custom_reason = "MEATY TIMING FAILED"
-                                            end
-                                        end
-                                        trial_state.fail_reason = custom_reason
-                                    elseif frame_diff < -2 then
-                                        trial_state.fail_reason = string.format("TOO EARLY (%df)", math.abs(frame_diff))
-                                    elseif frame_diff > 2 then
-                                        trial_state.fail_reason = string.format("TOO LATE (%df)", frame_diff)
-                                    elseif trial_state._hit_grace and trial_state._hit_grace > 0 then
-                                        trial_state.fail_timer = 0
-                                    else
-                                        trial_state.fail_reason = "COMBO DROPPED"
-                                    end
-                                    if trial_state.fail_timer and trial_state.fail_timer > 0 then
-                                        DebugTrace.log_trial_failure(file_system, trial_state, engine_frame_count, _pf, not hp_ok and "action_hp_setup_validation" or "action_step_validation", {
-                                            expected_motion = expected.motion,
-                                            player_action_id = act_id,
-                                            player_action_name = act_name,
-                                            timeline_frame = trial_state.current_step,
-                                            playback_state = "playing"
-                                        })
-                                    end
-                                end
                             else
                                 local is_parry = is_parry_action(motion_str, real_input_str, act_name)
                                 local is_current_dr = is_drive_rush_id(act_id) or is_drive_rush_motion(motion_str)
@@ -4394,6 +4453,7 @@ local function ct_player_process_actions(p_idx, p_state, actions_to_process)
                 end
             end
             -- CODE OK 							
+
 
             -- AUTOMATIC ACTION HANDLING AFTER A HOLD (outside is_intentional block)
             -- This must be OUTSIDE the is_intentional block because auto actions are not intentional

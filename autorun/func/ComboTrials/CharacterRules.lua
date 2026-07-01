@@ -37,6 +37,69 @@ function CharacterRules.has_character_exception(character_rules, action_id)
     return character_rules and character_rules[tostring(action_id)] and true or false
 end
 
+local function parse_absorb_ids(exception)
+    if not exception or type(exception.absorb_ids) ~= "string" or exception.absorb_ids == "" then
+        return nil
+    end
+
+    local ids = {}
+    for absorb_str in string.gmatch(exception.absorb_ids, "([^,]+)") do
+        local absorb_num = tonumber(absorb_str:match("^%s*(.-)%s*$"))
+        if absorb_num then ids[absorb_num] = true end
+    end
+    return ids
+end
+
+function CharacterRules.find_recent_absorb_confirmation(character_rules, common_rules, expected, recent_inputs, character_name)
+    if character_name ~= "EHonda" and character_name ~= "Honda" then
+        return { matched = false, block_reason = "character_not_ehonda" }
+    end
+    if not expected then return { matched = false, block_reason = "missing_expected" } end
+
+    local exception = CharacterRules.get_exception(character_rules, common_rules, expected.id)
+    local absorb_ids = parse_absorb_ids(exception)
+    if not absorb_ids then return { matched = false, block_reason = "missing_absorb_ids" } end
+
+    local expected_combo = tonumber(expected.expected_combo)
+    if expected_combo == nil then return { matched = false, block_reason = "missing_expected_combo" } end
+
+    for i = 1, math.min(10, #(recent_inputs or {})) do
+        local recent = recent_inputs[i]
+        local recent_id = recent and tonumber(recent.id)
+        if recent_id and absorb_ids[recent_id] then
+            local combo_count = tonumber(recent.combo_count) or 0
+            if combo_count >= expected_combo then
+                return {
+                    matched = true,
+                    actual_action_id = recent_id,
+                    match_reason = "ehonda_recent_absorb",
+                    recent_index = i,
+                    combo_count = combo_count,
+                    start_frame = recent.start_frame,
+                    motion = recent.motion,
+                    real_input = recent.real_input,
+                    intentional = recent.intentional,
+                    expected_id = expected.id,
+                    expected_combo = expected_combo,
+                    absorb_ids = exception.absorb_ids
+                }
+            end
+            return {
+                matched = false,
+                block_reason = "combo_not_reached",
+                actual_action_id = recent_id,
+                recent_index = i,
+                combo_count = combo_count,
+                expected_combo = expected_combo,
+                absorb_ids = exception.absorb_ids
+            }
+        end
+    end
+
+    return { matched = false, block_reason = "absorb_id_not_recent", absorb_ids = exception.absorb_ids }
+end
+
+
 function CharacterRules.apply_runtime_overrides(character_name, action_id, exception, log)
     if character_name == "Cammy" and (action_id == 908 or action_id == 922) then
         if #log > 0 and (log[1].id == 652 or log[1].id == 653 or log[1].id == 926) then
