@@ -12,6 +12,7 @@ local ComboTrialsModules = {
     Validator = require("func/ComboTrials/Validator")
 }
 local DebugTrace = ComboTrialsModules.DebugTrace
+local ActionMatcher = ComboTrialsModules.ActionMatcher
 
 pcall(function()
     if fs and fs.create_dir then fs.create_dir("TrainingComboTrials_data/exceptions") end
@@ -1727,28 +1728,6 @@ local function normalize_sequence_counter_types(sequence)
     end
 end
 
-local function normalize_motion_token(value)
-    local s = tostring(value or ""):upper():gsub("%s+", "")
-    s = s:gsub("^>%s*", "")
-    return s
-end
-
-local function motion_matches_expected(actual_motion, actual_input, expected)
-    if not expected then return false end
-    local actual_m = normalize_motion_token(actual_motion)
-    local actual_i = normalize_motion_token(actual_input)
-    local expected_m = normalize_motion_token(expected.motion)
-    if actual_m ~= "" and actual_m == expected_m then return true end
-    if actual_i ~= "" and actual_i == expected_m then return true end
-    if type(expected.motion_aliases) == "table" then
-        for _, alias in ipairs(expected.motion_aliases) do
-            local a = normalize_motion_token(alias)
-            if a ~= "" and (actual_m == a or actual_i == a) then return true end
-        end
-    end
-    return false
-end
-
 local ComboTrials_Files = require("func/ComboTrials_Files")
 ComboTrials_Files.init(ctx, {
     normalize_sequence_counter_types = normalize_sequence_counter_types,
@@ -2501,14 +2480,6 @@ local function advance_same_action_continuation_steps(combo_count)
     end
 
     return advanced
-end
-
-local function is_optional_parent_for_followup(actual_motion, expected_step)
-    if type(actual_motion) ~= "string" or type(expected_step) ~= "table" then return false end
-    local expected_motion = tostring(expected_step.motion or ""):match("^%s*(.-)%s*$")
-    if expected_motion:sub(1, 1) ~= ">" then return false end
-    local motion = actual_motion:match("^%s*(.-)%s*$")
-    return motion == "214+P"
 end
 
 -- =========================================================
@@ -3357,7 +3328,7 @@ local function ct_player_input_buffer(p_state)
                 if _pf.act_id == 36 or _pf.act_id == 37 or _pf.act_id == 38 then new_is_intentional = true end
 
                 local exc_new = p_state.exceptions[tostring(_pf.act_id)] or common_exceptions[tostring(_pf.act_id)]
-                if exc_new and exc_new.force then new_is_intentional = true end
+                if ActionMatcher.is_force_enabled(exc_new) then new_is_intentional = true end
 
                 -- If the NEW action is truly intentional (e.g. player hit P, then PP 2 frames later),
                 -- THEN the buffered action is a ghost.
@@ -3457,28 +3428,7 @@ local function ct_player_process_actions(p_idx, p_state, actions_to_process)
         local exc = exc_char or exc_com
 
         if p_state.editing_id == act_id then
-            local _parsed_prev = nil
-            if p_state.edit_ignore_prev_id ~= "" then
-                local ids = {}
-                for tok in p_state.edit_ignore_prev_id:gmatch("[^,]+") do
-                    local n = tonumber(tok:match("^%s*(.-)%s*$"))
-                    if n then ids[#ids+1] = n end
-                end
-                if #ids == 1 then _parsed_prev = ids[1]
-                elseif #ids > 1 then _parsed_prev = ids end
-            end
-            exc = {
-                ignore = p_state.edit_ignore,
-                force = p_state.edit_force,
-                is_holdable = p_state.edit_holdable,
-                hold_partial_check = p_state.edit_hold_partial_check,
-                absorb_ids = p_state.edit_absorb_ids,
-                charge_min = tonumber(p_state.edit_charge_min),
-                charge_max = tonumber(p_state.edit_charge_max),
-                override_name = (p_state.edit_text ~= "") and p_state.edit_text or nil,
-                ignore_prev_id = _parsed_prev,
-                ignore_prev_frames = tonumber(p_state.edit_ignore_prev_frames) or 5
-            }
+            exc = ActionMatcher.build_edit_exception(p_state)
         end
 
         -- CAMMY SPECIFIC: Force display and rename Spin Knuckle / Cannon Spike after Target Combo
@@ -3505,15 +3455,7 @@ local function ct_player_process_actions(p_idx, p_state, actions_to_process)
                 parent_exc = { absorb_ids = p_state.edit_absorb_ids }
             end
 
-            if parent_exc and parent_exc.absorb_ids and type(parent_exc.absorb_ids) == "string" and parent_exc.absorb_ids ~= "" then
-                for absorb_str in string.gmatch(parent_exc.absorb_ids, "([^,]+)") do
-                    local absorb_num = tonumber(absorb_str:match("^%s*(.-)%s*$"))
-                    if absorb_num and absorb_num == act_id then
-                        is_continuation = true
-                        break
-                    end
-                end
-            end
+            is_continuation = ActionMatcher.matches_absorb_id(parent_exc, act_id)
         end
 
         -- 2. CLOSING THE PREVIOUS ACTION
@@ -3572,28 +3514,17 @@ local function ct_player_process_actions(p_idx, p_state, actions_to_process)
             end
 
             if is_trackable then
-                if exc and exc.ignore then
+                if ActionMatcher.is_exception_ignored(exc) then
                     is_ignored = true
                     ignore_reason = "[例外：忽略]"
                 end
 
                 -- Check ignore_prev_id condition (supports single number or table of numbers)
-                if not is_ignored and exc and exc.ignore_prev_id then
-                    local check_ids = type(exc.ignore_prev_id) == "table" and exc.ignore_prev_id or {exc.ignore_prev_id}
-                    for i = 1, math.min(10, #p_state.log) do
-                        local prev_log = p_state.log[i]
-                        for _, cid in ipairs(check_ids) do
-                            if prev_log.id == cid then
-                                local frames_since = engine_frame_count - (prev_log.start_frame or engine_frame_count)
-                                if frames_since <= (exc.ignore_prev_frames or 5) then
-                                    is_ignored = true
-                                    local id_disp = type(exc.ignore_prev_id) == "table" and table.concat(exc.ignore_prev_id, ",") or tostring(exc.ignore_prev_id)
-                                    ignore_reason = "[例外：在 ID " .. id_disp .. " 后忽略]"
-                                    break
-                                end
-                            end
-                        end
-                        if is_ignored then break end
+                if not is_ignored then
+                    local ignore_prev = ActionMatcher.evaluate_ignore_prev(exc, p_state.log, engine_frame_count)
+                    if ignore_prev.ignored then
+                        is_ignored = true
+                        ignore_reason = ignore_prev.reason
                     end
                 end
 
@@ -3609,7 +3540,7 @@ local function ct_player_process_actions(p_idx, p_state, actions_to_process)
                     end
                 end
 
-                if exc and exc.force then is_intentional = true end
+                if ActionMatcher.is_force_enabled(exc) then is_intentional = true end
                 if act_id == 36 or act_id == 37 or act_id == 38 then is_intentional = true end
 
                 -- Neutralize intentionality if the action is ignored
@@ -3742,9 +3673,7 @@ local function ct_player_process_actions(p_idx, p_state, actions_to_process)
                     motion_str = "7"; real_input_str = "7"; frame_diff_str = "Mouvement"
                 end
 
-                if exc and exc.override_name and exc.override_name ~= "" then
-                    motion_str = exc.override_name
-                end
+                motion_str = ActionMatcher.apply_override_name(motion_str, exc)
 
                 -- 3. COMBO TRIAL HANDLING (Now that motion_str is finalized!)
                 if trial_state.is_recording and p_idx == trial_state.recording_player then
@@ -3815,7 +3744,7 @@ local function ct_player_process_actions(p_idx, p_state, actions_to_process)
                         charge_min = charge_min,
                         charge_max = charge_max,
                         hold_frames = 0,
-                        hold_partial_check = (exc and exc.hold_partial_check ~= false) and true or false,
+                        hold_partial_check = ActionMatcher.hold_partial_check_enabled(exc),
                         expected_combo = 0,
                         actual_combo = 0,
                         has_hit = false,
@@ -3837,10 +3766,11 @@ local function ct_player_process_actions(p_idx, p_state, actions_to_process)
                         end
 
                         if allow_input then
-                            if expected and is_optional_parent_for_followup(motion_str, expected) then
+                            local action_match = ActionMatcher.match_expected_action(expected, act_id, motion_str, real_input_str)
+                            if expected and ActionMatcher.is_optional_parent_for_followup(motion_str, expected) then
                                 -- Older combo JSON may omit the stance entry before a > follow-up.
                                 -- Do not let the parent action match the follow-up by button input.
-                            elseif expected and (act_id == expected.id or motion_matches_expected(motion_str, real_input_str, expected)) then
+                            elseif action_match.matched then
                                 trial_state._step1_wrong_pending = false
                                 local actual_delay = 0
                                 local last_played = trial_state.last_played_frame or engine_frame_count
