@@ -241,6 +241,7 @@ local trial_state = {
     _rec_gauges = nil,     -- Gauge snapshot at recording start
     _rec_hit_type = nil,   -- CH/PC detected on first hit
     _rec_scene_state = nil,
+    _saved_unique_resources = nil,
     _saved_vital_p1 = nil,
     _saved_vital_p2 = nil,
     _pending_victim_hp = nil,
@@ -1433,6 +1434,13 @@ local function read_dummy_action_state()
     return action_type, jump_type
 end
 
+function unique_resources.request_training_refresh()
+    pcall(function()
+        local tm = sdk.get_managed_singleton("app.training.TrainingManager")
+        if tm then tm._IsReqRefresh = true end
+    end)
+end
+
 function unique_resources.get_training_data_objects()
     local result = {}
     pcall(function()
@@ -1556,6 +1564,7 @@ function unique_resources.capture_by_side()
     if not has_unique then return nil end
     return players_state
 end
+
 function unique_resources.capture_scene_state(recorded_by)
     local players_state = unique_resources.capture_by_side()
     if not players_state then return nil end
@@ -1623,6 +1632,65 @@ function unique_resources.collect_recorded()
     if next(out) == nil then return nil end
     return out
 end
+
+function unique_resources.save_current()
+    if trial_state._saved_unique_resources then return end
+
+    local data = unique_resources.get_training_data_objects()
+    local unique_data = data.unique_data
+    if not unique_data then return end
+
+    local saved = {}
+    unique_resources.resource_by_id("")
+    for resource_id, resource in pairs(unique_resources.by_id or {}) do
+        local value = unique_resources.normalize_value(resource, unique_resources.read_value(unique_data, resource_id))
+        if value ~= nil then saved[resource_id] = value end
+    end
+
+    if next(saved) ~= nil then
+        trial_state._saved_unique_resources = saved
+    end
+end
+
+function unique_resources.restore()
+    local saved = trial_state._saved_unique_resources
+    if type(saved) ~= "table" then return end
+
+    local data = unique_resources.get_training_data_objects()
+    local unique_data = data.unique_data
+    if unique_data then
+        local changed = false
+        for resource_id, value in pairs(saved) do
+            if unique_resources.write_value(unique_data, resource_id, value) then
+                changed = true
+            end
+        end
+        if changed then unique_resources.request_training_refresh() end
+    end
+
+    trial_state._saved_unique_resources = nil
+end
+
+function unique_resources.apply_recorded()
+    local resources = unique_resources.collect_recorded()
+    if type(resources) ~= "table" then return false end
+
+    local data = unique_resources.get_training_data_objects()
+    local unique_data = data.unique_data
+    if not unique_data then return false end
+
+    unique_resources.save_current()
+
+    local changed = false
+    for resource_id, value in pairs(resources) do
+        if unique_resources.write_value(unique_data, resource_id, value) then
+            changed = true
+        end
+    end
+
+    return changed
+end
+
 local function capture_trial_environment()
     local action_type, jump_type = read_dummy_action_state()
     local stance = (action_type == DUMMY_ACTION_CROUCH) and "crouch" or "stand"
@@ -1639,6 +1707,7 @@ local function capture_trial_environment()
     end
     return env
 end
+
 local function save_dummy_action_type()
     if trial_state._saved_dummy_action_type == nil then
         local action_type, jump_type = read_dummy_action_state()
@@ -1734,6 +1803,7 @@ end
 
 local function apply_trial_training_environment()
     local first_ct = trial_state.sequence and trial_state.sequence[1] and trial_state.sequence[1].counter_type or 0
+    unique_resources.apply_recorded()
     if trial_requires_dummy_crouch() then
         set_dummy_action_type(DUMMY_ACTION_CROUCH)
     else
@@ -2191,11 +2261,13 @@ local function start_trial(player_idx)
         trial_state._hp_inject_frames = 0
     else
         restore_trial_vital()
+        unique_resources.restore()
     end
     trial_state.is_recording = false
     trial_state._rec_gauges = nil
     trial_state._rec_hit_type = nil
     trial_state._rec_environment = nil
+    trial_state._rec_scene_state = nil
     trial_state.is_playing = true
     trial_state.playing_player = player_idx
     trial_state._was_playing = false
@@ -2224,6 +2296,7 @@ local function cancel_recording()
     trial_state.sequence = {}
     trial_state.current_step = 1
     trial_state._rec_environment = nil
+    trial_state._rec_scene_state = nil
     -- Flush displayed input history
     reset_combo_visual_runtime()
     step_combo_reset_gc()
@@ -3129,6 +3202,7 @@ local function ct_handle_mode_exit()
             if demo_state then demo_state.is_playing = false end
 
             restore_trial_vital()
+            unique_resources.restore()
             restore_dummy_counter_type()
             restore_dummy_guard_type()
             restore_dummy_action_type()
@@ -3157,6 +3231,7 @@ local function ct_handle_first_frame_init()
         _G.ComboTrials_HideNativeHUD = false
 
         restore_trial_vital()
+        unique_resources.restore()
     end
 
 end
@@ -3223,6 +3298,7 @@ local function ct_handle_playing_transition()
     elseif not now_playing and trial_state._was_playing then
         -- Transition ON -> OFF: restore trial-only settings and reset positions to default
         restore_trial_vital()
+        unique_resources.restore()
         trial_state._pending_reinject_settings = false
         restore_dummy_action_type()
         set_dummy_counter_type(0)
