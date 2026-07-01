@@ -5,6 +5,16 @@ local json = json
 require("func/SharedHooks")
 local RuntimeSafety = require("func/RuntimeSafety")
 local GS = require("func/GameState")
+local ComboTrialsModules = {
+    DebugTrace = require("func/ComboTrials/DebugTrace"),
+    ActionMatcher = require("func/ComboTrials/ActionMatcher"),
+    CharacterRules = require("func/ComboTrials/CharacterRules"),
+    Validator = require("func/ComboTrials/Validator")
+}
+local DebugTrace = ComboTrialsModules.DebugTrace
+local ActionMatcher = ComboTrialsModules.ActionMatcher
+local CharacterRules = ComboTrialsModules.CharacterRules
+local Validator = ComboTrialsModules.Validator
 
 pcall(function()
     if fs and fs.create_dir then fs.create_dir("TrainingComboTrials_data/exceptions") end
@@ -69,13 +79,103 @@ local esf_names_map = {
 }
 
 
-local common_exceptions = {}
-pcall(function()
-    local loaded = _G.safe_load_json("TrainingComboTrials_data/exceptions/Common.json")
-    if loaded then common_exceptions = loaded end
-end)
+local common_exceptions = CharacterRules.load_common()
 
 local DR_IDS = { [500]=true, [501]=true, [502]=true, [504]=true, [730]=true, [731]=true, [739]=true, [740]=true, [741]=true, [760]=true, [761]=true }
+
+local unique_resources = {
+    by_fighter_id = {
+        [1] = {
+        name = "Ryu",
+        resources = {
+            { id = "timer_0_001", kind = "timer", min = 0, max = 2 }
+        }
+    },
+    [3] = {
+        name = "Kimberly",
+        resources = {
+            { id = "stock_0_003", kind = "stock", min = 0, max = 2, allow_infinite = true }
+        }
+    },
+    [5] = {
+        name = "Manon",
+        resources = {
+            { id = "stock_0_005", kind = "stock", min = 0, max = 4 }
+        }
+    },
+    [12] = {
+        name = "Lily",
+        resources = {
+            { id = "stock_0_012", kind = "stock", min = 0, max = 3, allow_infinite = true }
+        }
+    },
+    [15] = {
+        name = "Blanka",
+        resources = {
+            { id = "timer_0_015", kind = "timer", min = 0, max = 2 },
+            { id = "stock_0_015", kind = "stock", min = 0, max = 3, allow_infinite = true }
+        }
+    },
+    [16] = {
+        name = "Juri",
+        resources = {
+            { id = "timer_0_016", kind = "timer", min = 0, max = 2 },
+            { id = "stock_0_016", kind = "stock", min = 0, max = 3, allow_infinite = true }
+        }
+    },
+    [18] = {
+        name = "Guile",
+        resources = {
+            { id = "timer_0_018", kind = "timer", min = 0, max = 2 }
+        }
+    },
+    [20] = {
+        name = "EHonda",
+        resources = {
+            { id = "stock_0_020", kind = "stock", min = 0, max = 1, allow_infinite = true }
+        }
+    },
+    [21] = {
+        name = "Jamie",
+        resources = {
+            { id = "timer_0_021", kind = "timer", min = 0, max = 2 },
+            { id = "stock_0_021", kind = "stock", min = 0, max = 4 }
+        }
+    },
+    [28] = {
+        name = "Mai",
+        resources = {
+            { id = "stock_0_028", kind = "stock", min = 0, max = 5, allow_infinite = true }
+        }
+    },
+    [30] = {
+        name = "CViper",
+        resources = {
+            { id = "timer_0_030", kind = "timer", min = 0, max = 2 }
+        }
+    },
+    [32] = {
+        name = "Ingrid",
+        resources = {
+            { id = "stock_0_032", kind = "stock", min = 0, max = 4, allow_infinite = true }
+        }
+    }
+    },
+    by_id = nil
+}
+
+function unique_resources.resource_by_id(resource_id)
+    if not unique_resources.by_id then
+        local by_id = {}
+        for _, char_data in pairs(unique_resources.by_fighter_id) do
+            for _, resource in ipairs(char_data.resources or {}) do
+                by_id[resource.id] = resource
+            end
+        end
+        unique_resources.by_id = by_id
+    end
+    return unique_resources.by_id[resource_id]
+end
 
 local function is_drive_rush_id(act_id)
     return DR_IDS[act_id] == true
@@ -140,6 +240,8 @@ local trial_state = {
     flip_inputs = false,   -- Whether to visually flip the input display
     _rec_gauges = nil,     -- Gauge snapshot at recording start
     _rec_hit_type = nil,   -- CH/PC detected on first hit
+    _rec_scene_state = nil,
+    _saved_unique_resources = nil,
     _saved_vital_p1 = nil,
     _saved_vital_p2 = nil,
     _pending_victim_hp = nil,
@@ -627,7 +729,7 @@ do
 end
 
 local function get_exc_filename(name)
-    return "TrainingComboTrials_data/exceptions/" .. name:gsub("[^%w_]", "") .. ".json"
+    return CharacterRules.get_exception_filename(name)
 end
 
 local function format_charge_motion(notation)
@@ -1263,8 +1365,450 @@ local function restore_dummy_guard_type()
     end
 end
 
+-- DummyStatus.DummyActionType: 0=stand, 1=crouch. Jump variants are controlled by JumpType.
+local DUMMY_ACTION_STAND = 0
+local DUMMY_ACTION_CROUCH = 1
+
+local _tf_dummy_status_cache = nil
+local function get_tf_dummy_status()
+    if _tf_dummy_status_cache then return _tf_dummy_status_cache end
+    pcall(function()
+        local tm = sdk.get_managed_singleton("app.training.TrainingManager")
+        if not tm then return end
+        local dict = tm:get_field("_tfFuncs")
+        if not dict then return end
+        local entries = dict:get_field("_entries")
+        if not entries then return end
+        local count = entries:call("get_Count")
+        for i = 0, count - 1 do
+            local entry = entries:call("get_Item", i)
+            if entry then
+                local val = entry:get_field("value")
+                if val and val:get_type_definition():get_full_name():find("tf_DummyStatus") then
+                    _tf_dummy_status_cache = val
+                    return
+                end
+            end
+        end
+    end)
+    return _tf_dummy_status_cache
+end
+
+local function set_dummy_action_type(action_type, jump_type)
+    pcall(function()
+        local tm = sdk.get_managed_singleton("app.training.TrainingManager")
+        if not tm then return end
+        local tData = tm:get_field("_tData")
+        if not tData then return end
+        local ds = tData:get_field("DummyStatus")
+        if not ds then return end
+        local dd = ds:get_field("DummyData")
+        if not dd then return end
+        dd.DummyActionType = action_type
+        if jump_type ~= nil then
+            dd.JumpType = jump_type
+        elseif action_type ~= DUMMY_ACTION_STAND then
+            dd.JumpType = 0
+        end
+    end)
+
+    local td = get_tf_dummy_status()
+    if td then pcall(function() td:call("bApply") end) end
+end
+
+local function read_dummy_action_state()
+    local action_type = DUMMY_ACTION_STAND
+    local jump_type = 0
+    pcall(function()
+        local tm = sdk.get_managed_singleton("app.training.TrainingManager")
+        if not tm then return end
+        local tData = tm:get_field("_tData")
+        if not tData then return end
+        local ds = tData:get_field("DummyStatus")
+        if not ds then return end
+        local dd = ds:get_field("DummyData")
+        if not dd then return end
+        action_type = dd.DummyActionType or DUMMY_ACTION_STAND
+        jump_type = dd.JumpType or 0
+    end)
+    return action_type, jump_type
+end
+
+function unique_resources.request_training_refresh()
+    pcall(function()
+        local tm = sdk.get_managed_singleton("app.training.TrainingManager")
+        if tm then tm._IsReqRefresh = true end
+    end)
+end
+
+function unique_resources.get_training_data_objects()
+    local result = {}
+    pcall(function()
+        result.training_manager = sdk.get_managed_singleton("app.training.TrainingManager")
+        if not result.training_manager then return end
+        result.training_data = result.training_manager:get_field("_tData")
+        if not result.training_data then return end
+        result.parameter_setting = result.training_data:get_field("ParameterSetting")
+        result.select_menu = result.training_data:get_field("SelectMenu")
+    end)
+    if result.parameter_setting then
+        pcall(function() result.unique_data = result.parameter_setting:get_field("UniqueData") end)
+        if not result.unique_data then
+            pcall(function() result.unique_data = result.parameter_setting.UniqueData end)
+        end
+    end
+    return result
+end
+
+function unique_resources.read_training_fighter_id(player_idx)
+    local fighter_id = nil
+    pcall(function()
+        local data = unique_resources.get_training_data_objects()
+        local sm = data.select_menu
+        if not sm or not sm.PlayerDatas then return end
+        local player_data = sm.PlayerDatas[player_idx]
+        if not player_data then return end
+        fighter_id = tonumber(player_data.FighterID)
+    end)
+    return fighter_id
+end
+
+function unique_resources.read_value(unique_data, resource_id)
+    if not unique_data or not resource_id then return nil end
+
+    local ok, value = pcall(function() return unique_data[resource_id] end)
+    if ok and value ~= nil then return tonumber(value) end
+
+    ok, value = pcall(function() return unique_data:get_field(resource_id) end)
+    if ok and value ~= nil then return tonumber(value) end
+
+    return nil
+end
+
+function unique_resources.write_value(unique_data, resource_id, value)
+    if not unique_data or not resource_id or value == nil then return false end
+
+    local ok = pcall(function()
+        unique_data[resource_id] = value
+    end)
+    if ok then return true end
+
+    ok = pcall(function()
+        unique_data:set_field(resource_id, value)
+    end)
+    return ok == true
+end
+
+function unique_resources.normalize_value(resource, value)
+    if not resource then return nil end
+    local n = tonumber(value)
+    if n == nil then return nil end
+    n = math.floor(n + 0.5)
+
+    if n == 7 and resource.allow_infinite then
+        return 7
+    end
+
+    local min_value = resource.min or 0
+    local max_value = resource.max or min_value
+    if n < min_value then n = min_value end
+    if n > max_value then n = max_value end
+    return n
+end
+
+function unique_resources.capture_for_fighter(fighter_id, unique_data)
+    local char_data = unique_resources.by_fighter_id[tonumber(fighter_id)]
+    if not char_data or not unique_data then return nil end
+
+    local unique = {}
+    for _, resource in ipairs(char_data.resources or {}) do
+        local value = unique_resources.normalize_value(resource, unique_resources.read_value(unique_data, resource.id))
+        if value ~= nil then
+            unique[resource.id] = value
+        end
+    end
+
+    if next(unique) == nil then return nil end
+    return unique
+end
+
+function unique_resources.capture_by_side()
+    local data = unique_resources.get_training_data_objects()
+    local unique_data = data.unique_data
+    if not unique_data then return nil end
+
+    local players_state = {}
+    local has_unique = false
+
+    for player_idx = 0, 1 do
+        local fighter_id = unique_resources.read_training_fighter_id(player_idx)
+        local side_key = player_idx == 0 and "p1" or "p2"
+        local side_state = nil
+
+        if fighter_id ~= nil then
+            local unique = unique_resources.capture_for_fighter(fighter_id, unique_data)
+            if unique then
+                side_state = {
+                    fighter_id = fighter_id,
+                    unique = unique
+                }
+                has_unique = true
+            end
+        end
+
+        if side_state then
+            players_state[side_key] = side_state
+        end
+    end
+
+    if not has_unique then return nil end
+    return players_state
+end
+
+function unique_resources.capture_scene_state(recorded_by)
+    local players_state = unique_resources.capture_by_side()
+    if not players_state then return nil end
+
+    return {
+        schema = "xt.combo_trial.scene.v1",
+        capture_mode = "portable",
+        recorded_by = recorded_by,
+        players = players_state
+    }
+end
+
+function unique_resources.merge_recorded_table(out, unique_table)
+    if type(unique_table) ~= "table" then return end
+    for resource_id, value in pairs(unique_table) do
+        local resource = unique_resources.resource_by_id(resource_id)
+        local normalized = unique_resources.normalize_value(resource, value)
+        if normalized ~= nil then
+            out[resource_id] = normalized
+        end
+    end
+end
+
+function unique_resources.collect_recorded()
+    local first = trial_state.sequence and trial_state.sequence[1]
+    if type(first) ~= "table" then return nil end
+
+    local out = {}
+    local scene_state = type(first.scene_state) == "table" and first.scene_state or nil
+    local meta = type(first._xt_meta) == "table" and first._xt_meta or nil
+
+    if not scene_state and meta and type(meta.scene_state) == "table" then
+        scene_state = meta.scene_state
+    end
+
+    if scene_state and type(scene_state.players) == "table" then
+        local recorded_by = tonumber(first.recorded_by or scene_state.recorded_by or 0) or 0
+        local first_side = recorded_by == 1 and "p2" or "p1"
+        local second_side = recorded_by == 1 and "p1" or "p2"
+
+        local function merge_side(side_key)
+            local side = scene_state.players[side_key]
+            if type(side) == "table" then
+                unique_resources.merge_recorded_table(out, side.unique)
+            end
+        end
+
+        merge_side(second_side)
+        merge_side(first_side)
+    end
+
+    if meta and type(meta.environment) == "table" then
+        local env = meta.environment
+        if type(env.unique) == "table" then
+            unique_resources.merge_recorded_table(out, env.unique)
+            if type(env.unique.p1) == "table" then unique_resources.merge_recorded_table(out, env.unique.p1.unique) end
+            if type(env.unique.p2) == "table" then unique_resources.merge_recorded_table(out, env.unique.p2.unique) end
+        end
+        if type(env.players) == "table" then
+            if type(env.players.p1) == "table" then unique_resources.merge_recorded_table(out, env.players.p1.unique) end
+            if type(env.players.p2) == "table" then unique_resources.merge_recorded_table(out, env.players.p2.unique) end
+        end
+    end
+
+    if next(out) == nil then return nil end
+    return out
+end
+
+function unique_resources.save_current()
+    if trial_state._saved_unique_resources then return end
+
+    local data = unique_resources.get_training_data_objects()
+    local unique_data = data.unique_data
+    if not unique_data then return end
+
+    local saved = {}
+    unique_resources.resource_by_id("")
+    for resource_id, resource in pairs(unique_resources.by_id or {}) do
+        local value = unique_resources.normalize_value(resource, unique_resources.read_value(unique_data, resource_id))
+        if value ~= nil then saved[resource_id] = value end
+    end
+
+    if next(saved) ~= nil then
+        trial_state._saved_unique_resources = saved
+    end
+end
+
+function unique_resources.restore()
+    local saved = trial_state._saved_unique_resources
+    if type(saved) ~= "table" then return end
+
+    local data = unique_resources.get_training_data_objects()
+    local unique_data = data.unique_data
+    if unique_data then
+        local changed = false
+        for resource_id, value in pairs(saved) do
+            if unique_resources.write_value(unique_data, resource_id, value) then
+                changed = true
+            end
+        end
+        if changed then unique_resources.request_training_refresh() end
+    end
+
+    trial_state._saved_unique_resources = nil
+end
+
+function unique_resources.apply_recorded()
+    local resources = unique_resources.collect_recorded()
+    if type(resources) ~= "table" then return false end
+
+    local data = unique_resources.get_training_data_objects()
+    local unique_data = data.unique_data
+    if not unique_data then return false end
+
+    unique_resources.save_current()
+
+    local changed = false
+    for resource_id, value in pairs(resources) do
+        if unique_resources.write_value(unique_data, resource_id, value) then
+            changed = true
+        end
+    end
+
+    return changed
+end
+
+local function capture_trial_environment()
+    local action_type, jump_type = read_dummy_action_state()
+    local stance = (action_type == DUMMY_ACTION_CROUCH) and "crouch" or "stand"
+    local env = {
+        schema = "xt.training_environment.v1",
+        dummy_action_type = action_type,
+        dummy_jump_type = jump_type,
+        dummy_stance = stance,
+    }
+    local players_state = unique_resources.capture_by_side()
+    if players_state then
+        env.players = players_state
+        env.unique = players_state
+    end
+    return env
+end
+
+local function save_dummy_action_type()
+    if trial_state._saved_dummy_action_type == nil then
+        local action_type, jump_type = read_dummy_action_state()
+        trial_state._saved_dummy_action_type = action_type
+        trial_state._saved_dummy_jump_type = jump_type
+    end
+end
+
+local function restore_dummy_action_type()
+    if trial_state._saved_dummy_action_type ~= nil then
+        set_dummy_action_type(trial_state._saved_dummy_action_type, trial_state._saved_dummy_jump_type)
+        trial_state._saved_dummy_action_type = nil
+        trial_state._saved_dummy_jump_type = nil
+    end
+end
+
+local function value_requests_dummy_crouch(value)
+    if type(value) == "boolean" then return value end
+    if type(value) == "number" then return value == DUMMY_ACTION_CROUCH end
+    if type(value) ~= "string" then return false end
+    local text = value:lower()
+    return text == "crouch" or text == "crouching" or text == "cr" or text == "down" or text == "low"
+        or text:find("crouch", 1, true) ~= nil
+        or text:find("蹲姿", 1, true) ~= nil
+end
+
+local function text_mentions_dummy_crouch(value)
+    if type(value) ~= "string" then return false end
+    local text = value:lower()
+    return text:find("蹲姿", 1, true) ~= nil
+        or text:find("蹲限定", 1, true) ~= nil
+        or text:find("crouch", 1, true) ~= nil
+end
+
+local function has_recorded_dummy_action_environment(env)
+    return type(env) == "table"
+        and (env.dummy_action_type ~= nil
+            or env.dummy_stance ~= nil
+            or env.dummy_posture ~= nil
+            or env.dummy_action ~= nil)
+end
+
+local function environment_requests_dummy_crouch(env)
+    if not has_recorded_dummy_action_environment(env) then return false end
+    if tonumber(env.dummy_action_type) == DUMMY_ACTION_CROUCH then return true end
+    if value_requests_dummy_crouch(env.dummy_stance) then return true end
+    if value_requests_dummy_crouch(env.dummy_posture) then return true end
+    if value_requests_dummy_crouch(env.dummy_action) then return true end
+    return false
+end
+
+local function apply_recording_environment_to_meta(meta)
+    meta = (type(meta) == "table") and meta or {}
+    local env = trial_state._rec_environment
+    if type(env) ~= "table" then env = capture_trial_environment() end
+
+    meta.environment = env
+    meta.dummy_stance = env.dummy_stance
+    meta.dummy_action_type = env.dummy_action_type
+
+    if environment_requests_dummy_crouch(env) then
+        meta.requires_dummy_crouch = true
+    else
+        meta.requires_dummy_crouch = false
+    end
+
+    return meta
+end
+
+local function trial_requires_dummy_crouch()
+    local first = trial_state.sequence and trial_state.sequence[1]
+    if type(first) ~= "table" then return false end
+
+    if first.requires_dummy_crouch == true then return true end
+    if value_requests_dummy_crouch(first.dummy_stance) then return true end
+    if value_requests_dummy_crouch(first.dummy_posture) then return true end
+    if value_requests_dummy_crouch(first.dummy_action) then return true end
+
+    local meta = type(first._xt_meta) == "table" and first._xt_meta or nil
+    if meta then
+        if has_recorded_dummy_action_environment(meta.environment) then
+            return environment_requests_dummy_crouch(meta.environment)
+        end
+        if meta.requires_dummy_crouch == true then return true end
+        if value_requests_dummy_crouch(meta.dummy_stance) then return true end
+        if value_requests_dummy_crouch(meta.dummy_posture) then return true end
+        if value_requests_dummy_crouch(meta.dummy_action) then return true end
+        if text_mentions_dummy_crouch(meta.title) or text_mentions_dummy_crouch(meta.note) then return true end
+    end
+
+    return false
+end
+
 local function apply_trial_training_environment()
     local first_ct = trial_state.sequence and trial_state.sequence[1] and trial_state.sequence[1].counter_type or 0
+    unique_resources.apply_recorded()
+    if trial_requires_dummy_crouch() then
+        set_dummy_action_type(DUMMY_ACTION_CROUCH)
+    else
+        set_dummy_action_type(DUMMY_ACTION_STAND)
+    end
     set_dummy_counter_type(first_ct or 0)
     set_dummy_guard_type(2)
 end
@@ -1542,39 +2086,20 @@ local function normalize_sequence_counter_types(sequence)
     end
 end
 
-local function normalize_motion_token(value)
-    local s = tostring(value or ""):upper():gsub("%s+", "")
-    s = s:gsub("^>%s*", "")
-    return s
-end
-
-local function motion_matches_expected(actual_motion, actual_input, expected)
-    if not expected then return false end
-    local actual_m = normalize_motion_token(actual_motion)
-    local actual_i = normalize_motion_token(actual_input)
-    local expected_m = normalize_motion_token(expected.motion)
-    if actual_m ~= "" and actual_m == expected_m then return true end
-    if actual_i ~= "" and actual_i == expected_m then return true end
-    if type(expected.motion_aliases) == "table" then
-        for _, alias in ipairs(expected.motion_aliases) do
-            local a = normalize_motion_token(alias)
-            if a ~= "" and (actual_m == a or actual_i == a) then return true end
-        end
-    end
-    return false
-end
-
 local ComboTrials_Files = require("func/ComboTrials_Files")
 ComboTrials_Files.init(ctx, {
     normalize_sequence_counter_types = normalize_sequence_counter_types,
     assign_groups = assign_groups,
+    restore_trial_dummy_action_type = restore_dummy_action_type,
 })
 
 local function load_combo_from_file(path, force)
+    restore_dummy_action_type()
     return ComboTrials_Files.load_combo_from_file(path, force)
 end
 
 local function clear_combo_state()
+    restore_dummy_action_type()
     return ComboTrials_Files.clear_combo_state()
 end
 
@@ -1689,6 +2214,8 @@ local function start_recording(player_idx)
     trial_state._xt_pending_save_player = nil
     trial_state._xt_pending_save_error = nil
     trial_state._xt_meta_input_hint_shown = false
+    trial_state._rec_environment = capture_trial_environment()
+    trial_state._rec_scene_state = unique_resources.capture_scene_state(player_idx)
 
     players[player_idx].log = {}
     players[player_idx].input_history_queue = {}
@@ -1725,6 +2252,7 @@ local function start_recording(player_idx)
 end
 
 local function start_trial(player_idx)
+    restore_dummy_action_type()
     local was_playing = trial_state.is_playing
     clear_pending_position_injection()
     if was_playing then
@@ -1733,10 +2261,13 @@ local function start_trial(player_idx)
         trial_state._hp_inject_frames = 0
     else
         restore_trial_vital()
+        unique_resources.restore()
     end
     trial_state.is_recording = false
     trial_state._rec_gauges = nil
     trial_state._rec_hit_type = nil
+    trial_state._rec_environment = nil
+    trial_state._rec_scene_state = nil
     trial_state.is_playing = true
     trial_state.playing_player = player_idx
     trial_state._was_playing = false
@@ -1750,6 +2281,7 @@ local function start_trial(player_idx)
 
     save_dummy_counter_type()
     save_dummy_guard_type()
+    save_dummy_action_type()
 
     -- INJECT FIRST-STEP TRAINING ENVIRONMENT
     apply_trial_training_environment()
@@ -1763,6 +2295,8 @@ local function cancel_recording()
     trial_state.is_playing = false
     trial_state.sequence = {}
     trial_state.current_step = 1
+    trial_state._rec_environment = nil
+    trial_state._rec_scene_state = nil
     -- Flush displayed input history
     reset_combo_visual_runtime()
     step_combo_reset_gc()
@@ -2129,66 +2663,6 @@ setup_hook("app.battle.bBattleFlow", "updateRoundResult", nil, function(retval)
     return retval
 end)
 
-local function build_fail_dump()
-    local dump = {
-        timestamp = os.date("%Y-%m-%d %H:%M:%S"),
-        fail_reason_ui = trial_state.fail_reason,
-        failed_at_step = trial_state.current_step,
-        validation_debug = trial_state._validation_debug,
-        expected_sequence = {},
-        player_recent_inputs = {}
-    }
-    
-    -- 1. Capture of the expected sequence up to the fail
-    for i, step in ipairs(trial_state.sequence) do
-        local s = {
-            step = i,
-            id = step.id,
-            motion = step.motion,
-            expected_combo = step.expected_combo,
-            is_holdable = step.is_holdable,
-            delay_from_prev = step.delay_from_prev
-        }
-        if i == trial_state.current_step then
-            s.STATUS = "<-- 失败位置"
-            if trial_state.active_universal_hold then
-                s.hold_error_details = {
-                    expected_status = trial_state.active_universal_hold.expected_status,
-                    expected_frames = trial_state.active_universal_hold.expected_frames,
-                    actual_frames = trial_state.active_universal_hold.frames,
-                    charge_min = trial_state.active_universal_hold.charge_min,
-                    charge_max = trial_state.active_universal_hold.charge_max
-                }
-            end
-        end
-        table.insert(dump.expected_sequence, s)
-    end
-    
-    -- 2. Capture of the player's last 15 actions
-    local p_state = players[trial_state.playing_player]
-    if p_state and p_state.log then
-        for i = 1, math.min(15, #p_state.log) do
-            local l = p_state.log[i]
-            table.insert(dump.player_recent_inputs, {
-                log_index = i,
-                id = l.id,
-                name = l.name,
-                motion = l.motion,
-                real_input = l.real_input,
-                frame_diff = l.frame_diff,
-                intentional = l.intentional,
-                hold_frames = l.hold_frames,
-                charge_status = l.charge_status,
-                combo_count = l.combo_count,
-                is_ignored = l.is_ignored,
-                ignore_reason = l.ignore_reason
-            })
-        end
-    end
-    
-    return dump
-end
-
 -- =========================================================
 -- HOISTED HOT-PATH HELPERS (no per-frame closure allocations)
 -- =========================================================
@@ -2311,6 +2785,158 @@ local function _ct_check_knockdown(victim_obj)
     return (pose_st or 0) == 3
 end
 
+local function is_post_hit_setup_step(step_idx)
+    if not trial_state.sequence or not step_idx or step_idx < 1 then return false end
+    local step = trial_state.sequence[step_idx]
+    if not step or step.expected_combo ~= 0 then return false end
+    if step.has_hit == true then return false end
+    local step_damage = tonumber(step.damage_at_step) or 0
+    local prev = step_idx > 1 and trial_state.sequence[step_idx - 1] or nil
+    local prev_damage = prev and (tonumber(prev.damage_at_step) or 0) or 0
+    if step_damage > prev_damage then return false end
+    for i = 1, step_idx - 1 do
+        local earlier = trial_state.sequence[i]
+        if earlier and (earlier.expected_combo or 0) > 0 then
+            return true
+        end
+    end
+    return false
+end
+
+local function is_same_action_continuation_step(prev_step, step, combo_count)
+    if not prev_step or not step then return false end
+    if prev_step.id == nil or step.id == nil then return false end
+    if prev_step.id ~= step.id then return false end
+
+    local prev_combo = tonumber(prev_step.expected_combo) or 0
+    local expected_combo = tonumber(step.expected_combo) or 0
+    local current_combo = combo_count or 0
+    if expected_combo <= 0 or expected_combo <= prev_combo then return false end
+    if current_combo < expected_combo then return false end
+    return true
+end
+
+local function build_same_action_auto_advance_debug(prev_step, step, combo_count, call_site)
+    local prev_combo = prev_step and (tonumber(prev_step.expected_combo) or 0) or nil
+    local expected_combo = step and (tonumber(step.expected_combo) or 0) or nil
+    local current_combo = combo_count or 0
+    local same_id = prev_step and step and prev_step.id ~= nil and step.id ~= nil and prev_step.id == step.id
+    local combo_progression = expected_combo ~= nil and prev_combo ~= nil and expected_combo > 0 and expected_combo > prev_combo
+    local block_reason = nil
+
+    if not prev_step or not step then
+        block_reason = "missing_prev_or_step"
+    elseif prev_step.id == nil or step.id == nil then
+        block_reason = "missing_step_id"
+    elseif prev_step.id ~= step.id then
+        block_reason = "different_action_id"
+    elseif expected_combo <= 0 then
+        block_reason = "expected_combo_not_positive"
+    elseif expected_combo <= prev_combo then
+        block_reason = "expected_combo_not_greater_than_prev"
+    elseif current_combo < expected_combo then
+        if prev_step.has_hit ~= true then
+            block_reason = "previous_step_not_hit_and_combo_not_reached"
+        else
+            block_reason = "combo_not_reached"
+        end
+    elseif prev_step.has_hit ~= true then
+        block_reason = "combo_progress_confirmed_without_previous_hit"
+    else
+        block_reason = "would_advance"
+    end
+
+    return {
+        auto_advance_candidate = same_id and combo_progression or false,
+        auto_advance_triggered = false,
+        auto_advance_prev_step = trial_state.current_step and (trial_state.current_step - 1) or nil,
+        auto_advance_step = trial_state.current_step,
+        auto_advance_prev_id = prev_step and prev_step.id or nil,
+        auto_advance_step_id = step and step.id or nil,
+        auto_advance_prev_combo = prev_combo,
+        auto_advance_expected_combo = expected_combo,
+        auto_advance_current_combo = current_combo,
+        auto_advance_combo_count = current_combo,
+        auto_advance_block_reason = block_reason,
+        auto_advance_call_site = call_site,
+        auto_advance_checked_at_frame = engine_frame_count
+    }
+end
+
+local function advance_same_action_continuation_steps(combo_count, call_site)
+    call_site = call_site or "unknown"
+    if not trial_state.sequence or not trial_state.current_step then
+        DebugTrace.record_auto_advance(trial_state, {
+            auto_advance_candidate = false,
+            auto_advance_triggered = false,
+            auto_advance_current_combo = combo_count or 0,
+            auto_advance_combo_count = combo_count or 0,
+            auto_advance_block_reason = "missing_sequence_or_current_step",
+            auto_advance_call_site = call_site,
+            auto_advance_checked_at_frame = engine_frame_count
+        })
+        return false
+    end
+
+    local advanced = false
+    if trial_state.current_step <= 1 then
+        DebugTrace.record_auto_advance(trial_state, {
+            auto_advance_candidate = false,
+            auto_advance_triggered = false,
+            auto_advance_step = trial_state.current_step,
+            auto_advance_current_combo = combo_count or 0,
+            auto_advance_combo_count = combo_count or 0,
+            auto_advance_block_reason = "current_step_not_after_first_step",
+            auto_advance_call_site = call_site,
+            auto_advance_checked_at_frame = engine_frame_count
+        })
+    elseif trial_state.current_step > #trial_state.sequence then
+        DebugTrace.record_auto_advance(trial_state, {
+            auto_advance_candidate = false,
+            auto_advance_triggered = false,
+            auto_advance_step = trial_state.current_step,
+            auto_advance_current_combo = combo_count or 0,
+            auto_advance_combo_count = combo_count or 0,
+            auto_advance_block_reason = "current_step_past_sequence",
+            auto_advance_call_site = call_site,
+            auto_advance_checked_at_frame = engine_frame_count
+        })
+    end
+
+    while trial_state.current_step > 1 and trial_state.current_step <= #trial_state.sequence do
+        local prev_step = trial_state.sequence[trial_state.current_step - 1]
+        local step = trial_state.sequence[trial_state.current_step]
+        local auto_advance_debug = build_same_action_auto_advance_debug(prev_step, step, combo_count, call_site)
+        if not is_same_action_continuation_step(prev_step, step, combo_count) then
+            if not advanced then
+                DebugTrace.record_auto_advance(trial_state, auto_advance_debug)
+            end
+            break
+        end
+        auto_advance_debug.auto_advance_triggered = true
+        auto_advance_debug.auto_advance_block_reason = "advanced"
+        DebugTrace.record_auto_advance(trial_state, auto_advance_debug)
+
+        step.has_hit = true
+        step.actual_combo = math.max(tonumber(step.actual_combo) or 0, combo_count or 0)
+        step.last_frame_diff = 0
+        trial_state.current_step = trial_state.current_step + 1
+        trial_state.last_played_frame = engine_frame_count
+        trial_state.ui_visual_step = trial_state.current_step
+        trial_state.floating_info = nil
+
+        local next_step = trial_state.sequence[trial_state.current_step]
+        if next_step and next_step.counter_type then
+            set_dummy_counter_type(next_step.counter_type)
+        else
+            set_dummy_counter_type(0)
+        end
+
+        advanced = true
+    end
+
+    return advanced
+end
 
 -- =========================================================
 -- PER-FRAME PLAYER CONTEXT (reused each player-loop iteration)
@@ -2576,8 +3202,10 @@ local function ct_handle_mode_exit()
             if demo_state then demo_state.is_playing = false end
 
             restore_trial_vital()
+            unique_resources.restore()
             restore_dummy_counter_type()
             restore_dummy_guard_type()
+            restore_dummy_action_type()
             apply_current_position_refresh()
         elseif trial_state.is_recording then
             cancel_recording()
@@ -2603,6 +3231,7 @@ local function ct_handle_first_frame_init()
         _G.ComboTrials_HideNativeHUD = false
 
         restore_trial_vital()
+        unique_resources.restore()
     end
 
 end
@@ -2669,11 +3298,14 @@ local function ct_handle_playing_transition()
     elseif not now_playing and trial_state._was_playing then
         -- Transition ON -> OFF: restore trial-only settings and reset positions to default
         restore_trial_vital()
+        unique_resources.restore()
         trial_state._pending_reinject_settings = false
+        restore_dummy_action_type()
         set_dummy_counter_type(0)
         set_dummy_guard_type(0)
         trial_state._saved_counter_type = nil
         trial_state._saved_guard_type = nil
+        trial_state._saved_dummy_action_type = nil
         reset_positions_to_default()
     end
     trial_state._was_playing = now_playing
@@ -2753,11 +3385,12 @@ local function ct_player_init(p_idx, p_state)
         if trial_state.fail_timer and trial_state.fail_timer > 0 then
             -- CAPTURE: Take a snapshot on the very first frame of the fail state
             if not trial_state._fail_captured then
-                trial_state.last_fail_dump = build_fail_dump()
+                DebugTrace.record_last_fail(
+                    trial_state,
+                    DebugTrace.build_fail_dump(trial_state, players),
+                    "TrainingComboTrials_data/LastFail.json"
+                )
                 trial_state._fail_captured = true
-                pcall(function()
-                    json.dump_file("TrainingComboTrials_data/LastFail.json", trial_state.last_fail_dump)
-                end)
             end
 
             trial_state.fail_timer = trial_state.fail_timer - 1
@@ -2798,13 +3431,7 @@ local function ct_player_init(p_idx, p_state)
             refresh_combo_list()
         end
         if p_state.profile_name ~= "Unknown" then
-            local filename = get_exc_filename(p_state.profile_name)
-            local loaded = json.load_file(filename)
-            if loaded then
-                p_state.exceptions = loaded
-            else
-                p_state.exceptions = {}
-            end
+            p_state.exceptions = CharacterRules.load_for_character(p_state.profile_name)
         end
     end
 
@@ -2896,6 +3523,7 @@ local function ct_player_tracking(p_idx, p_state)
                 prev_step.actual_combo = _pf.current_combo
                 prev_step.has_hit = true
                 if hit_is_projectile then prev_step.is_projectile_hit = true end
+                advance_same_action_continuation_steps(_pf.current_combo or 0, "hit_detection")
 
                 -- Hit confirmed: apply the counter_type of the next step
                 local next_step = trial_state.sequence[trial_state.current_step]
@@ -3009,26 +3637,30 @@ local function ct_player_validation(p_idx, p_state)
                 -- 60 frames (~1 sec) tolerance after the ideal timing
                 if frames_since > (delay + 60) then
                     trial_state.fail_timer = d2d_cfg.fail_display_frames or 120
+                    local current_is_setup = is_post_hit_setup_step(trial_state.current_step)
+                    local prev_is_setup = is_post_hit_setup_step(trial_state.current_step - 1)
 
                     if expected.expected_hp ~= nil and _pf.p_char.vital_new ~= expected.expected_hp then
-                        if expected.expected_combo == 0 then
+                        if current_is_setup then
                             trial_state.fail_reason = "SETUP INTERRUPTED (Got hit)"
                         else
-                            local prev_step = trial_state.sequence[trial_state.current_step - 1]
-                            if prev_step and prev_step.expected_combo == 0 then
+                            if prev_is_setup then
                                 trial_state.fail_reason = "MEATY INTERRUPTED (Got hit)"
                             else
                                 trial_state.fail_reason = "INTERRUPTED (Got hit)"
                             end
                         end
                     else
-                        local prev_step = trial_state.sequence[trial_state.current_step - 1]
-                        if prev_step and prev_step.expected_combo == 0 then
+                        if prev_is_setup then
                             trial_state.fail_reason = "MEATY TOO LATE (Missed Input)"
                         else
                             trial_state.fail_reason = "TOO LATE (Missed Input)"
                         end
                     end
+                    DebugTrace.log_trial_failure(file_system, trial_state, engine_frame_count, _pf, "timeout_validation", {
+                        expected_motion = expected.motion,
+                        playback_state = "playing"
+                    })
                 end
             end
         end
@@ -3050,10 +3682,10 @@ local function ct_player_hold_charge(p_state)
                 if (p_state.profile_name == "JP" or p_state.profile_name == "Lily") and (current_log.charge_max == nil or current_log.charge_max == "") then
                     current_log.charge_max = current_log.hold_frames
                     local id_s = tostring(current_log.id)
-                    local exc_to_update = p_state.exceptions[id_s] or common_exceptions[id_s]
+                    local exc_to_update = CharacterRules.get_exception(p_state.exceptions, common_exceptions, id_s)
                     if exc_to_update then
                         exc_to_update.charge_max = current_log.hold_frames
-                        if p_state.exceptions[id_s] then json.dump_file(get_exc_filename(p_state.profile_name), p_state.exceptions)
+                        if CharacterRules.has_character_exception(p_state.exceptions, id_s) then json.dump_file(get_exc_filename(p_state.profile_name), p_state.exceptions)
                         else json.dump_file("TrainingComboTrials_data/exceptions/Common.json", common_exceptions) end
                     end
                 end
@@ -3148,8 +3780,8 @@ local function ct_player_input_buffer(p_state)
                 end
                 if _pf.act_id == 36 or _pf.act_id == 37 or _pf.act_id == 38 then new_is_intentional = true end
 
-                local exc_new = p_state.exceptions[tostring(_pf.act_id)] or common_exceptions[tostring(_pf.act_id)]
-                if exc_new and exc_new.force then new_is_intentional = true end
+                local exc_new = CharacterRules.get_exception(p_state.exceptions, common_exceptions, _pf.act_id)
+                if ActionMatcher.is_force_enabled(exc_new) then new_is_intentional = true end
 
                 -- If the NEW action is truly intentional (e.g. player hit P, then PP 2 frames later),
                 -- THEN the buffered action is a ghost.
@@ -3244,68 +3876,26 @@ local function ct_player_process_actions(p_idx, p_state, actions_to_process)
         local act_name = act_id_reverse_enum[act_id] or "Unknown"
 
         -- 1. EARLY EXCEPTION RESOLUTION (For Hold Link)
-        local exc_char = p_state.exceptions[tostring(act_id)]
-        local exc_com = common_exceptions[tostring(act_id)]
-        local exc = exc_char or exc_com
+        local exc = CharacterRules.get_exception(p_state.exceptions, common_exceptions, act_id)
 
         if p_state.editing_id == act_id then
-            local _parsed_prev = nil
-            if p_state.edit_ignore_prev_id ~= "" then
-                local ids = {}
-                for tok in p_state.edit_ignore_prev_id:gmatch("[^,]+") do
-                    local n = tonumber(tok:match("^%s*(.-)%s*$"))
-                    if n then ids[#ids+1] = n end
-                end
-                if #ids == 1 then _parsed_prev = ids[1]
-                elseif #ids > 1 then _parsed_prev = ids end
-            end
-            exc = {
-                ignore = p_state.edit_ignore,
-                force = p_state.edit_force,
-                is_holdable = p_state.edit_holdable,
-                hold_partial_check = p_state.edit_hold_partial_check,
-                absorb_ids = p_state.edit_absorb_ids,
-                charge_min = tonumber(p_state.edit_charge_min),
-                charge_max = tonumber(p_state.edit_charge_max),
-                override_name = (p_state.edit_text ~= "") and p_state.edit_text or nil,
-                ignore_prev_id = _parsed_prev,
-                ignore_prev_frames = tonumber(p_state.edit_ignore_prev_frames) or 5
-            }
+            exc = ActionMatcher.build_edit_exception(p_state)
         end
 
-        -- CAMMY SPECIFIC: Force display and rename Spin Knuckle / Cannon Spike after Target Combo
-        if p_state.profile_name == "Cammy" and (act_id == 908 or act_id == 922) then
-            if #p_state.log > 0 and (p_state.log[1].id == 652 or p_state.log[1].id == 653 or p_state.log[1].id == 926) then
-                if not exc then exc = {} end
-                exc.force = true
-                if act_id == 908 then
-                    exc.override_name = "236+HK"
-                elseif act_id == 922 then
-                    exc.override_name = "623+HK"
-                end
-            end
-        end
+        exc = CharacterRules.apply_runtime_overrides(p_state.profile_name, act_id, exc, p_state.log)
 
         -- ABSORPTION CHECK (Does the active parent action want to absorb this new ID?)
         local is_continuation = false
         if #p_state.log > 0 then
             local parent_id = p_state.log[1].id
-            local parent_exc = p_state.exceptions[tostring(parent_id)] or common_exceptions[tostring(parent_id)]
+            local parent_exc = CharacterRules.get_exception(p_state.exceptions, common_exceptions, parent_id)
 
             -- Real-time update if we are editing the parent action
             if p_state.editing_id == parent_id then
                 parent_exc = { absorb_ids = p_state.edit_absorb_ids }
             end
 
-            if parent_exc and parent_exc.absorb_ids and type(parent_exc.absorb_ids) == "string" and parent_exc.absorb_ids ~= "" then
-                for absorb_str in string.gmatch(parent_exc.absorb_ids, "([^,]+)") do
-                    local absorb_num = tonumber(absorb_str:match("^%s*(.-)%s*$"))
-                    if absorb_num and absorb_num == act_id then
-                        is_continuation = true
-                        break
-                    end
-                end
-            end
+            is_continuation = ActionMatcher.matches_absorb_id(parent_exc, act_id)
         end
 
         -- 2. CLOSING THE PREVIOUS ACTION
@@ -3364,28 +3954,17 @@ local function ct_player_process_actions(p_idx, p_state, actions_to_process)
             end
 
             if is_trackable then
-                if exc and exc.ignore then
+                if ActionMatcher.is_exception_ignored(exc) then
                     is_ignored = true
                     ignore_reason = "[例外：忽略]"
                 end
 
                 -- Check ignore_prev_id condition (supports single number or table of numbers)
-                if not is_ignored and exc and exc.ignore_prev_id then
-                    local check_ids = type(exc.ignore_prev_id) == "table" and exc.ignore_prev_id or {exc.ignore_prev_id}
-                    for i = 1, math.min(10, #p_state.log) do
-                        local prev_log = p_state.log[i]
-                        for _, cid in ipairs(check_ids) do
-                            if prev_log.id == cid then
-                                local frames_since = engine_frame_count - (prev_log.start_frame or engine_frame_count)
-                                if frames_since <= (exc.ignore_prev_frames or 5) then
-                                    is_ignored = true
-                                    local id_disp = type(exc.ignore_prev_id) == "table" and table.concat(exc.ignore_prev_id, ",") or tostring(exc.ignore_prev_id)
-                                    ignore_reason = "[例外：在 ID " .. id_disp .. " 后忽略]"
-                                    break
-                                end
-                            end
-                        end
-                        if is_ignored then break end
+                if not is_ignored then
+                    local ignore_prev = ActionMatcher.evaluate_ignore_prev(exc, p_state.log, engine_frame_count)
+                    if ignore_prev.ignored then
+                        is_ignored = true
+                        ignore_reason = ignore_prev.reason
                     end
                 end
 
@@ -3401,7 +3980,7 @@ local function ct_player_process_actions(p_idx, p_state, actions_to_process)
                     end
                 end
 
-                if exc and exc.force then is_intentional = true end
+                if ActionMatcher.is_force_enabled(exc) then is_intentional = true end
                 if act_id == 36 or act_id == 37 or act_id == 38 then is_intentional = true end
 
                 -- Neutralize intentionality if the action is ignored
@@ -3421,6 +4000,151 @@ local function ct_player_process_actions(p_idx, p_state, actions_to_process)
                     end
                 end)
 
+                local function apply_matched_step(matched_expected, matched_act_id, matched_motion, matched_input, matched_frame, matched_combo, matched_hp, match_reason, match_details)
+                    trial_state._step1_wrong_pending = false
+                    local actual_delay = 0
+                    local validation_frame = matched_frame or engine_frame_count
+                    local last_played = trial_state.last_played_frame or validation_frame
+                    if trial_state.current_step > 1 then
+                        actual_delay = validation_frame -
+                            last_played
+                    end
+                    trial_state.last_played_frame = validation_frame
+                    local frame_diff = Validator.calculate_frame_diff(actual_delay, matched_expected.delay_from_prev)
+
+                    -- IMMEDIATE timing display at the input frame
+                    if frame_diff < 0 then
+                        trial_state.floating_info = string.format("%d frames too early", math.abs(frame_diff))
+                        trial_state.floating_color = 0xFF00FFAD -- Green-Yellow (ABGR)
+                    elseif frame_diff > 0 then
+                        trial_state.floating_info = string.format("%d frames too late", frame_diff)
+                        trial_state.floating_color = 0xFF00A5FF -- Light Orange (ABGR)
+                    else
+                        trial_state.floating_info = "Perfect timing"
+                        trial_state.floating_color = 0xFF00FFFF -- Pure Yellow (ABGR)
+                    end
+
+                    -- If it's a setup with no expected hit, validate the visual step immediately
+                    if is_post_hit_setup_step(trial_state.current_step) then
+                        trial_state.ui_visual_step = trial_state.current_step + 1
+                    end
+
+                    local validation_prev_step = nil
+                    if trial_state.current_step > 1 then
+                        local prev_step = trial_state.sequence[trial_state.current_step - 1]
+                        validation_prev_step = prev_step
+                    end
+                    local combo_ok = Validator.check_combo({
+                        expected = matched_expected,
+                        prev_step = validation_prev_step,
+                        current_combo = matched_combo or 0,
+                        opponent_knocked_down = _pf.opponent_knocked_down
+                    })
+
+                    local hp_ok = Validator.check_hp(
+                        matched_expected.expected_hp,
+                        matched_hp,
+                        is_post_hit_setup_step(trial_state.current_step - 1)
+                    )
+
+                    DebugTrace.record_validation_debug(trial_state, {
+                        frame = validation_frame,
+                        step = trial_state.current_step,
+                        act_id = matched_act_id,
+                        actual_action_id = matched_act_id,
+                        motion = matched_motion,
+                        real_input = matched_input,
+                        expected_id = matched_expected.id,
+                        expected_motion = matched_expected.motion,
+                        current_combo = matched_combo or 0,
+                        combo_count = matched_combo or 0,
+                        previous_expected_combo = validation_prev_step
+                            and validation_prev_step.expected_combo or nil,
+                        previous_previous_expected_combo = trial_state.current_step > 2
+                            and trial_state.sequence[trial_state.current_step - 2].expected_combo or nil,
+                        combo_ok = combo_ok,
+                        hp_ok = hp_ok,
+                        current_hp = matched_hp,
+                        expected_hp = matched_expected.expected_hp,
+                        previous_is_setup = is_post_hit_setup_step(trial_state.current_step - 1),
+                        current_is_setup = is_post_hit_setup_step(trial_state.current_step),
+                        frame_diff = frame_diff,
+                        match_reason = match_reason,
+                        recent_index = match_details and match_details.recent_index or nil,
+                        absorb_ids = match_details and match_details.absorb_ids or nil,
+                        source = match_details and match_details.source or nil
+                    })
+
+                    if combo_ok and hp_ok then
+                        trial_step_idx = trial_state.current_step
+                        trial_state.sequence[trial_step_idx].has_hit = false
+                        trial_state.sequence[trial_step_idx].last_frame_diff = frame_diff
+                        trial_state.current_step = trial_state.current_step + 1
+
+                        -- Apply the counter of the next step to execute
+                        -- Unless the step we just validated still needs to land as CH/PC
+                        local just_validated = trial_state.sequence[trial_state.current_step - 1]
+                        if not just_validated or just_validated.counter_type == 0 then
+                            local next_step = trial_state.sequence[trial_state.current_step]
+                            if next_step and next_step.counter_type then
+                                set_dummy_counter_type(next_step.counter_type)
+                            end
+                        end
+
+                        -- INIT UNIVERSAL HOLD: memorize the expected level
+                        if matched_expected.is_holdable and matched_expected.charge_status then
+                            local safe_mask = hold_mask
+                            if not safe_mask or safe_mask == 0 then safe_mask = direct_input & 0xFFF0 end
+                            trial_state.active_universal_hold = {
+                                expected_status = matched_expected.charge_status,
+                                hold_mask = safe_mask,
+                                frames = hold_frames or 0,
+                                charge_min = matched_expected.charge_min,
+                                charge_max = matched_expected.charge_max,
+                                profile_name = p_state.profile_name,
+                                linked_transition_id = matched_expected.linked_transition_id,
+                                expected_frames = matched_expected.hold_frames,
+                                hold_partial_check = matched_expected.hold_partial_check
+                            }
+                        end
+                        return true
+                    else
+                        trial_state.fail_timer = d2d_cfg.fail_display_frames or 20
+                        if not hp_ok then
+                            local custom_reason = "WRONG HP (Setup Dropped)"
+                            local prev_step = trial_state.sequence[trial_state.current_step - 1]
+                            if is_post_hit_setup_step(trial_state.current_step - 1) and prev_step and prev_step.last_frame_diff then
+                                if prev_step.last_frame_diff > 2 then
+                                    custom_reason = string.format("SETUP TOO LATE (%df)", prev_step.last_frame_diff)
+                                elseif prev_step.last_frame_diff < -2 then
+                                    custom_reason = string.format("SETUP TOO EARLY (%df)", math.abs(prev_step.last_frame_diff))
+                                else
+                                    custom_reason = "MEATY TIMING FAILED"
+                                end
+                            end
+                            trial_state.fail_reason = custom_reason
+                        elseif frame_diff < -2 then
+                            trial_state.fail_reason = string.format("TOO EARLY (%df)", math.abs(frame_diff))
+                        elseif frame_diff > 2 then
+                            trial_state.fail_reason = string.format("TOO LATE (%df)", frame_diff)
+                        elseif trial_state._hit_grace and trial_state._hit_grace > 0 then
+                            trial_state.fail_timer = 0
+                        else
+                            trial_state.fail_reason = "COMBO DROPPED"
+                        end
+                        if trial_state.fail_timer and trial_state.fail_timer > 0 then
+                            DebugTrace.log_trial_failure(file_system, trial_state, engine_frame_count, _pf, not hp_ok and "action_hp_setup_validation" or "action_step_validation", {
+                                expected_motion = matched_expected.motion,
+                                player_action_id = matched_act_id,
+                                player_action_name = act_id_reverse_enum[matched_act_id] or "Unknown",
+                                timeline_frame = trial_state.current_step,
+                                playback_state = "playing"
+                            })
+                        end
+                        return false
+                    end
+                end
+
                 if is_intentional then
                 -- 1. Calculate charge properties
                 if exc and exc.is_holdable then
@@ -3439,10 +4163,10 @@ local function ct_player_process_actions(p_idx, p_state, actions_to_process)
                         if detected_min then
                             charge_min = detected_min
                             local id_s = tostring(act_id)
-                            local exc_to_update = p_state.exceptions[id_s] or common_exceptions[id_s]
+                            local exc_to_update = CharacterRules.get_exception(p_state.exceptions, common_exceptions, id_s)
                             if exc_to_update then
                                 exc_to_update.charge_min = detected_min
-                                if p_state.exceptions[id_s] then
+                                if CharacterRules.has_character_exception(p_state.exceptions, id_s) then
                                     json.dump_file(get_exc_filename(p_state.profile_name), p_state.exceptions)
                                 else
                                     json.dump_file("TrainingComboTrials_data/exceptions/Common.json", common_exceptions)
@@ -3534,9 +4258,7 @@ local function ct_player_process_actions(p_idx, p_state, actions_to_process)
                     motion_str = "7"; real_input_str = "7"; frame_diff_str = "Mouvement"
                 end
 
-                if exc and exc.override_name and exc.override_name ~= "" then
-                    motion_str = exc.override_name
-                end
+                motion_str = ActionMatcher.apply_override_name(motion_str, exc)
 
                 -- 3. COMBO TRIAL HANDLING (Now that motion_str is finalized!)
                 if trial_state.is_recording and p_idx == trial_state.recording_player then
@@ -3607,7 +4329,7 @@ local function ct_player_process_actions(p_idx, p_state, actions_to_process)
                         charge_min = charge_min,
                         charge_max = charge_max,
                         hold_frames = 0,
-                        hold_partial_check = (exc and exc.hold_partial_check ~= false) and true or false,
+                        hold_partial_check = ActionMatcher.hold_partial_check_enabled(exc),
                         expected_combo = 0,
                         actual_combo = 0,
                         has_hit = false,
@@ -3629,158 +4351,58 @@ local function ct_player_process_actions(p_idx, p_state, actions_to_process)
                         end
 
                         if allow_input then
-                            if expected and (act_id == expected.id or motion_matches_expected(motion_str, real_input_str, expected)) then
-                                trial_state._step1_wrong_pending = false
-                                local actual_delay = 0
-                                local last_played = trial_state.last_played_frame or engine_frame_count
-                                if trial_state.current_step > 1 then
-                                    actual_delay = engine_frame_count -
-                                        last_played
-                                end
-                                trial_state.last_played_frame = engine_frame_count
-                                local frame_diff = actual_delay - (expected.delay_from_prev or 0)
-
-                                -- IMMEDIATE timing display at the input frame
-                                if frame_diff < 0 then
-                                    trial_state.floating_info = string.format("%d frames too early", math.abs(frame_diff))
-                                    trial_state.floating_color = 0xFF00FFAD -- Green-Yellow (ABGR)
-                                elseif frame_diff > 0 then
-                                    trial_state.floating_info = string.format("%d frames too late", frame_diff)
-                                    trial_state.floating_color = 0xFF00A5FF -- Light Orange (ABGR)
-                                else
-                                    trial_state.floating_info = "Perfect timing"
-                                    trial_state.floating_color = 0xFF00FFFF -- Pure Yellow (ABGR)
-                                end
-
-                                -- If it's a setup with no expected hit, validate the visual step immediately
-                                if expected.expected_combo == 0 then
-                                    trial_state.ui_visual_step = trial_state.current_step + 1
-                                end
-
-                                local combo_ok = true
-                                local validation_prev_step = nil
-                                if trial_state.current_step > 1 then
-                                    local prev_step = trial_state.sequence[trial_state.current_step - 1]
-                                    validation_prev_step = prev_step
-                                    if prev_step and prev_step.expected_combo ~= nil then
-                                        local skip_strict_check = (prev_step.is_projectile_hit == true)
-                                        if not skip_strict_check and (_pf.current_combo or 0) ~= prev_step.expected_combo then
-                                            local combo_now = _pf.current_combo or 0
-                                            local current_hit_already_counted =
-                                                (expected.expected_combo or 0) > prev_step.expected_combo
-                                                and combo_now > prev_step.expected_combo
-                                                and combo_now <= expected.expected_combo
-                                            if current_hit_already_counted then
-                                                -- The current move can update combo_cnt on the same frame as its action.
-                                                combo_ok = true
-                                            elseif _pf.opponent_knocked_down and (_pf.current_combo or 0) == 0 and prev_step.expected_combo == 0 then
-                                                combo_ok = true
-                                            elseif prev_step.expected_combo == 0 and (_pf.current_combo or 0) > 0 then
-                                                combo_ok = true
-                                            elseif (_pf.current_combo or 0) == 0 and prev_step.expected_combo > 0 then
-                                                -- Oki / cross-up setup: combo dropped naturally (opponent got up)
-                                                combo_ok = true
-                                            elseif expected and expected.expected_combo == 0 then
-                                                -- RESET TOLERANCE 2.0 (Standing Reset / Oki):
-                                                -- The sequence intends for the combo to drop to 0 after this move.
-                                                -- So it doesn't matter if the combo counter is still running (early input) 
-                                                -- or has just naturally dropped to 0. Both states are valid.
-                                                combo_ok = true
-                                            else
-                                                combo_ok = false
-                                            end
+                            local action_match = ActionMatcher.match_expected_action(expected, act_id, motion_str, real_input_str)
+                            local skip_current_action = false
+                            if expected and not action_match.matched then
+                                local recent_absorb = CharacterRules.find_recent_absorb_confirmation(
+                                    p_state.exceptions,
+                                    common_exceptions,
+                                    expected,
+                                    p_state.log,
+                                    p_state.profile_name
+                                )
+                                if recent_absorb.matched then
+                                    local confirmed = apply_matched_step(
+                                        expected,
+                                        recent_absorb.actual_action_id,
+                                        recent_absorb.motion or "Unknown",
+                                        recent_absorb.real_input or "None",
+                                        recent_absorb.start_frame or engine_frame_count,
+                                        recent_absorb.combo_count or 0,
+                                        process_act.current_hp,
+                                        recent_absorb.match_reason,
+                                        recent_absorb
+                                    )
+                                    if confirmed then
+                                        expected = trial_state.sequence[trial_state.current_step]
+                                        if expected then
+                                            action_match = ActionMatcher.match_expected_action(expected, act_id, motion_str, real_input_str)
+                                        else
+                                            skip_current_action = true
                                         end
-                                    end
-                                end
-
-                                local hp_ok = true
-                                if expected.expected_hp ~= nil and process_act.current_hp ~= nil then
-                                    -- HP Validation: strict for oki (expected_combo == 0), lenient for combos
-                                    local prev_step = trial_state.current_step > 1 and trial_state.sequence[trial_state.current_step - 1] or nil
-                                    local is_oki = (prev_step and prev_step.expected_combo == 0)
-                                    if is_oki then
-                                        if process_act.current_hp ~= expected.expected_hp then
-                                            hp_ok = false
-                                        end
-                                    end
-                                end
-
-                                trial_state._validation_debug = {
-                                    frame = engine_frame_count,
-                                    step = trial_state.current_step,
-                                    act_id = act_id,
-                                    motion = motion_str,
-                                    expected_id = expected.id,
-                                    expected_motion = expected.motion,
-                                    current_combo = _pf.current_combo or 0,
-                                    previous_expected_combo = validation_prev_step
-                                        and validation_prev_step.expected_combo or nil,
-                                    previous_previous_expected_combo = trial_state.current_step > 2
-                                        and trial_state.sequence[trial_state.current_step - 2].expected_combo or nil,
-                                    combo_ok = combo_ok,
-                                    hp_ok = hp_ok,
-                                    current_hp = process_act.current_hp,
-                                    expected_hp = expected.expected_hp,
-                                    frame_diff = frame_diff
-                                }
-
-                                if combo_ok and hp_ok then
-                                    trial_step_idx = trial_state.current_step
-                                    trial_state.sequence[trial_step_idx].has_hit = false
-                                    trial_state.sequence[trial_step_idx].last_frame_diff = frame_diff
-                                    trial_state.current_step = trial_state.current_step + 1
-
-                                    -- Apply the counter of the next step to execute
-                                    -- Unless the step we just validated still needs to land as CH/PC
-                                    local just_validated = trial_state.sequence[trial_state.current_step - 1]
-                                    if not just_validated or just_validated.counter_type == 0 then
-                                        local next_step = trial_state.sequence[trial_state.current_step]
-                                        if next_step and next_step.counter_type then
-                                            set_dummy_counter_type(next_step.counter_type)
-                                        end
-                                    end
-
-                                    -- INIT UNIVERSAL HOLD: memorize the expected level
-                                    if expected.is_holdable and expected.charge_status then
-                                        local safe_mask = hold_mask
-                                        if not safe_mask or safe_mask == 0 then safe_mask = direct_input & 0xFFF0 end
-                                        trial_state.active_universal_hold = {
-                                            expected_status = expected.charge_status,
-                                            hold_mask = safe_mask,
-                                            frames = hold_frames or 0,
-                                            charge_min = expected.charge_min,
-                                            charge_max = expected.charge_max,
-                                            profile_name = p_state.profile_name,
-                                            linked_transition_id = expected.linked_transition_id,
-                                            expected_frames = expected.hold_frames,
-                                            hold_partial_check = expected.hold_partial_check
-                                        }
-                                    end
-                                else
-                                    trial_state.fail_timer = d2d_cfg.fail_display_frames or 20
-                                    if not hp_ok then
-                                        local custom_reason = "WRONG HP (Setup Dropped)"
-                                        local prev_step = trial_state.sequence[trial_state.current_step - 1]
-                                        if prev_step and prev_step.expected_combo == 0 and prev_step.last_frame_diff then
-                                            if prev_step.last_frame_diff > 2 then
-                                                custom_reason = string.format("SETUP TOO LATE (%df)", prev_step.last_frame_diff)
-                                            elseif prev_step.last_frame_diff < -2 then
-                                                custom_reason = string.format("SETUP TOO EARLY (%df)", math.abs(prev_step.last_frame_diff))
-                                            else
-                                                custom_reason = "MEATY TIMING FAILED"
-                                            end
-                                        end
-                                        trial_state.fail_reason = custom_reason
-                                    elseif frame_diff < -2 then
-                                        trial_state.fail_reason = string.format("TOO EARLY (%df)", math.abs(frame_diff))
-                                    elseif frame_diff > 2 then
-                                        trial_state.fail_reason = string.format("TOO LATE (%df)", frame_diff)
-                                    elseif trial_state._hit_grace and trial_state._hit_grace > 0 then
-                                        trial_state.fail_timer = 0
                                     else
-                                        trial_state.fail_reason = "COMBO DROPPED"
+                                        skip_current_action = true
                                     end
                                 end
+                            end
+
+                            if skip_current_action then
+                                -- EHonda recent absorb already consumed the pending expected step.
+                            elseif expected and ActionMatcher.is_optional_parent_for_followup(motion_str, expected) then
+                                -- Older combo JSON may omit the stance entry before a > follow-up.
+                                -- Do not let the parent action match the follow-up by button input.
+                            elseif action_match.matched then
+                                apply_matched_step(
+                                    expected,
+                                    act_id,
+                                    motion_str,
+                                    real_input_str,
+                                    engine_frame_count,
+                                    _pf.current_combo or 0,
+                                    process_act.current_hp,
+                                    action_match.match_reason,
+                                    action_match
+                                )
                             else
                                 local is_parry = is_parry_action(motion_str, real_input_str, act_name)
                                 local is_current_dr = is_drive_rush_id(act_id) or is_drive_rush_motion(motion_str)
@@ -3832,6 +4454,36 @@ local function ct_player_process_actions(p_idx, p_state, actions_to_process)
                 end
             end
             -- CODE OK 							
+
+            if trial_state.is_playing and p_idx == trial_state.playing_player
+                and not is_intentional
+                and #trial_state.sequence > 0
+                and not trial_state.manual_reset_pending
+                and trial_state.success_timer == 0
+                and not (trial_state.fail_timer and trial_state.fail_timer > 0) then
+                local expected = trial_state.sequence[trial_state.current_step]
+                local current_absorb = CharacterRules.match_current_absorb_confirmation(
+                    p_state.exceptions,
+                    common_exceptions,
+                    expected,
+                    act_id,
+                    _pf.current_combo or 0,
+                    p_state.profile_name
+                )
+                if current_absorb.matched then
+                    apply_matched_step(
+                        expected,
+                        current_absorb.actual_action_id,
+                        current_absorb.motion or "Unknown",
+                        current_absorb.real_input or "None",
+                        engine_frame_count,
+                        current_absorb.combo_count or 0,
+                        process_act.current_hp,
+                        current_absorb.match_reason,
+                        current_absorb
+                    )
+                end
+            end
 
             -- AUTOMATIC ACTION HANDLING AFTER A HOLD (outside is_intentional block)
             -- This must be OUTSIDE the is_intentional block because auto actions are not intentional
@@ -3888,6 +4540,36 @@ local function ct_player_process_actions(p_idx, p_state, actions_to_process)
                 ignore_reason = ignore_reason
             })
 
+            if trial_state.is_recording and p_idx == trial_state.recording_player
+                and (p_state.profile_name == "EHonda" or p_state.profile_name == "Honda") then
+                local json_step = trial_step_idx and trial_state.sequence[trial_step_idx] or nil
+                DebugTrace.record_honda_normal_input(trial_state, {
+                    frame = engine_frame_count,
+                    character = p_state.profile_name,
+                    trial_file = trial_state.current_file_name or trial_state.current_file or "",
+                    recording = true,
+                    recording_step = #trial_state.sequence,
+                    action_id = act_id,
+                    motion = motion_str,
+                    real_input = real_input_str,
+                    intentional = is_intentional,
+                    trackable = is_trackable,
+                    combo_count = _pf.current_combo or 0,
+                    is_unknown = motion_str == "Unknown" or act_name == "Unknown",
+                    json_step_written = json_step ~= nil,
+                    json_step_motion = json_step and json_step.motion or nil,
+                    json_step_id = json_step and json_step.id or nil,
+                    display_name = act_name,
+                    raw_input = direct_input,
+                    flags = flags,
+                    action_code = action_code,
+                    branch_type = b_type,
+                    input = "",
+                    expected_motion = "",
+                    notes = ""
+                })
+            end
+
             if #p_state.log > 100 then table.remove(p_state.log) end
         end -- END OF "if not is_continuation" block
     end -- END OF for _, process_act
@@ -3905,7 +4587,7 @@ local function ct_player_universal_hold(p_idx, p_state)
             -- Optional retrieval of perfect windows (e.g. Luke)
             local p_min, p_max = nil, nil
             local act_id_str = tostring(p_state.prev_act_id)
-            local exc = p_state.exceptions[act_id_str] or common_exceptions[act_id_str]
+            local exc = CharacterRules.get_exception(p_state.exceptions, common_exceptions, act_id_str)
             if exc then p_min = exc.perfect_min; p_max = exc.perfect_max end
 
             local final_status = evaluate_charge_status(
@@ -4164,7 +4846,11 @@ function save_trial_sequence(meta)
     end
 
     if type(meta) == "table" and type(trial_state.sequence[1]) == "table" then
-        trial_state.sequence[1]._xt_meta = meta
+        local scene_state = trial_state._rec_scene_state or unique_resources.capture_scene_state(rec_p)
+        if type(scene_state) == "table" then
+            trial_state.sequence[1].scene_state = scene_state
+        end
+        trial_state.sequence[1]._xt_meta = apply_recording_environment_to_meta(meta)
     end
     normalize_sequence_counter_types(trial_state.sequence)
 
@@ -4221,6 +4907,8 @@ function save_trial_sequence(meta)
 
     assign_groups(trial_state.sequence)
     json.dump_file(path, trial_state.sequence)
+    trial_state._rec_environment = nil
+    trial_state._rec_scene_state = nil
     refresh_combo_list_preserve_selection(false)
     local paths = rec_p == 0 and file_system.saved_combos_paths_p1 or file_system.saved_combos_paths_p2
     for idx, combo_path in ipairs(paths) do
@@ -4265,7 +4953,8 @@ ctx.save_xt_settings = function(default_author)
     return true
 end
 ctx.dump_last_fail = function()
-    if not trial_state.last_fail_dump then return nil end
+    local last_fail_dump = DebugTrace.get_last_fail(trial_state)
+    if not last_fail_dump then return nil end
     local char_name = players[trial_state.playing_player].profile_name or "Unknown"
     local ts = os.date("%Y%m%d_%H%M%S")
     local safe_char_name = file_system.sanitize_filename_component(char_name, 32, "Unknown")
@@ -4277,7 +4966,7 @@ ctx.dump_last_fail = function()
     end
     
     local path = "TrainingComboTrials_data/CustomCombos/Fails/" .. fname
-    json.dump_file(path, trial_state.last_fail_dump)
+    DebugTrace.write_json(path, last_fail_dump)
     return path
 end
 ctx.reset_visuals = function()
