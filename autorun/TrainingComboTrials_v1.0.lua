@@ -240,6 +240,7 @@ local trial_state = {
     flip_inputs = false,   -- Whether to visually flip the input display
     _rec_gauges = nil,     -- Gauge snapshot at recording start
     _rec_hit_type = nil,   -- CH/PC detected on first hit
+    _rec_scene_state = nil,
     _saved_vital_p1 = nil,
     _saved_vital_p2 = nil,
     _pending_victim_hp = nil,
@@ -1555,17 +1556,89 @@ function unique_resources.capture_by_side()
     if not has_unique then return nil end
     return players_state
 end
+function unique_resources.capture_scene_state(recorded_by)
+    local players_state = unique_resources.capture_by_side()
+    if not players_state then return nil end
+
+    return {
+        schema = "xt.combo_trial.scene.v1",
+        capture_mode = "portable",
+        recorded_by = recorded_by,
+        players = players_state
+    }
+end
+
+function unique_resources.merge_recorded_table(out, unique_table)
+    if type(unique_table) ~= "table" then return end
+    for resource_id, value in pairs(unique_table) do
+        local resource = unique_resources.resource_by_id(resource_id)
+        local normalized = unique_resources.normalize_value(resource, value)
+        if normalized ~= nil then
+            out[resource_id] = normalized
+        end
+    end
+end
+
+function unique_resources.collect_recorded()
+    local first = trial_state.sequence and trial_state.sequence[1]
+    if type(first) ~= "table" then return nil end
+
+    local out = {}
+    local scene_state = type(first.scene_state) == "table" and first.scene_state or nil
+    local meta = type(first._xt_meta) == "table" and first._xt_meta or nil
+
+    if not scene_state and meta and type(meta.scene_state) == "table" then
+        scene_state = meta.scene_state
+    end
+
+    if scene_state and type(scene_state.players) == "table" then
+        local recorded_by = tonumber(first.recorded_by or scene_state.recorded_by or 0) or 0
+        local first_side = recorded_by == 1 and "p2" or "p1"
+        local second_side = recorded_by == 1 and "p1" or "p2"
+
+        local function merge_side(side_key)
+            local side = scene_state.players[side_key]
+            if type(side) == "table" then
+                unique_resources.merge_recorded_table(out, side.unique)
+            end
+        end
+
+        merge_side(second_side)
+        merge_side(first_side)
+    end
+
+    if meta and type(meta.environment) == "table" then
+        local env = meta.environment
+        if type(env.unique) == "table" then
+            unique_resources.merge_recorded_table(out, env.unique)
+            if type(env.unique.p1) == "table" then unique_resources.merge_recorded_table(out, env.unique.p1.unique) end
+            if type(env.unique.p2) == "table" then unique_resources.merge_recorded_table(out, env.unique.p2.unique) end
+        end
+        if type(env.players) == "table" then
+            if type(env.players.p1) == "table" then unique_resources.merge_recorded_table(out, env.players.p1.unique) end
+            if type(env.players.p2) == "table" then unique_resources.merge_recorded_table(out, env.players.p2.unique) end
+        end
+    end
+
+    if next(out) == nil then return nil end
+    return out
+end
 local function capture_trial_environment()
     local action_type, jump_type = read_dummy_action_state()
     local stance = (action_type == DUMMY_ACTION_CROUCH) and "crouch" or "stand"
-    return {
+    local env = {
         schema = "xt.training_environment.v1",
         dummy_action_type = action_type,
         dummy_jump_type = jump_type,
         dummy_stance = stance,
     }
+    local players_state = unique_resources.capture_by_side()
+    if players_state then
+        env.players = players_state
+        env.unique = players_state
+    end
+    return env
 end
-
 local function save_dummy_action_type()
     if trial_state._saved_dummy_action_type == nil then
         local action_type, jump_type = read_dummy_action_state()
@@ -2072,6 +2145,7 @@ local function start_recording(player_idx)
     trial_state._xt_pending_save_error = nil
     trial_state._xt_meta_input_hint_shown = false
     trial_state._rec_environment = capture_trial_environment()
+    trial_state._rec_scene_state = unique_resources.capture_scene_state(player_idx)
 
     players[player_idx].log = {}
     players[player_idx].input_history_queue = {}
@@ -4576,6 +4650,10 @@ function save_trial_sequence(meta)
     end
 
     if type(meta) == "table" and type(trial_state.sequence[1]) == "table" then
+        local scene_state = trial_state._rec_scene_state or unique_resources.capture_scene_state(rec_p)
+        if type(scene_state) == "table" then
+            trial_state.sequence[1].scene_state = scene_state
+        end
         trial_state.sequence[1]._xt_meta = apply_recording_environment_to_meta(meta)
     end
     normalize_sequence_counter_types(trial_state.sequence)
@@ -4634,6 +4712,7 @@ function save_trial_sequence(meta)
     assign_groups(trial_state.sequence)
     json.dump_file(path, trial_state.sequence)
     trial_state._rec_environment = nil
+    trial_state._rec_scene_state = nil
     refresh_combo_list_preserve_selection(false)
     local paths = rec_p == 0 and file_system.saved_combos_paths_p1 or file_system.saved_combos_paths_p2
     for idx, combo_path in ipairs(paths) do
