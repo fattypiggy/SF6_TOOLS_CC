@@ -77,6 +77,49 @@ Normal development always happens on the main development branch.
 
 ---
 
+# Codex Memory: Local Paths
+
+Use these fixed local paths when the task needs them. Do not ask for them again unless the user says they changed.
+
+* Character JSON backup path: `D:\CP\SF6CC\reframework\release\tester_packages`
+* Workspace: `D:\CP\SF6CC\reframework`
+* Game REFramework path: `D:\Program Files (x86)\Steam\steamapps\common\Street Fighter 6\reframework`
+* Release packaging output path: `D:\CP\SF6CC\reframework\release`
+* Optional game release output path: `D:\Program Files (x86)\Steam\steamapps\common\Street Fighter 6\reframework\release`
+
+The backup path is local working storage. Do not treat files there as source files or release artifacts to commit unless the user explicitly requests it.
+
+When creating release packages, write package output to the repository release path above by default. Use the game release output path only when the user explicitly passes it as `-OutputDir`.
+
+---
+
+# Release Packaging Rule
+
+Use the checked-in packaging program instead of manually assembling release files.
+
+Manual command:
+
+```powershell
+tools\package_release.bat -Version <version> -Force
+```
+
+Default behavior:
+
+* Output goes to the repository `release/` directory by default: `D:\CP\SF6CC\reframework\release`.
+* The game release directory is only an explicit optional target, for example `-OutputDir "D:\Program Files (x86)\Steam\steamapps\common\Street Fighter 6\reframework\release"`.
+* Do not treat the game release directory as the default publishing directory.
+* The script creates `XiaoTun_SF6_TrainingMOD_v<version>.zip`, `XiaoTun_SF6_TrainingMOD_v<version>_runtime.zip`, unpacked folders for both packages, and `sf6cm_manifest_v<version>.json`.
+* The standard package contains `dinput8.dll` and `reframework\`.
+* The runtime package additionally contains `re2_fw_config.txt`.
+* `dinput8.dll` and `re2_fw_config.txt` are copied from the local Street Fighter 6 game root.
+* `reframework\` contents are copied from Git-tracked files under `autorun`, `data`, `fonts`, `images`, and `plugins`.
+* New package-source files must be tracked by Git before packaging; untracked files under those package-source directories make the script fail.
+* Runtime state, ignored files, repository `release/`, old ZIPs, dumps, and temporary build output must not be included.
+
+If the user asks to package a release and does not need Codex to run it, provide the command above. If Codex is explicitly asked to package, run this script rather than doing manual copy or ZIP steps.
+
+---
+
 # Git Workflow
 
 Default development branch:

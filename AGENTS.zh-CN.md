@@ -99,6 +99,49 @@ SF6CM：
 
 ---
 
+# Codex 记忆：本地固定路径
+
+需要以下路径时，直接使用，不要重复询问，除非用户明确说明路径已变更。
+
+* 角色 JSON 备份地址：`D:\CP\SF6CC\reframework\release\tester_packages`
+* 工作区：`D:\CP\SF6CC\reframework`
+* 游戏区：`D:\Program Files (x86)\Steam\steamapps\common\Street Fighter 6\reframework`
+* Release 打包输出地址：`D:\CP\SF6CC\reframework\release`
+* 可选游戏区 Release 输出地址：`D:\Program Files (x86)\Steam\steamapps\common\Street Fighter 6\reframework\release`
+
+备份地址属于本地工作存储。除非用户明确要求，不要把其中的文件视为源码或应提交的发布产物。
+
+执行 Release 打包时，默认输出到上面的仓库 Release 路径。只有用户显式传入 `-OutputDir` 时，才使用游戏区 Release 输出路径。
+
+---
+
+# Release 打包规则
+
+使用仓库内置打包程序，不要手工拼装 Release 文件。
+
+手动打包命令：
+
+```powershell
+tools\package_release.bat -Version <版本号> -Force
+```
+
+默认行为：
+
+* 默认输出到仓库 `release/` 目录：`D:\CP\SF6CC\reframework\release`。
+* 游戏区 Release 目录只是显式可选目标，例如 `-OutputDir "D:\Program Files (x86)\Steam\steamapps\common\Street Fighter 6\reframework\release"`。
+* 不要把游戏区 Release 目录当作默认发布目录。
+* 脚本生成 `XiaoTun_SF6_TrainingMOD_v<版本号>.zip`、`XiaoTun_SF6_TrainingMOD_v<版本号>_runtime.zip`、两份解压目录，以及 `sf6cm_manifest_v<版本号>.json`。
+* 普通包包含 `dinput8.dll` 和 `reframework\`。
+* runtime 包额外包含 `re2_fw_config.txt`。
+* `dinput8.dll` 和 `re2_fw_config.txt` 从本机《Street Fighter 6》游戏根目录复制。
+* `reframework\` 内容来自仓库中 `autorun`、`data`、`fonts`、`images`、`plugins` 下的 Git 跟踪文件。
+* 新增的打包源文件必须先纳入 Git 跟踪；如果这些打包源目录下存在未跟踪文件，脚本会直接失败。
+* 不得包含运行时状态、ignored 文件、仓库内 `release/`、旧 ZIP、Dump 或临时打包输出。
+
+如果用户只是需要自己打包，直接提供上面的命令。如果用户明确要求 Codex 执行打包，只运行该脚本，不要手工复制或压缩文件。
+
+---
+
 # Git 工作流
 
 默认开发分支：
