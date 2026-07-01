@@ -11,6 +11,7 @@ local ComboTrialsModules = {
     CharacterRules = require("func/ComboTrials/CharacterRules"),
     Validator = require("func/ComboTrials/Validator")
 }
+local DebugTrace = ComboTrialsModules.DebugTrace
 
 pcall(function()
     if fs and fs.create_dir then fs.create_dir("TrainingComboTrials_data/exceptions") end
@@ -2321,66 +2322,6 @@ setup_hook("app.battle.bBattleFlow", "updateRoundResult", nil, function(retval)
     return retval
 end)
 
-local function build_fail_dump()
-    local dump = {
-        timestamp = os.date("%Y-%m-%d %H:%M:%S"),
-        fail_reason_ui = trial_state.fail_reason,
-        failed_at_step = trial_state.current_step,
-        validation_debug = trial_state._validation_debug,
-        expected_sequence = {},
-        player_recent_inputs = {}
-    }
-    
-    -- 1. Capture of the expected sequence up to the fail
-    for i, step in ipairs(trial_state.sequence) do
-        local s = {
-            step = i,
-            id = step.id,
-            motion = step.motion,
-            expected_combo = step.expected_combo,
-            is_holdable = step.is_holdable,
-            delay_from_prev = step.delay_from_prev
-        }
-        if i == trial_state.current_step then
-            s.STATUS = "<-- 失败位置"
-            if trial_state.active_universal_hold then
-                s.hold_error_details = {
-                    expected_status = trial_state.active_universal_hold.expected_status,
-                    expected_frames = trial_state.active_universal_hold.expected_frames,
-                    actual_frames = trial_state.active_universal_hold.frames,
-                    charge_min = trial_state.active_universal_hold.charge_min,
-                    charge_max = trial_state.active_universal_hold.charge_max
-                }
-            end
-        end
-        table.insert(dump.expected_sequence, s)
-    end
-    
-    -- 2. Capture of the player's last 15 actions
-    local p_state = players[trial_state.playing_player]
-    if p_state and p_state.log then
-        for i = 1, math.min(15, #p_state.log) do
-            local l = p_state.log[i]
-            table.insert(dump.player_recent_inputs, {
-                log_index = i,
-                id = l.id,
-                name = l.name,
-                motion = l.motion,
-                real_input = l.real_input,
-                frame_diff = l.frame_diff,
-                intentional = l.intentional,
-                hold_frames = l.hold_frames,
-                charge_status = l.charge_status,
-                combo_count = l.combo_count,
-                is_ignored = l.is_ignored,
-                ignore_reason = l.ignore_reason
-            })
-        end
-    end
-    
-    return dump
-end
-
 -- =========================================================
 -- HOISTED HOT-PATH HELPERS (no per-frame closure allocations)
 -- =========================================================
@@ -2569,26 +2510,6 @@ local function is_optional_parent_for_followup(actual_motion, expected_step)
     local motion = actual_motion:match("^%s*(.-)%s*$")
     return motion == "214+P"
 end
-
-local function log_trial_failure(source, fields)
-    if not (file_system and file_system.diag_log) then return end
-    fields = fields or {}
-    local expected = trial_state.sequence and trial_state.sequence[trial_state.current_step] or nil
-    file_system.diag_log(string.format(
-        "[Fail] frame=%s trial_type=combo current_step=%s expected_motion=%s player_action_id=%s player_action_name=%s timeline_frame=%s timeline_total_frames=%s wakeup_validator_active=false reversal_validator_active=false fail_reason=%s failure_source=%s playback_state=%s",
-        tostring(engine_frame_count),
-        tostring(trial_state.current_step),
-        tostring(fields.expected_motion or (expected and expected.motion) or ""),
-        tostring(fields.player_action_id or (_pf and _pf.act_id) or ""),
-        tostring(fields.player_action_name or ""),
-        tostring(fields.timeline_frame or ""),
-        tostring(fields.timeline_total_frames or (trial_state.sequence and #trial_state.sequence) or ""),
-        tostring(trial_state.fail_reason or ""),
-        tostring(source or ""),
-        tostring(fields.playback_state or (trial_state.is_playing and "playing" or "idle"))
-    ))
-end
-
 
 -- =========================================================
 -- PER-FRAME PLAYER CONTEXT (reused each player-loop iteration)
@@ -3034,11 +2955,12 @@ local function ct_player_init(p_idx, p_state)
         if trial_state.fail_timer and trial_state.fail_timer > 0 then
             -- CAPTURE: Take a snapshot on the very first frame of the fail state
             if not trial_state._fail_captured then
-                trial_state.last_fail_dump = build_fail_dump()
+                DebugTrace.record_last_fail(
+                    trial_state,
+                    DebugTrace.build_fail_dump(trial_state, players),
+                    "TrainingComboTrials_data/LastFail.json"
+                )
                 trial_state._fail_captured = true
-                pcall(function()
-                    json.dump_file("TrainingComboTrials_data/LastFail.json", trial_state.last_fail_dump)
-                end)
             end
 
             trial_state.fail_timer = trial_state.fail_timer - 1
@@ -3311,7 +3233,7 @@ local function ct_player_validation(p_idx, p_state)
                             trial_state.fail_reason = "TOO LATE (Missed Input)"
                         end
                     end
-                    log_trial_failure("timeout_validation", {
+                    DebugTrace.log_trial_failure(file_system, trial_state, engine_frame_count, _pf, "timeout_validation", {
                         expected_motion = expected.motion,
                         playback_state = "playing"
                     })
@@ -3993,7 +3915,7 @@ local function ct_player_process_actions(p_idx, p_state, actions_to_process)
                                     end
                                 end
 
-                                trial_state._validation_debug = {
+                                DebugTrace.record_validation_debug(trial_state, {
                                     frame = engine_frame_count,
                                     step = trial_state.current_step,
                                     act_id = act_id,
@@ -4012,7 +3934,7 @@ local function ct_player_process_actions(p_idx, p_state, actions_to_process)
                                     previous_is_setup = is_post_hit_setup_step(trial_state.current_step - 1),
                                     current_is_setup = is_post_hit_setup_step(trial_state.current_step),
                                     frame_diff = frame_diff
-                                }
+                                })
 
                                 if combo_ok and hp_ok then
                                     trial_step_idx = trial_state.current_step
@@ -4071,7 +3993,7 @@ local function ct_player_process_actions(p_idx, p_state, actions_to_process)
                                         trial_state.fail_reason = "COMBO DROPPED"
                                     end
                                     if trial_state.fail_timer and trial_state.fail_timer > 0 then
-                                        log_trial_failure(not hp_ok and "action_hp_setup_validation" or "action_step_validation", {
+                                        DebugTrace.log_trial_failure(file_system, trial_state, engine_frame_count, _pf, not hp_ok and "action_hp_setup_validation" or "action_step_validation", {
                                             expected_motion = expected.motion,
                                             player_action_id = act_id,
                                             player_action_name = act_name,
@@ -4565,7 +4487,8 @@ ctx.save_xt_settings = function(default_author)
     return true
 end
 ctx.dump_last_fail = function()
-    if not trial_state.last_fail_dump then return nil end
+    local last_fail_dump = DebugTrace.get_last_fail(trial_state)
+    if not last_fail_dump then return nil end
     local char_name = players[trial_state.playing_player].profile_name or "Unknown"
     local ts = os.date("%Y%m%d_%H%M%S")
     local safe_char_name = file_system.sanitize_filename_component(char_name, 32, "Unknown")
@@ -4577,7 +4500,7 @@ ctx.dump_last_fail = function()
     end
     
     local path = "TrainingComboTrials_data/CustomCombos/Fails/" .. fname
-    json.dump_file(path, trial_state.last_fail_dump)
+    DebugTrace.write_json(path, last_fail_dump)
     return path
 end
 ctx.reset_visuals = function()
