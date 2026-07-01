@@ -146,7 +146,7 @@ local unique_resources = {
     [28] = {
         name = "Mai",
         resources = {
-            { id = "stock_0_028", kind = "stock", min = 0, max = 5, allow_infinite = true }
+            { id = "stock_0_028", kind = "stock", min = 0, max = 5, reject_infinite = true, setter = "SetUnique028_stock_0" }
         }
     },
     [30] = {
@@ -1443,6 +1443,28 @@ function unique_resources.request_training_refresh()
     end)
 end
 
+function unique_resources.trace_restore(event)
+    if type(event) ~= "table" then return end
+
+    trial_state._unique_restore_debug = event
+
+    if rawget(_G, "CT_UNIQUE_TRACE") ~= true then return end
+    if not (file_system and file_system.diag_log) then return end
+
+    file_system.diag_log(
+        "[UniqueRestore]"
+        .. " character=" .. tostring(event.character)
+        .. " side=" .. tostring(event.side)
+        .. " unique_key=" .. tostring(event.unique_key)
+        .. " expected_stock=" .. tostring(event.expected_stock)
+        .. " current_before_restore=" .. tostring(event.current_before_restore)
+        .. " current_after_restore=" .. tostring(event.current_after_restore)
+        .. " restore_success=" .. tostring(event.restore_success)
+        .. " restore_method=" .. tostring(event.restore_method)
+        .. " reason=" .. tostring(event.reason)
+    )
+end
+
 function unique_resources.get_training_data_objects()
     local result = {}
     pcall(function()
@@ -1457,6 +1479,16 @@ function unique_resources.get_training_data_objects()
         pcall(function() result.unique_data = result.parameter_setting:get_field("UniqueData") end)
         if not result.unique_data then
             pcall(function() result.unique_data = result.parameter_setting.UniqueData end)
+        end
+        pcall(function() result.param_func = result.parameter_setting:get_field("ParamFunc") end)
+        if not result.param_func then
+            pcall(function() result.param_func = result.parameter_setting.ParamFunc end)
+        end
+    end
+    if not result.param_func and result.training_data then
+        pcall(function() result.param_func = result.training_data:get_field("ParamFunc") end)
+        if not result.param_func then
+            pcall(function() result.param_func = result.training_data.ParamFunc end)
         end
     end
     return result
@@ -1487,18 +1519,50 @@ function unique_resources.read_value(unique_data, resource_id)
     return nil
 end
 
-function unique_resources.write_value(unique_data, resource_id, value)
+function unique_resources.call_setter(data, resource, value)
+    if not data or not resource or not resource.setter then return false, "setter_missing" end
+
+    local param_func = data.param_func
+    if not param_func then return false, "setter_missing" end
+
+    local ok = pcall(function()
+        param_func:call(resource.setter, value)
+    end)
+    if ok then return true, resource.setter end
+
+    ok = pcall(function()
+        param_func[resource.setter](param_func, value)
+    end)
+    if ok then return true, resource.setter end
+
+    ok = pcall(function()
+        param_func[resource.setter](value)
+    end)
+    if ok then return true, resource.setter end
+
+    return false, "setter_missing"
+end
+
+function unique_resources.write_value(unique_data, resource_id, value, data)
     if not unique_data or not resource_id or value == nil then return false end
+
+    local resource = unique_resources.resource_by_id(resource_id)
+    if resource and resource.setter and data then
+        local setter_ok, setter_method = unique_resources.call_setter(data, resource, value)
+        if setter_ok then return true, setter_method end
+    end
 
     local ok = pcall(function()
         unique_data[resource_id] = value
     end)
-    if ok then return true end
+    if ok then return true, "existing_unique_setter" end
 
     ok = pcall(function()
         unique_data:set_field(resource_id, value)
     end)
-    return ok == true
+    if ok then return true, "existing_unique_setter" end
+
+    return false, resource and resource.setter and "setter_missing" or "write_failed"
 end
 
 function unique_resources.normalize_value(resource, value)
@@ -1507,8 +1571,13 @@ function unique_resources.normalize_value(resource, value)
     if n == nil then return nil end
     n = math.floor(n + 0.5)
 
-    if n == 7 and resource.allow_infinite then
-        return 7
+    if n == 7 then
+        if resource.allow_infinite then
+            return 7
+        end
+        if resource.reject_infinite then
+            return nil, "invalid_value"
+        end
     end
 
     local min_value = resource.min or 0
@@ -1518,15 +1587,28 @@ function unique_resources.normalize_value(resource, value)
     return n
 end
 
-function unique_resources.capture_for_fighter(fighter_id, unique_data)
+function unique_resources.capture_for_fighter(fighter_id, unique_data, side_key)
     local char_data = unique_resources.by_fighter_id[tonumber(fighter_id)]
     if not char_data or not unique_data then return nil end
 
     local unique = {}
     for _, resource in ipairs(char_data.resources or {}) do
-        local value = unique_resources.normalize_value(resource, unique_resources.read_value(unique_data, resource.id))
+        local raw_value = unique_resources.read_value(unique_data, resource.id)
+        local value, reason = unique_resources.normalize_value(resource, raw_value)
         if value ~= nil then
             unique[resource.id] = value
+        elseif resource.id == "stock_0_028" then
+            unique_resources.trace_restore({
+                character = "Mai",
+                side = side_key or "unknown",
+                unique_key = resource.id,
+                expected_stock = raw_value,
+                current_before_restore = raw_value,
+                current_after_restore = nil,
+                restore_success = false,
+                restore_method = resource.setter,
+                reason = reason or "invalid_value"
+            })
         end
     end
 
@@ -1548,7 +1630,7 @@ function unique_resources.capture_by_side()
         local side_state = nil
 
         if fighter_id ~= nil then
-            local unique = unique_resources.capture_for_fighter(fighter_id, unique_data)
+            local unique = unique_resources.capture_for_fighter(fighter_id, unique_data, side_key)
             if unique then
                 side_state = {
                     fighter_id = fighter_id,
@@ -1635,6 +1717,144 @@ function unique_resources.collect_recorded()
     return out
 end
 
+function unique_resources.add_recorded_entries(entries, unique_table, side_key, fighter_id, source)
+    if type(unique_table) ~= "table" then return end
+
+    for resource_id, value in pairs(unique_table) do
+        local resource = unique_resources.resource_by_id(resource_id)
+        local normalized, reason = unique_resources.normalize_value(resource, value)
+        if normalized ~= nil then
+            table.insert(entries, {
+                resource_id = resource_id,
+                value = normalized,
+                resource = resource,
+                side_key = side_key,
+                fighter_id = fighter_id,
+                source = source
+            })
+        elseif resource_id == "stock_0_028" then
+            unique_resources.trace_restore({
+                character = "Mai",
+                side = side_key or "unknown",
+                unique_key = resource_id,
+                expected_stock = value,
+                current_before_restore = nil,
+                current_after_restore = nil,
+                restore_success = false,
+                restore_method = resource and resource.setter or nil,
+                reason = reason or "invalid_value"
+            })
+        end
+    end
+end
+
+function unique_resources.trace_missing_mai_stock(side_key, side)
+    if type(side) ~= "table" then return end
+    if tonumber(side.fighter_id) ~= 28 then return end
+    if type(side.unique) == "table" and side.unique.stock_0_028 ~= nil then return end
+
+    unique_resources.trace_restore({
+        character = "Mai",
+        side = side_key or "unknown",
+        unique_key = "stock_0_028",
+        expected_stock = nil,
+        current_before_restore = nil,
+        current_after_restore = nil,
+        restore_success = false,
+        restore_method = "SetUnique028_stock_0",
+        reason = "missing_field"
+    })
+end
+
+function unique_resources.collect_recorded_entries()
+    local first = trial_state.sequence and trial_state.sequence[1]
+    if type(first) ~= "table" then return nil end
+
+    local entries = {}
+    local scene_state = type(first.scene_state) == "table" and first.scene_state or nil
+    local meta = type(first._xt_meta) == "table" and first._xt_meta or nil
+
+    if not scene_state and meta and type(meta.scene_state) == "table" then
+        scene_state = meta.scene_state
+    end
+
+    if scene_state and type(scene_state.players) == "table" then
+        local recorded_by = tonumber(first.recorded_by or scene_state.recorded_by or 0) or 0
+        local first_side = recorded_by == 1 and "p2" or "p1"
+        local second_side = recorded_by == 1 and "p1" or "p2"
+
+        local function add_side(side_key)
+            local side = scene_state.players[side_key]
+            if type(side) == "table" then
+                unique_resources.trace_missing_mai_stock(side_key, side)
+                unique_resources.add_recorded_entries(entries, side.unique, side_key, side.fighter_id, "scene_state")
+            end
+        end
+
+        add_side(second_side)
+        add_side(first_side)
+    end
+
+    if meta and type(meta.environment) == "table" then
+        local env = meta.environment
+        if type(env.unique) == "table" then
+            unique_resources.add_recorded_entries(entries, env.unique, nil, nil, "meta.environment.unique")
+            if type(env.unique.p1) == "table" then
+                unique_resources.add_recorded_entries(entries, env.unique.p1.unique, "p1", env.unique.p1.fighter_id, "meta.environment.unique.p1")
+            end
+            if type(env.unique.p2) == "table" then
+                unique_resources.add_recorded_entries(entries, env.unique.p2.unique, "p2", env.unique.p2.fighter_id, "meta.environment.unique.p2")
+            end
+        end
+        if type(env.players) == "table" then
+            if type(env.players.p1) == "table" then
+                unique_resources.add_recorded_entries(entries, env.players.p1.unique, "p1", env.players.p1.fighter_id, "meta.environment.players.p1")
+            end
+            if type(env.players.p2) == "table" then
+                unique_resources.add_recorded_entries(entries, env.players.p2.unique, "p2", env.players.p2.fighter_id, "meta.environment.players.p2")
+            end
+        end
+    end
+
+    if #entries == 0 then return nil end
+    return entries
+end
+
+function unique_resources.side_to_player_idx(side_key)
+    if side_key == "p1" then return 0 end
+    if side_key == "p2" then return 1 end
+    return nil
+end
+
+function unique_resources.any_current_fighter_is(fighter_id)
+    for player_idx = 0, 1 do
+        if tonumber(unique_resources.read_training_fighter_id(player_idx)) == tonumber(fighter_id) then
+            return true
+        end
+    end
+    return false
+end
+
+function unique_resources.should_apply_entry(entry)
+    if type(entry) ~= "table" then return false, "invalid_entry" end
+    if entry.resource_id ~= "stock_0_028" then return true end
+
+    if entry.fighter_id ~= nil and tonumber(entry.fighter_id) ~= 28 then
+        return false, "not_mai"
+    end
+
+    local player_idx = unique_resources.side_to_player_idx(entry.side_key)
+    if player_idx ~= nil then
+        if tonumber(unique_resources.read_training_fighter_id(player_idx)) ~= 28 then
+            return false, "not_mai"
+        end
+        return true
+    end
+
+    if unique_resources.any_current_fighter_is(28) then return true end
+    return false, "not_mai"
+end
+
 function unique_resources.save_current()
     if trial_state._saved_unique_resources then return end
 
@@ -1645,8 +1865,10 @@ function unique_resources.save_current()
     local saved = {}
     unique_resources.resource_by_id("")
     for resource_id, resource in pairs(unique_resources.by_id or {}) do
-        local value = unique_resources.normalize_value(resource, unique_resources.read_value(unique_data, resource_id))
-        if value ~= nil then saved[resource_id] = value end
+        if resource_id ~= "stock_0_028" or unique_resources.any_current_fighter_is(28) then
+            local value = unique_resources.normalize_value(resource, unique_resources.read_value(unique_data, resource_id))
+            if value ~= nil then saved[resource_id] = value end
+        end
     end
 
     if next(saved) ~= nil then
@@ -1663,8 +1885,10 @@ function unique_resources.restore()
     if unique_data then
         local changed = false
         for resource_id, value in pairs(saved) do
-            if unique_resources.write_value(unique_data, resource_id, value) then
-                changed = true
+            if resource_id ~= "stock_0_028" or unique_resources.any_current_fighter_is(28) then
+                if unique_resources.write_value(unique_data, resource_id, value, data) then
+                    changed = true
+                end
             end
         end
         if changed then unique_resources.request_training_refresh() end
@@ -1674,8 +1898,8 @@ function unique_resources.restore()
 end
 
 function unique_resources.apply_recorded()
-    local resources = unique_resources.collect_recorded()
-    if type(resources) ~= "table" then return false end
+    local entries = unique_resources.collect_recorded_entries()
+    if type(entries) ~= "table" then return false end
 
     local data = unique_resources.get_training_data_objects()
     local unique_data = data.unique_data
@@ -1684,9 +1908,44 @@ function unique_resources.apply_recorded()
     unique_resources.save_current()
 
     local changed = false
-    for resource_id, value in pairs(resources) do
-        if unique_resources.write_value(unique_data, resource_id, value) then
-            changed = true
+    for _, entry in ipairs(entries) do
+        local should_apply, skip_reason = unique_resources.should_apply_entry(entry)
+        local before = nil
+        if entry.resource_id == "stock_0_028" then
+            before = unique_resources.read_value(unique_data, entry.resource_id)
+        end
+
+        if should_apply then
+            local ok, method = unique_resources.write_value(unique_data, entry.resource_id, entry.value, data)
+            if ok then
+                changed = true
+            end
+
+            if entry.resource_id == "stock_0_028" then
+                unique_resources.trace_restore({
+                    character = "Mai",
+                    side = entry.side_key or "unknown",
+                    unique_key = entry.resource_id,
+                    expected_stock = entry.value,
+                    current_before_restore = before,
+                    current_after_restore = unique_resources.read_value(unique_data, entry.resource_id),
+                    restore_success = ok == true,
+                    restore_method = method,
+                    reason = ok and "applied" or (method or "setter_missing")
+                })
+            end
+        elseif entry.resource_id == "stock_0_028" then
+            unique_resources.trace_restore({
+                character = "Mai",
+                side = entry.side_key or "unknown",
+                unique_key = entry.resource_id,
+                expected_stock = entry.value,
+                current_before_restore = before,
+                current_after_restore = before,
+                restore_success = false,
+                restore_method = entry.resource and entry.resource.setter or "SetUnique028_stock_0",
+                reason = skip_reason or "not_mai"
+            })
         end
     end
 
