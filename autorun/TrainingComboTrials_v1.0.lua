@@ -2441,13 +2441,15 @@ end
 
 local function is_same_action_continuation_step(prev_step, step, combo_count)
     if not prev_step or not step then return false end
-    if prev_step.has_hit ~= true then return false end
     if prev_step.id == nil or step.id == nil then return false end
     if prev_step.id ~= step.id then return false end
 
     local prev_combo = tonumber(prev_step.expected_combo) or 0
     local expected_combo = tonumber(step.expected_combo) or 0
-    return expected_combo > 0 and expected_combo > prev_combo and (combo_count or 0) >= expected_combo
+    local current_combo = combo_count or 0
+    if expected_combo <= 0 or expected_combo <= prev_combo then return false end
+    if current_combo < expected_combo then return false end
+    return true
 end
 
 local function build_same_action_auto_advance_debug(prev_step, step, combo_count, call_site)
@@ -2460,8 +2462,6 @@ local function build_same_action_auto_advance_debug(prev_step, step, combo_count
 
     if not prev_step or not step then
         block_reason = "missing_prev_or_step"
-    elseif prev_step.has_hit ~= true then
-        block_reason = "previous_step_not_hit"
     elseif prev_step.id == nil or step.id == nil then
         block_reason = "missing_step_id"
     elseif prev_step.id ~= step.id then
@@ -2471,7 +2471,13 @@ local function build_same_action_auto_advance_debug(prev_step, step, combo_count
     elseif expected_combo <= prev_combo then
         block_reason = "expected_combo_not_greater_than_prev"
     elseif current_combo < expected_combo then
-        block_reason = "combo_count_below_expected"
+        if prev_step.has_hit ~= true then
+            block_reason = "previous_step_not_hit_and_combo_not_reached"
+        else
+            block_reason = "combo_not_reached"
+        end
+    elseif prev_step.has_hit ~= true then
+        block_reason = "combo_progress_confirmed_without_previous_hit"
     else
         block_reason = "would_advance"
     end
@@ -2537,8 +2543,12 @@ local function advance_same_action_continuation_steps(combo_count, call_site)
         local prev_step = trial_state.sequence[trial_state.current_step - 1]
         local step = trial_state.sequence[trial_state.current_step]
         local auto_advance_debug = build_same_action_auto_advance_debug(prev_step, step, combo_count, call_site)
-        DebugTrace.record_auto_advance(trial_state, auto_advance_debug)
-        if not is_same_action_continuation_step(prev_step, step, combo_count) then break end
+        if not is_same_action_continuation_step(prev_step, step, combo_count) then
+            if not advanced then
+                DebugTrace.record_auto_advance(trial_state, auto_advance_debug)
+            end
+            break
+        end
         auto_advance_debug.auto_advance_triggered = true
         auto_advance_debug.auto_advance_block_reason = "advanced"
         DebugTrace.record_auto_advance(trial_state, auto_advance_debug)
