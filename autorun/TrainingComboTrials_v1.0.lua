@@ -262,6 +262,7 @@ local trial_state = {
     _was_playing = false,   -- Previous state for detecting transitions
     _step1_wrong_pending = false,
     _pending_current_absorb = nil,
+    _pending_block_outcome = nil,
     _demo_backup_slot = nil
 }
 
@@ -2596,6 +2597,7 @@ local function clear_trial_attempt_state(player_idx)
     trial_state._reset_grace = 15
     trial_state._final_finish_max_observed_combo = nil
     trial_state._pending_current_absorb = nil
+    trial_state._pending_block_outcome = nil
     trial_state._ui_step_hold_step = nil
     trial_state._ui_step_hold_until_frame = nil
     trial_state.last_played_frame = engine_frame_count
@@ -4771,7 +4773,85 @@ local function ct_player_process_actions(p_idx, p_state, actions_to_process)
 
             if act_id > 50 or act_id == 17 or act_id == 18 or act_id == 36 or act_id == 37 or act_id == 38 then
                 is_trackable = true
-                if string.find(act_name, "DMG_") or string.find(act_name, "GRD_") or string.find(act_name, "DOWN") or string.find(act_name, "PIYO") then
+                _pf.ct_block_guard = string.find(act_name, "GRD_") ~= nil
+                if trial_state.is_playing then
+                    _pf.ct_block_defender_idx = 1 - (tonumber(trial_state.playing_player or 0) or 0)
+                    _pf.ct_block_damage_type = nil
+                    _pf.ct_block_defender_obj = (_pf.ct_block_defender_idx == 0) and GS.p1 or GS.p2
+                    if _pf.ct_block_defender_obj then
+                        _pf.ct_block_damage_type = _pf.ct_block_defender_obj:get_field("damage_type")
+                        if _pf.ct_block_damage_type ~= nil then
+                            _pf.ct_block_damage_type = tonumber(tostring(_pf.ct_block_damage_type)) or 0
+                        end
+                    end
+                    _pf.ct_block_defender_act_st = (_pf.ct_block_defender_idx == 0) and GS.p1_act_st or GS.p2_act_st
+                    _pf.ct_block_source = _pf.ct_block_guard and "GRD_action" or nil
+                    if _pf.ct_block_damage_type == 30 then
+                        _pf.ct_block_source = _pf.ct_block_source and (_pf.ct_block_source .. "+damage_type_30") or "damage_type_30"
+                    end
+                    if _pf.ct_block_source then
+                        trial_state._recent_block_contact_frame = engine_frame_count
+                        trial_state._recent_block_contact_actor = p_idx
+                        trial_state._recent_block_contact_source = _pf.ct_block_source
+                        trial_state._recent_block_damage_type = _pf.ct_block_damage_type
+                        trial_state._recent_block_defender_frame_type = nil
+                        trial_state._recent_block_defender_main_gauge = nil
+                        trial_state._recent_block_defender_act_st = _pf.ct_block_defender_act_st
+                        trial_state._recent_block_action_id = act_id
+                        trial_state._recent_block_action_name = act_name
+                        _pf.ct_pending_block = trial_state._pending_block_outcome
+                        _pf.ct_block_delta = nil
+                        _pf.ct_block_outcome_ok = false
+                        if _pf.ct_pending_block
+                            and _pf.ct_pending_block.step == trial_state.current_step
+                            and _pf.ct_pending_block.expected_id == (trial_state.sequence[trial_state.current_step]
+                                and trial_state.sequence[trial_state.current_step].id or nil) then
+                            _pf.ct_block_delta = engine_frame_count - (_pf.ct_pending_block.action_frame or engine_frame_count)
+                            if _pf.ct_block_delta >= 0 and _pf.ct_block_delta <= (_pf.ct_pending_block.window or 15) then
+                                _pf.ct_block_outcome_ok = true
+                                _pf.ct_pending_block.outcome_ok = true
+                                _pf.ct_pending_block.block_contact_seen = true
+                                _pf.ct_pending_block.block_contact_frame = engine_frame_count
+                                _pf.ct_pending_block.block_contact_delta = _pf.ct_block_delta
+                                _pf.ct_pending_block.block_contact_source = _pf.ct_block_source
+                                _pf.ct_pending_block.block_contact_damage_type = _pf.ct_block_damage_type
+                                _pf.ct_pending_block.block_contact_action_id = act_id
+                                _pf.ct_pending_block.block_contact_action_name = act_name
+                                _pf.ct_pending_block.block_contact_defender_frame_type = nil
+                                _pf.ct_pending_block.block_contact_defender_main_gauge = nil
+                                _pf.ct_pending_block.block_contact_defender_act_st = _pf.ct_block_defender_act_st
+                            end
+                        end
+                        DebugTrace.record_match_probe(trial_state, {
+                            phase = "block_contact_sample",
+                            branch = "block_contact_sample",
+                            frame = engine_frame_count,
+                            trial_file = trial_state.current_file or trial_state.current_file_path,
+                            trial_filename = trial_state.current_file_name,
+                            character = p_state.profile_name,
+                            actor = p_idx,
+                            defender_idx = _pf.ct_block_defender_idx,
+                            actual_action_id = act_id,
+                            actual_action_name = act_name,
+                            source = _pf.ct_block_source,
+                            defender_damage_type = _pf.ct_block_damage_type,
+                            defender_frame_type = nil,
+                            defender_main_gauge = nil,
+                            defender_act_st = _pf.ct_block_defender_act_st,
+                            hit_result = _pf.ct_pending_block and _pf.ct_pending_block.hit_result or nil,
+                            outcome_pending = _pf.ct_pending_block ~= nil,
+                            outcome_ok = _pf.ct_block_outcome_ok,
+                            block_contact_seen = true,
+                            block_contact_frame = engine_frame_count,
+                            block_contact_delta = _pf.ct_block_delta,
+                            block_contact_source = _pf.ct_block_source,
+                            block_contact_damage_type = _pf.ct_block_damage_type,
+                            step = trial_state.current_step,
+                            trial_total = trial_state.sequence and #trial_state.sequence or 0
+                        })
+                    end
+                end
+                if string.find(act_name, "DMG_") or _pf.ct_block_guard or string.find(act_name, "DOWN") or string.find(act_name, "PIYO") then
                     is_ignored = true
                     ignore_reason = "[System: Guard/Down/Stun]"
                 end
@@ -4925,7 +5005,18 @@ local function ct_player_process_actions(p_idx, p_state, actions_to_process)
                         direct_input = direct_input,
                         hitstop = _pf.hitstop,
                         blockstop = _pf.blockstop,
-                        opponent_knocked_down = _pf.opponent_knocked_down
+                        opponent_knocked_down = _pf.opponent_knocked_down,
+                        recent_block_contact_frame = trial_state._recent_block_contact_frame,
+                        recent_block_contact_age = trial_state._recent_block_contact_frame
+                            and (engine_frame_count - trial_state._recent_block_contact_frame) or nil,
+                        recent_block_contact_actor = trial_state._recent_block_contact_actor,
+                        recent_block_contact_source = trial_state._recent_block_contact_source,
+                        recent_block_damage_type = trial_state._recent_block_damage_type,
+                        recent_block_defender_frame_type = trial_state._recent_block_defender_frame_type,
+                        recent_block_defender_main_gauge = trial_state._recent_block_defender_main_gauge,
+                        recent_block_defender_act_st = trial_state._recent_block_defender_act_st,
+                        recent_block_action_id = trial_state._recent_block_action_id,
+                        recent_block_action_name = trial_state._recent_block_action_name
                     }
                 end
 
@@ -5196,6 +5287,83 @@ local function ct_player_process_actions(p_idx, p_state, actions_to_process)
                         end
 
                         if allow_input then
+                            _pf.ct_pending_block = trial_state._pending_block_outcome
+                            if _pf.ct_pending_block and _pf.ct_pending_block.step == trial_state.current_step then
+                                if _pf.ct_pending_block.outcome_ok == true then
+                                    _pf.ct_pending_expected = trial_state.sequence[_pf.ct_pending_block.step]
+                                    _pf.ct_block_details = {
+                                        actual_action_id = _pf.ct_pending_block.action_id,
+                                        match_reason = "block_outcome",
+                                        outcome_pending = false,
+                                        outcome_ok = true,
+                                        block_contact_seen = _pf.ct_pending_block.block_contact_seen,
+                                        block_contact_frame = _pf.ct_pending_block.block_contact_frame,
+                                        block_contact_delta = _pf.ct_pending_block.block_contact_delta,
+                                        block_contact_source = _pf.ct_pending_block.block_contact_source,
+                                        block_contact_damage_type = _pf.ct_pending_block.block_contact_damage_type,
+                                        block_contact_action_id = _pf.ct_pending_block.block_contact_action_id,
+                                        block_contact_action_name = _pf.ct_pending_block.block_contact_action_name,
+                                        source = "block_outcome_pending"
+                                    }
+                                    _pf.ct_block_probe = build_match_probe(_pf.ct_pending_expected, "block_outcome_confirm")
+                                    _pf.ct_block_probe.branch = "block_outcome_confirm"
+                                    _pf.ct_block_probe.hit_result = _pf.ct_pending_block.hit_result
+                                    _pf.ct_block_probe.outcome_pending = false
+                                    _pf.ct_block_probe.outcome_ok = true
+                                    _pf.ct_block_probe.block_contact_seen = _pf.ct_pending_block.block_contact_seen
+                                    _pf.ct_block_probe.block_contact_frame = _pf.ct_pending_block.block_contact_frame
+                                    _pf.ct_block_probe.block_contact_delta = _pf.ct_pending_block.block_contact_delta
+                                    _pf.ct_block_probe.block_contact_source = _pf.ct_pending_block.block_contact_source
+                                    _pf.ct_block_probe.block_contact_damage_type = _pf.ct_pending_block.block_contact_damage_type
+                                    _pf.ct_block_probe.block_contact_action_id = _pf.ct_pending_block.block_contact_action_id
+                                    _pf.ct_block_probe.block_contact_action_name = _pf.ct_pending_block.block_contact_action_name
+                                    DebugTrace.record_match_probe(trial_state, _pf.ct_block_probe)
+                                    if apply_matched_step(
+                                        _pf.ct_pending_expected,
+                                        _pf.ct_pending_block.action_id,
+                                        _pf.ct_pending_block.motion or "Unknown",
+                                        _pf.ct_pending_block.input or "None",
+                                        _pf.ct_pending_block.action_frame or engine_frame_count,
+                                        _pf.ct_pending_block.combo_count or 0,
+                                        _pf.ct_pending_block.actual_hp,
+                                        "block_outcome",
+                                        _pf.ct_block_details
+                                    ) then
+                                        trial_state._pending_block_outcome = nil
+                                        expected = trial_state.sequence[trial_state.current_step]
+                                        if not expected then allow_input = false end
+                                    else
+                                        trial_state.fail_timer = d2d_cfg.fail_display_frames or 120
+                                        trial_state.fail_reason = "BLOCK OUTCOME VALIDATION FAILED"
+                                        allow_input = false
+                                    end
+                                elseif engine_frame_count > (_pf.ct_pending_block.expires_at_frame or engine_frame_count) then
+                                    _pf.ct_block_probe = build_match_probe(trial_state.sequence[_pf.ct_pending_block.step], "block_outcome_timeout")
+                                    _pf.ct_block_probe.branch = "block_outcome_timeout"
+                                    _pf.ct_block_probe.hit_result = _pf.ct_pending_block.hit_result
+                                    _pf.ct_block_probe.outcome_pending = true
+                                    _pf.ct_block_probe.outcome_ok = false
+                                    _pf.ct_block_probe.block_contact_seen = false
+                                    _pf.ct_block_probe.reject_reason = "block_outcome_timeout"
+                                    DebugTrace.record_match_probe(trial_state, _pf.ct_block_probe)
+                                    trial_state._pending_block_outcome = nil
+                                    trial_state.fail_timer = d2d_cfg.fail_display_frames or 120
+                                    trial_state.fail_reason = "BLOCK NOT CONFIRMED"
+                                    allow_input = false
+                                else
+                                    _pf.ct_block_probe = build_match_probe(trial_state.sequence[_pf.ct_pending_block.step], "block_outcome_wait")
+                                    _pf.ct_block_probe.branch = "block_outcome_wait"
+                                    _pf.ct_block_probe.hit_result = _pf.ct_pending_block.hit_result
+                                    _pf.ct_block_probe.outcome_pending = true
+                                    _pf.ct_block_probe.outcome_ok = false
+                                    _pf.ct_block_probe.reject_reason = "block_outcome_pending"
+                                    DebugTrace.record_match_probe(trial_state, _pf.ct_block_probe)
+                                    allow_input = false
+                                end
+                            end
+                        end
+
+                        if allow_input then
                             local action_match = ActionMatcher.match_expected_action(expected, act_id, motion_str, real_input_str)
                             if process_act.synthetic then
                                 action_match.source = process_act.fallback_source or process_act.source
@@ -5424,6 +5592,51 @@ local function ct_player_process_actions(p_idx, p_state, actions_to_process)
                                 -- Older combo JSON may omit the stance entry before a > follow-up.
                                 -- Do not let the parent action match the follow-up by button input.
                                 match_probe.reject_reason = "optional_parent_for_followup"
+                                DebugTrace.record_match_probe(trial_state, match_probe)
+                            elseif action_match.matched and expected and expected.hit_result == "block" then
+                                _pf.ct_block_action_frame = process_act.synthetic
+                                    and (process_act.engine_frame or engine_frame_count) or engine_frame_count
+                                trial_state._pending_block_outcome = {
+                                    step = trial_state.current_step,
+                                    expected_id = expected.id,
+                                    expected_motion = expected.motion,
+                                    hit_result = expected.hit_result,
+                                    action_frame = _pf.ct_block_action_frame,
+                                    action_id = act_id,
+                                    motion = motion_str,
+                                    input = real_input_str,
+                                    combo_count = _pf.current_combo or 0,
+                                    actual_hp = process_act.current_hp,
+                                    match_reason = action_match.match_reason,
+                                    window = 15,
+                                    expires_at_frame = _pf.ct_block_action_frame + 15,
+                                    outcome_ok = false,
+                                    block_contact_seen = false
+                                }
+                                _pf.ct_recent_block_frame = trial_state._recent_block_contact_frame
+                                if _pf.ct_recent_block_frame then
+                                    _pf.ct_block_delta = _pf.ct_recent_block_frame - _pf.ct_block_action_frame
+                                    if _pf.ct_block_delta >= 0 and _pf.ct_block_delta <= 15 then
+                                        trial_state._pending_block_outcome.outcome_ok = true
+                                        trial_state._pending_block_outcome.block_contact_seen = true
+                                        trial_state._pending_block_outcome.block_contact_frame = _pf.ct_recent_block_frame
+                                        trial_state._pending_block_outcome.block_contact_delta = _pf.ct_block_delta
+                                        trial_state._pending_block_outcome.block_contact_source = trial_state._recent_block_contact_source
+                                        trial_state._pending_block_outcome.block_contact_damage_type = trial_state._recent_block_damage_type
+                                        trial_state._pending_block_outcome.block_contact_action_id = trial_state._recent_block_action_id
+                                        trial_state._pending_block_outcome.block_contact_action_name = trial_state._recent_block_action_name
+                                    end
+                                end
+                                match_probe.branch = "block_outcome_pending"
+                                match_probe.hit_result = expected.hit_result
+                                match_probe.outcome_pending = true
+                                match_probe.outcome_ok = trial_state._pending_block_outcome.outcome_ok == true
+                                match_probe.block_contact_seen = trial_state._pending_block_outcome.block_contact_seen == true
+                                match_probe.block_contact_frame = trial_state._pending_block_outcome.block_contact_frame
+                                match_probe.block_contact_delta = trial_state._pending_block_outcome.block_contact_delta
+                                match_probe.block_contact_source = trial_state._pending_block_outcome.block_contact_source
+                                match_probe.block_contact_damage_type = trial_state._pending_block_outcome.block_contact_damage_type
+                                match_probe.reject_reason = "block_outcome_pending"
                                 DebugTrace.record_match_probe(trial_state, match_probe)
                             elseif action_match.matched then
                                 match_probe.branch = process_act.synthetic and "same_dash_fallback" or "direct_match"
