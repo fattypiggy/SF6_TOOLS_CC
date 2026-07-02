@@ -4702,8 +4702,19 @@ local function ct_player_process_actions(p_idx, p_state, actions_to_process)
                     ignore_reason = "[例外：忽略]"
                 end
 
-                -- Check ignore_prev_id condition (supports single number or table of numbers)
-                if not is_ignored then
+                -- Check ignore_prev_id condition (supports single number or table of numbers).
+                -- During playback, an explicitly expected action must be allowed to validate
+                -- even if its exception normally ignores it after a parent/hold action.
+                local expected_for_ignore = nil
+                if trial_state.is_playing and p_idx == trial_state.playing_player
+                    and trial_state.sequence and trial_state.current_step then
+                    expected_for_ignore = trial_state.sequence[trial_state.current_step]
+                end
+                local expected_action_matches_current = expected_for_ignore
+                    and expected_for_ignore.id ~= nil
+                    and expected_for_ignore.id == act_id
+
+                if not is_ignored and not expected_action_matches_current then
                     local ignore_prev = ActionMatcher.evaluate_ignore_prev(exc, p_state.log, engine_frame_count)
                     if ignore_prev.ignored then
                         is_ignored = true
