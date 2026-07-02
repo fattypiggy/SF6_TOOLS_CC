@@ -103,12 +103,24 @@ Manual command:
 tools\package_release.bat -Version <version> -Force
 ```
 
+Version rules:
+
+* Every release package must explicitly pass the intended target version with `-Version`.
+* Do not use "latest package" as a release target. Do not infer a release version from `sf6cm_manifest.json`, Lua UI text, folder names, zip names, Git tags, or previous artifacts.
+* The current new-mechanism release target is `0.9c`. If the next release remains in the `0.9` series, it should be `0.9d`. If the project explicitly moves to the `0.91` series, start from `0.91a`, then `0.91b`, `0.91c`, and so on.
+* `0.9a` is the online stable release and must be treated as immutable. Normal release packaging must not rebuild or overwrite `0.9a`.
+* Rebuilding an immutable stable release requires an explicit special override and must be done from the corresponding tag, commit, or isolated worktree, never silently from the current development `HEAD`.
+
 Default behavior:
 
-* Output goes to the repository `release/` directory by default: `D:\CP\SF6CC\reframework\release`.
+* Output goes under the repository `release/` directory by default: `D:\CP\SF6CC\reframework\release\<version>`.
 * The game release directory is only an explicit optional target, for example `-OutputDir "D:\Program Files (x86)\Steam\steamapps\common\Street Fighter 6\reframework\release"`.
 * Do not treat the game release directory as the default publishing directory.
 * The script creates `XiaoTun_SF6_TrainingMOD_v<version>.zip`, `XiaoTun_SF6_TrainingMOD_v<version>_runtime.zip`, unpacked folders for both packages, and `sf6cm_manifest_v<version>.json`.
+* The command-line `-Version`, output folder, zip file names, and generated manifest version must all match.
+* If the version output directory or target package files already exist, packaging fails by default.
+* `-Force` may overwrite an existing version output only after backing it up to `release\backups\<version>_<timestamp>\`.
+* `-DryRun` must show the planned version, branch, commit, output directory, source manifest version, package file names, existing artifacts, and overwrite status without generating package files.
 * The standard package contains `dinput8.dll` and `reframework\`.
 * The runtime package additionally contains `re2_fw_config.txt`.
 * `dinput8.dll` and `re2_fw_config.txt` are copied from the local Street Fighter 6 game root.
