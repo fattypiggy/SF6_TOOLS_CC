@@ -699,6 +699,68 @@ local ctx = {
     cached_sh = 1080,
 }
 
+ctx.stop_demo_playback = function(reason, old_file, new_file, stop_trial)
+    if not demo_state then return end
+    local old_sequence_len = (type(demo_state.sequence) == "table") and #demo_state.sequence or 0
+    local was_playing = demo_state.is_playing == true
+    local old_play_index = demo_state.current_step or 1
+    local old_frame = demo_state.current_frame or 0
+    local had_demo_state = was_playing or old_sequence_len > 0 or (demo_state.p1_mask or 0) ~= 0
+    if not had_demo_state then return end
+
+    demo_state.is_playing = false
+    demo_state.current_frame = 0
+    demo_state.current_step = 1
+    demo_state.countdown = 0
+    demo_state.sequence = {}
+    demo_state.p1_mask = 0
+    demo_state._total_frames = 0
+    demo_state._piyo_waiting = false
+    demo_state._piyo_triggered = false
+    demo_state.current_file = nil
+    demo_state.current_file_path = nil
+    demo_state.current_file_name = nil
+
+    if stop_trial == true then
+        trial_state.is_playing = false
+        trial_state._was_playing = false
+        trial_state.success_timer = 0
+        trial_state.fail_timer = 0
+        trial_state.fail_reason = nil
+        trial_state.manual_reset_pending = false
+        trial_state.pending_auto_check = nil
+        trial_state._pending_current_absorb = nil
+    end
+    clear_pending_position_injection()
+
+    if rawget(_G, "CT_DEMO_TRACE") == true then
+        local old_name = tostring(old_file or ""):match("([^/\\]+)$") or tostring(old_file or "")
+        local new_name = tostring(new_file or ""):match("([^/\\]+)$") or tostring(new_file or "")
+        pcall(print, string.format(
+            "[ComboTrials.Demo] event=auto_demo_stopped reason=%s old_trial_name=%s new_trial_name=%s old_file=%s new_file=%s was_playing=%s old_play_index=%s old_frame=%s cleared_buffer=%s",
+            tostring(reason or "manual_stop"),
+            tostring(old_name),
+            tostring(new_name),
+            tostring(old_file or ""),
+            tostring(new_file or ""),
+            tostring(was_playing),
+            tostring(old_play_index),
+            tostring(old_frame),
+            tostring(old_sequence_len > 0)
+        ))
+    end
+end
+
+ctx.on_combo_file_change = function(info)
+    info = info or {}
+    local old_file = info.old_file or trial_state.current_file_path or trial_state.current_file
+    local new_file = info.new_file
+    local reason = info.reason or "trial_changed"
+    local same_file = old_file and new_file and tostring(old_file) == tostring(new_file)
+    if same_file and reason == "trial_changed" and info.force ~= true then return end
+    ctx.stop_demo_playback(reason, old_file, new_file, true)
+end
+
 local ComboTrials_D2D = require("func/ComboTrials_D2D")
 ComboTrials_D2D.init(ctx)
 
@@ -2701,6 +2763,10 @@ function file_system.selected_combo_path_for_view()
 end
 
 function file_system.request_combo_list_refresh(reason, reload_current_file)
+    if reload_current_file == true and demo_state and demo_state.is_playing and ctx.stop_demo_playback then
+        local current_file = trial_state.current_file_path or trial_state.current_file
+        ctx.stop_demo_playback("combo_list_refresh", current_file, current_file, true)
+    end
     file_system.combo_list_refresh_pending = true
     file_system.combo_list_refresh_pending_reload = file_system.combo_list_refresh_pending_reload or (reload_current_file == true)
     file_system.combo_list_refresh_pending_reason = file_system.combo_list_refresh_pending_reason or reason or "external change"
@@ -3216,6 +3282,14 @@ local function ct_handle_web_commands()
         if cmd == "record" then start_recording(0); ct_ticker("录制中") end
         if cmd == "start_trial" then load_and_start_trial(0); ct_ticker("连段训练已启动") end
         if cmd == "stop_trial" then
+            if ctx.stop_demo_playback then
+                ctx.stop_demo_playback(
+                    "manual_stop",
+                    demo_state.current_file_path or trial_state.current_file_path or trial_state.current_file,
+                    nil,
+                    true
+                )
+            end
             trial_state.is_playing = false; ct_ticker("连段训练已停止")
         end
         if cmd == "toggle_position" then
@@ -5910,12 +5984,22 @@ local function start_demo()
     demo_state._total_frames = 0
     demo_state._piyo_waiting = false
     demo_state._piyo_triggered = false
+    demo_state.current_file = trial_state.current_file
+    demo_state.current_file_path = trial_state.current_file_path
+    demo_state.current_file_name = trial_state.current_file_name
 
     print("[ComboTrials] DEMO Started for P1")
 end
 
 ctx.demo_state = demo_state
-ctx.stop_demo = function() demo_state.is_playing = false end
+ctx.stop_demo = function()
+    ctx.stop_demo_playback(
+        "manual_stop",
+        demo_state.current_file_path or trial_state.current_file_path or trial_state.current_file,
+        nil,
+        false
+    )
+end
 ctx.start_demo = start_demo
 
 local function can_start_combo_action()
@@ -5983,8 +6067,15 @@ ctx.commands = {
     end,
     stop_trial = function()
         if not trial_state.is_playing and not (demo_state and demo_state.is_playing) then return end
+        if ctx.stop_demo_playback then
+            ctx.stop_demo_playback(
+                "manual_stop",
+                demo_state.current_file_path or trial_state.current_file_path or trial_state.current_file,
+                nil,
+                true
+            )
+        end
         trial_state.is_playing = false
-        demo_state.is_playing = false
         ct_ticker("连段训练已停止")
     end,
     start_demo = function()
@@ -5997,7 +6088,7 @@ ctx.commands = {
     end,
     quit_demo = function()
         if not (demo_state and demo_state.is_playing) then return end
-        demo_state.is_playing = false
+        if ctx.stop_demo then ctx.stop_demo() end
     end,
     switch_position = function()
         if trial_state.is_recording then return end

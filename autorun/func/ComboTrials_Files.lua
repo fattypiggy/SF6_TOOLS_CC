@@ -56,6 +56,17 @@ function M.load_combo_from_file(path, force)
     if trial_state._xt_pending_save and not force then return false end
     if not path then return false end
 
+    local current_path = trial_state.current_file_path or trial_state.current_file
+    local path_changed = tostring(current_path or "") ~= tostring(path or "")
+    if ctx and ctx.on_combo_file_change and (path_changed or force == true) then
+        pcall(ctx.on_combo_file_change, {
+            reason = path_changed and "trial_changed" or "trial_reloaded",
+            old_file = current_path,
+            new_file = path,
+            force = force == true
+        })
+    end
+
     local loaded, load_error = load_combo_json(path)
     if not loaded then
         warn_combo_file_once(path, load_error or "JSON load failed")
@@ -94,6 +105,15 @@ function M.load_combo_from_file(path, force)
 end
 
 function M.clear_combo_state()
+    if ctx and ctx.on_combo_file_change then
+        pcall(ctx.on_combo_file_change, {
+            reason = "trial_changed",
+            old_file = trial_state.current_file_path or trial_state.current_file,
+            new_file = nil,
+            force = true
+        })
+    end
+
     if restore_trial_dummy_action_type then
         pcall(restore_trial_dummy_action_type)
     end
