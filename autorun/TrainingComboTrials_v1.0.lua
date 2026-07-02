@@ -3126,10 +3126,15 @@ local function _ct_check_knockdown(victim_obj)
     return (pose_st or 0) == 3
 end
 
+local function is_pressure_tail_step(step)
+    return Validator.is_pressure_tail_step(step)
+end
+
 local function is_post_hit_setup_step(step_idx)
     if not trial_state.sequence or not step_idx or step_idx < 1 then return false end
     local step = trial_state.sequence[step_idx]
     if not step or step.expected_combo ~= 0 then return false end
+    if is_pressure_tail_step(step) then return false end
     if step.has_hit == true then return false end
     local step_damage = tonumber(step.damage_at_step) or 0
     local prev = step_idx > 1 and trial_state.sequence[step_idx - 1] or nil
@@ -3937,7 +3942,8 @@ local function ct_player_validation(p_idx, p_state)
         if #trial_state.sequence > 0 and trial_state.current_step > #trial_state.sequence then
             local last_step = trial_state.sequence[#trial_state.sequence]
             local observed_combo = math.max(_pf.current_combo or 0, p_state.last_combo_count or 0, last_step.actual_combo or 0)
-            local should_finish_success = trial_state.success_timer == 0 and not is_hold_pending and not (trial_state.fail_timer and trial_state.fail_timer > 0) and (not last_step.expected_combo or last_step.expected_combo == 0 or observed_combo >= last_step.expected_combo)
+            local should_finish_success = trial_state.success_timer == 0 and not is_hold_pending and not (trial_state.fail_timer and trial_state.fail_timer > 0)
+                and (is_pressure_tail_step(last_step) or not last_step.expected_combo or last_step.expected_combo == 0 or observed_combo >= last_step.expected_combo)
             if should_finish_success then
                 trial_state.success_timer = d2d_cfg.fail_display_frames or 120
             end
@@ -3952,6 +3958,7 @@ local function ct_player_validation(p_idx, p_state)
 
                     local current_expected = trial_state.sequence[trial_state.current_step]
                     local is_reset_expected = current_expected and current_expected.expected_combo == 0
+                    local current_is_pressure_tail = is_pressure_tail_step(current_expected)
 
                     if last_validated and last_validated.expected_combo and last_validated.expected_combo > 0 then
                         if is_hold_pending then
@@ -3970,6 +3977,7 @@ local function ct_player_validation(p_idx, p_state)
                             end
                             trial_state.active_universal_hold = nil
                         elseif not _pf.opponent_knocked_down and not is_reset_expected
+                            and not current_is_pressure_tail
                             and not (last_validated.expected_combo == (trial_state.current_step >= 3 and trial_state.sequence[trial_state.current_step - 2].expected_combo or 0)) then
                             ComboTrialsModules.PendingAbsorb.clear(trial_state, "combo_dropped")
                             trial_state.fail_timer = d2d_cfg.fail_display_frames or 120
@@ -4020,6 +4028,41 @@ local function ct_player_validation(p_idx, p_state)
                 -- 60 frames (~1 sec) tolerance after the ideal timing
                 if frames_since > (delay + 60) then
                     local prev_step = trial_state.current_step > 1 and trial_state.sequence[trial_state.current_step - 1] or nil
+                    if is_pressure_tail_step(expected) then
+                        DebugTrace.record_match_probe(trial_state, {
+                            phase = "pressure_tail_timeout_skip",
+                            frame = engine_frame_count,
+                            trial_file = trial_state.current_file or trial_state.current_file_path,
+                            trial_filename = trial_state.current_file_name,
+                            character = p_state.profile_name,
+                            step = trial_state.current_step,
+                            trial_total = trial_state.sequence and #trial_state.sequence or 0,
+                            expected_id = expected.id,
+                            expected_motion = expected.motion,
+                            expected_combo = expected.expected_combo,
+                            expected_delay = delay,
+                            previous_verified_step = trial_state.current_step - 1,
+                            previous_id = prev_step and prev_step.id or nil,
+                            previous_motion = prev_step and prev_step.motion or nil,
+                            previous_expected_combo = prev_step and prev_step.expected_combo or nil,
+                            current_combo = _pf.current_combo or 0,
+                            combo_count = _pf.current_combo or 0,
+                            actual_hp = _pf.p_char.vital_new,
+                            frames_since_prev_step = frames_since,
+                            frame_diff = frames_since - delay,
+                            validation_role = expected.validation_role,
+                            allow_whiff = expected.allow_whiff,
+                            reject_reason = "pressure_tail_timeout_skipped"
+                        })
+                        expected.last_frame_diff = frames_since - delay
+                        expected.actual_combo = _pf.current_combo or 0
+                        trial_state.last_played_frame = engine_frame_count
+                        trial_state.current_step = trial_state.current_step + 1
+                        local next_step = trial_state.sequence[trial_state.current_step]
+                        if next_step and next_step.counter_type then
+                            set_dummy_counter_type(next_step.counter_type)
+                        end
+                    else
                     ComboTrialsModules.PendingAbsorb.clear(trial_state, "timeout")
                     trial_state.fail_timer = d2d_cfg.fail_display_frames or 120
                     local current_is_setup = is_post_hit_setup_step(trial_state.current_step)
@@ -4074,6 +4117,7 @@ local function ct_player_validation(p_idx, p_state)
                         expected_motion = expected.motion,
                         playback_state = "playing"
                     })
+                    end
                 end
             end
         end
@@ -5031,7 +5075,8 @@ local function ct_player_process_actions(p_idx, p_state, actions_to_process)
                             local trace_hp_ok = expected and Validator.check_hp(
                                 expected.expected_hp,
                                 process_act.current_hp,
-                                is_post_hit_setup_step((trial_state.current_step or 1) - 1)
+                                is_post_hit_setup_step((trial_state.current_step or 1) - 1),
+                                expected
                             ) or nil
                             match_probe.action_match = {
                                 matched = action_match.matched,
@@ -5152,7 +5197,8 @@ local function ct_player_process_actions(p_idx, p_state, actions_to_process)
                                             local chain_hp_ok = Validator.check_hp(
                                                 chain_expected.expected_hp,
                                                 process_act.current_hp,
-                                                is_post_hit_setup_step(chain_step - 1)
+                                                is_post_hit_setup_step(chain_step - 1),
+                                                chain_expected
                                             )
                                             chain_record.chain_combo_ok = chain_combo_ok
                                             chain_record.chain_hp_ok = chain_hp_ok
@@ -5272,7 +5318,28 @@ local function ct_player_process_actions(p_idx, p_state, actions_to_process)
                                 match_probe.combo_in_progress = combo_in_progress
                                 match_probe.just_confirmed_recent_absorb = just_confirmed_recent_absorb
 
-                                if expecting_dr and is_parry then
+                                if expected and is_pressure_tail_step(expected) then
+                                    if expected.finish_on_action == true then
+                                        match_probe.branch = "pressure_tail_wait_for_finish_action"
+                                        match_probe.reject_reason = "pressure_tail_action_mismatch_wait"
+                                        DebugTrace.record_match_probe(trial_state, match_probe)
+                                    else
+                                        match_probe.branch = "pressure_tail_whiff_tolerance"
+                                        match_probe.reject_reason = nil
+                                        DebugTrace.record_match_probe(trial_state, match_probe)
+                                        apply_matched_step(
+                                            expected,
+                                            act_id,
+                                            motion_str,
+                                            real_input_str,
+                                            process_act.synthetic and (process_act.engine_frame or engine_frame_count) or engine_frame_count,
+                                            _pf.current_combo or 0,
+                                            process_act.current_hp,
+                                            "pressure_tail_whiff",
+                                            action_match
+                                        )
+                                    end
+                                elseif expecting_dr and is_parry then
                                     -- Tolerance: Expecting DR, got Parry → ignore, wait for DR
                                     match_probe.reject_reason = "expecting_dr_got_parry_wait"
                                     DebugTrace.record_match_probe(trial_state, match_probe)

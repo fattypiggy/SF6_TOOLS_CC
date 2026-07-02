@@ -6,11 +6,20 @@ function Validator.calculate_frame_diff(actual_delay, expected_delay)
     return actual_delay - (expected_delay or 0)
 end
 
+function Validator.is_pressure_tail_step(step)
+    if not step then return false end
+    return step.validation_role == "pressure_tail"
+end
+
 function Validator.check_combo(params)
     local combo_ok = true
     local expected = params.expected
     local prev_step = params.prev_step
     local current_combo = params.current_combo or 0
+
+    if Validator.is_pressure_tail_step(expected) then
+        return true
+    end
 
     if prev_step and prev_step.expected_combo ~= nil then
         local skip_strict_check = (prev_step.is_projectile_hit == true)
@@ -44,8 +53,11 @@ function Validator.check_combo(params)
     return combo_ok
 end
 
-function Validator.check_hp(expected_hp, current_hp, is_oki)
+function Validator.check_hp(expected_hp, current_hp, is_oki, expected)
     local hp_ok = true
+    if Validator.is_pressure_tail_step(expected) then
+        return true
+    end
     if expected_hp ~= nil and current_hp ~= nil then
         -- HP Validation is strict only for post-hit setup/oki phases.
         if is_oki then

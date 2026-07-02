@@ -77,7 +77,8 @@ function PendingAbsorb.apply_matched_step(ctx, params)
     local hp_ok = ctx.Validator.check_hp(
         expected.expected_hp,
         actual_hp,
-        ctx.is_post_hit_setup_step(state.current_step - 1)
+        ctx.is_post_hit_setup_step(state.current_step - 1),
+        expected
     )
 
     ctx.DebugTrace.record_validation_debug(state, {
@@ -100,6 +101,14 @@ function PendingAbsorb.apply_matched_step(ctx, params)
         expected_hp = expected.expected_hp,
         previous_is_setup = ctx.is_post_hit_setup_step(state.current_step - 1),
         current_is_setup = ctx.is_post_hit_setup_step(state.current_step),
+        validation_role = expected.validation_role,
+        allow_whiff = expected.allow_whiff,
+        ignore_combo_check = expected.ignore_combo_check,
+        ignore_hp_check = expected.ignore_hp_check,
+        finish_on_action = expected.finish_on_action,
+        allow_hit = expected.allow_hit,
+        allow_block = expected.allow_block,
+        allow_counter = expected.allow_counter,
         frame_diff = frame_diff,
         match_reason = params.match_reason,
         recent_index = details and details.recent_index or nil,
@@ -111,8 +120,17 @@ function PendingAbsorb.apply_matched_step(ctx, params)
         local matched_step = state.current_step
         state.sequence[matched_step].has_hit = false
         state.sequence[matched_step].last_frame_diff = frame_diff
+        state.sequence[matched_step].actual_combo = combo_count
         state.current_step = state.current_step + 1
         PendingAbsorb.clear(state, "step_advanced")
+
+        if ctx.Validator.is_pressure_tail_step(expected)
+            and expected.finish_on_action == true
+            and matched_step == #state.sequence then
+            state.success_timer = ctx.d2d_cfg.fail_display_frames or 120
+            state.fail_timer = 0
+            state.fail_reason = nil
+        end
 
         local just_validated = state.sequence[state.current_step - 1]
         if not just_validated or just_validated.counter_type == 0 then
@@ -273,7 +291,8 @@ function PendingAbsorb.check(ctx, phase)
     local hp_ok = ctx.Validator.check_hp(
         expected.expected_hp,
         current_hp,
-        ctx.is_post_hit_setup_step(pending.step - 1)
+        ctx.is_post_hit_setup_step(pending.step - 1),
+        expected
     )
     probe.pending_combo_ok = combo_ok
     probe.pending_hp_ok = hp_ok
