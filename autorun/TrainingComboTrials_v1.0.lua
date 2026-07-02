@@ -4164,7 +4164,9 @@ function _G.CTSameDashFallback.build_candidate(p_state, detected_66_edge, detect
     local frames_since_prev_step = engine_frame_count - last_played
     local expected_delay = expected.delay_from_prev or 0
     local frame_diff = Validator.calculate_frame_diff(frames_since_prev_step, expected_delay)
-    local accepted = math.abs(frame_diff) <= 2
+    local early_window = 4
+    local late_window = 2
+    local accepted = frame_diff >= -early_window and frame_diff <= late_window
     local trace_fields = {
         step_index = trial_state.current_step,
         expected_id = expected.id,
@@ -4175,6 +4177,8 @@ function _G.CTSameDashFallback.build_candidate(p_state, detected_66_edge, detect
         frames_since_prev_step = frames_since_prev_step,
         expected_delay = expected_delay,
         frame_diff = frame_diff,
+        early_window = early_window,
+        late_window = late_window,
         accepted = accepted,
         reject_reason = accepted and nil or "timing_window"
     }
