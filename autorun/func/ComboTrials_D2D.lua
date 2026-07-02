@@ -938,14 +938,25 @@ local function d2d_draw_inner()
         end
         local is_succ = (trial_state.success_timer > 0) or final_visual_complete
 
-        -- Find the active display_line (the one containing current_step)
+        local visual_step_idx = trial_state.current_step or 1
+        local hold_step = trial_state._ui_step_hold_step
+        local hold_until = trial_state._ui_step_hold_until_frame
+        local frame_now = trial_state._engine_frame_count or 0
+        if mode == "playing" and hold_step and hold_until and frame_now <= hold_until then
+            visual_step_idx = math.max(1, math.min(hold_step, #trial_state.sequence))
+        elseif hold_until and frame_now > hold_until then
+            trial_state._ui_step_hold_step = nil
+            trial_state._ui_step_hold_until_frame = nil
+        end
+
+        -- Find the active display_line (the one containing visual_step_idx)
         local raw_visual_dl = 1
         for dl_idx, dl in ipairs(display_lines) do
-            if trial_state.current_step >= dl.first and trial_state.current_step <= dl.last then
+            if visual_step_idx >= dl.first and visual_step_idx <= dl.last then
                 raw_visual_dl = dl_idx
                 break
             end
-            if trial_state.current_step > dl.last then
+            if visual_step_idx > dl.last then
                 raw_visual_dl = dl_idx + 1
             end
         end

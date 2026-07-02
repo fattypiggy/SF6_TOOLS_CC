@@ -82,6 +82,7 @@ local function step_summary(step, idx)
         expected_hp = step.expected_hp,
         delay_from_prev = step.delay_from_prev,
         has_hit = step.has_hit,
+        display_only = step.display_only,
         actual_combo = step.actual_combo,
         last_frame_diff = step.last_frame_diff,
         counter_type = step.counter_type,
@@ -114,6 +115,8 @@ build_state_summary = function(state)
         trial_title = sequence_title(sequence),
         trial_step = current_step,
         trial_total = sequence and #sequence or 0,
+        ui_step_hold_step = state._ui_step_hold_step,
+        ui_step_hold_until_frame = state._ui_step_hold_until_frame,
         trial_playing = state.is_playing,
         trial_demo = state.trial_demo,
         training_active = rawget(_G, "CurrentTrainerMode"),
@@ -165,7 +168,8 @@ function DebugTrace.build_fail_dump(state, players)
             motion = step.motion,
             expected_combo = step.expected_combo,
             is_holdable = step.is_holdable,
-            delay_from_prev = step.delay_from_prev
+            delay_from_prev = step.delay_from_prev,
+            display_only = step.display_only
         }
         if i == state.current_step then
             s.STATUS = "<-- 失败位置"

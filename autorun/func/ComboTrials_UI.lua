@@ -998,8 +998,13 @@ re.on_frame(function()
             else
                 local total_steps = #trial_state.sequence
                 if total_steps > 0 then
-                    -- Use delayed visual step
-                    local display_step = trial_state.ui_visual_step or 1
+                    local display_step = trial_state.current_step or 1
+                    local hold_step = trial_state._ui_step_hold_step
+                    local hold_until = trial_state._ui_step_hold_until_frame
+                    local frame_now = trial_state._engine_frame_count or 0
+                    if hold_step and hold_until and frame_now <= hold_until then
+                        display_step = hold_step
+                    end
                     local current = math.min(display_step, total_steps)
                     line1 = string.format("[ 动作 %d / %d ]", current, total_steps)
                 else

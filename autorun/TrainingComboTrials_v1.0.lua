@@ -2596,6 +2596,8 @@ local function clear_trial_attempt_state(player_idx)
     trial_state._reset_grace = 15
     trial_state._final_finish_max_observed_combo = nil
     trial_state._pending_current_absorb = nil
+    trial_state._ui_step_hold_step = nil
+    trial_state._ui_step_hold_until_frame = nil
     trial_state.last_played_frame = engine_frame_count
     begin_trial_action_grace()
 
@@ -5148,6 +5150,52 @@ local function ct_player_process_actions(p_idx, p_state, actions_to_process)
                         end
 
                         if allow_input then
+                            while expected and expected.display_only == true do
+                                local display_step_idx = trial_state.current_step
+                                local last_played = trial_state.last_played_frame or engine_frame_count
+                                DebugTrace.record_match_probe(trial_state, {
+                                    phase = "display_only_skip",
+                                    branch = "display_only_skip",
+                                    skipped_display_only_step = true,
+                                    frame = engine_frame_count,
+                                    trial_file = trial_state.current_file or trial_state.current_file_path,
+                                    trial_filename = trial_state.current_file_name,
+                                    character = p_state.profile_name,
+                                    step = display_step_idx,
+                                    trial_total = trial_state.sequence and #trial_state.sequence or 0,
+                                    expected_id = expected.id,
+                                    expected_motion = expected.motion,
+                                    expected_combo = expected.expected_combo,
+                                    expected_delay = expected.delay_from_prev,
+                                    actual_action_id = act_id,
+                                    actual_action_name = act_name,
+                                    actual_motion = motion_str,
+                                    actual_input = real_input_str,
+                                    current_combo = _pf.current_combo or 0,
+                                    combo_count = _pf.current_combo or 0,
+                                    actual_hp = process_act.current_hp,
+                                    frames_since_prev_step = engine_frame_count - last_played,
+                                    display_only = true,
+                                    next_step = display_step_idx + 1,
+                                    next_expected_id = trial_state.sequence[display_step_idx + 1]
+                                        and trial_state.sequence[display_step_idx + 1].id or nil,
+                                    next_expected_motion = trial_state.sequence[display_step_idx + 1]
+                                        and trial_state.sequence[display_step_idx + 1].motion or nil
+                                })
+                                if trial_state.sequence[display_step_idx + 1] then
+                                    trial_state._ui_step_hold_step = display_step_idx + 1
+                                    trial_state._ui_step_hold_until_frame = engine_frame_count + 12
+                                end
+                                trial_state.current_step = trial_state.current_step + 1
+                                trial_state.ui_visual_step = trial_state.current_step
+                                expected = trial_state.sequence[trial_state.current_step]
+                            end
+                            if not expected then
+                                allow_input = false
+                            end
+                        end
+
+                        if allow_input then
                             local action_match = ActionMatcher.match_expected_action(expected, act_id, motion_str, real_input_str)
                             if process_act.synthetic then
                                 action_match.source = process_act.fallback_source or process_act.source
@@ -5759,8 +5807,19 @@ re.on_frame(function()
     local _display = (_p_idx == 0) and file_system.saved_combos_display_p1 or file_system.saved_combos_display_p2
     local _fidx = (_p_idx == 0) and (file_system.selected_file_idx_p1 or 1) or (file_system.selected_file_idx_p2 or 1)
     local _fname = _paths and _paths[_fidx] or ""
+    local _visual_step = trial_state.current_step or 0
+    local _hold_step = trial_state._ui_step_hold_step
+    local _hold_until = trial_state._ui_step_hold_until_frame
+    local _frame_now = trial_state._engine_frame_count or engine_frame_count
+    if _hold_step and _hold_until and _frame_now <= _hold_until then
+        _visual_step = _hold_step
+    elseif _hold_until and _frame_now > _hold_until then
+        trial_state._ui_step_hold_step = nil
+        trial_state._ui_step_hold_until_frame = nil
+    end
     _G.ComboTrials_CurrentFile = _fname:match("([^/\\]+)$") or _fname
-    _G.ComboTrials_CurrentStep = trial_state.current_step or 0
+    _G.ComboTrials_CurrentStep = _visual_step
+    _G.ComboTrials_ValidationStep = trial_state.current_step or 0
     _G.ComboTrials_TotalSteps = trial_state.sequence and #trial_state.sequence or 0
     _G.ComboTrials_IsPlaying = trial_state.is_playing or false
     _G.ComboTrials_IsRecording = trial_state.is_recording or false
@@ -5815,6 +5874,7 @@ re.on_frame(function()
     if is_game_paused then return end
 
     engine_frame_count = engine_frame_count + 1
+    trial_state._engine_frame_count = engine_frame_count
     logger_process_game_state()
 
     if trial_state.is_recording then
