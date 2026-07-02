@@ -252,6 +252,7 @@ local trial_state = {
     _rec_hit_type = nil,   -- CH/PC detected on first hit
     _rec_scene_state = nil,
     _saved_unique_resources = nil,
+    _saved_drive_settings = nil,
     _saved_vital_p1 = nil,
     _saved_vital_p2 = nil,
     _pending_victim_hp = nil,
@@ -1256,6 +1257,16 @@ local function snapshot_gauges(attacker_idx)
         local v_hp = victim.vital_new
         local a_dr = attacker.focus_new
         local a_sa = atk_team.mSuperGauge
+        local d_dr = victim.focus_new
+        local d_burnout = nil
+        local tm = sdk.get_managed_singleton("app.training.TrainingManager")
+        local t_data = tm and tm:get_field("_tData")
+        local parameter_setting = t_data and t_data:get_field("ParameterSetting")
+        local player_datas = parameter_setting and parameter_setting.PlayerDatas
+        local defender_params = player_datas and player_datas[victim_idx]
+        if defender_params and defender_params.Is_DG_Break ~= nil then
+            d_burnout = defender_params.Is_DG_Break == true or defender_params.Is_DG_Break == 1
+        end
 
         if v_hp == nil or a_dr == nil or a_sa == nil then return end
 
@@ -1263,6 +1274,8 @@ local function snapshot_gauges(attacker_idx)
             victim_hp = v_hp,
             attacker_drive = a_dr,
             attacker_super = a_sa,
+            defender_drive = d_dr,
+            defender_burnout = d_burnout,
             -- Min trackers (updated each frame in on_frame)
             min_victim_hp = v_hp,
             min_atk_drive = a_dr,
@@ -1289,8 +1302,49 @@ local function reinject_trial_vital()
     clear_trial_vital_state()
 end
 
+local DRIVE_SETTING_FIELDS = {
+    "DG_Type",
+    "DG_Stock",
+    "DG_Point",
+    "Is_DG_Point_Lock",
+    "Is_DG_Break",
+    "Is_DG_Recovery_Timer",
+    "DG_Timer"
+}
+
 local function restore_trial_vital()
     clear_trial_vital_state()
+
+    local saved_drive_settings = trial_state._saved_drive_settings
+    if type(saved_drive_settings) ~= "table" then return end
+
+    local tm = sdk.get_managed_singleton("app.training.TrainingManager")
+    if not tm then return end
+
+    local t_data = tm:get_field("_tData")
+    if not t_data then return end
+
+    local parameter_setting = t_data:get_field("ParameterSetting")
+    if not parameter_setting then return end
+
+    local player_datas = parameter_setting.PlayerDatas
+    if not player_datas then return end
+
+    local changed = false
+    for idx, settings in pairs(saved_drive_settings) do
+        local params = player_datas[idx]
+        if params and type(settings) == "table" then
+            for _, field_name in ipairs(DRIVE_SETTING_FIELDS) do
+                if settings[field_name] ~= nil then
+                    params[field_name] = settings[field_name]
+                    changed = true
+                end
+            end
+        end
+    end
+
+    trial_state._saved_drive_settings = nil
+    if changed then tm._IsReqRefresh = true end
 end
 
 -- Sets the Dummy Counter state (0=Normal, 1=Counter, 2=Punish Counter)
@@ -2139,6 +2193,35 @@ end
 local function apply_trial_training_environment()
     local first_ct = trial_state.sequence and trial_state.sequence[1] and trial_state.sequence[1].counter_type or 0
     unique_resources.apply_recorded()
+    local first_step = trial_state.sequence and trial_state.sequence[1]
+    local snapshot_gauges = type(first_step) == "table" and first_step.snapshot_gauges or nil
+    if type(snapshot_gauges) == "table" and snapshot_gauges.defender_burnout == true then
+        local attacker_idx = tonumber(trial_state.playing_player or 0) or 0
+        local defender_idx = 1 - attacker_idx
+        local tm = sdk.get_managed_singleton("app.training.TrainingManager")
+        local t_data = tm and tm:get_field("_tData")
+        local parameter_setting = t_data and t_data:get_field("ParameterSetting")
+        local player_datas = parameter_setting and parameter_setting.PlayerDatas
+        local defender_params = player_datas and player_datas[defender_idx]
+        if defender_params then
+            if type(trial_state._saved_drive_settings) ~= "table" then
+                trial_state._saved_drive_settings = {}
+            end
+            if trial_state._saved_drive_settings[defender_idx] == nil then
+                local saved_drive = {}
+                for _, field_name in ipairs(DRIVE_SETTING_FIELDS) do
+                    local value = defender_params[field_name]
+                    if value ~= nil then saved_drive[field_name] = value end
+                end
+                if next(saved_drive) ~= nil then trial_state._saved_drive_settings[defender_idx] = saved_drive end
+            end
+            local defender_drive = math.max(0, tonumber(snapshot_gauges.defender_drive) or 0)
+            defender_params.DG_Point = defender_drive
+            defender_params.DG_Stock = math.floor((defender_drive + 5000) / 10000)
+            defender_params.Is_DG_Break = true
+            if tm then tm._IsReqRefresh = true end
+        end
+    end
     if trial_requires_dummy_crouch() then
         set_dummy_action_type(DUMMY_ACTION_CROUCH)
     else
@@ -5850,6 +5933,13 @@ function save_trial_sequence(meta)
             stats.super_used = math.max(0, init.attacker_super - (init.min_atk_super or init.attacker_super))
         end
         trial_state.sequence[1].combo_stats = stats
+        if init and init.defender_burnout == true then
+            local snapshot = trial_state.sequence[1].snapshot_gauges
+            if type(snapshot) ~= "table" then snapshot = {} end
+            snapshot.defender_burnout = true
+            snapshot.defender_drive = tonumber(init.defender_drive) or 0
+            trial_state.sequence[1].snapshot_gauges = snapshot
+        end
         if (trial_state.sequence[1].counter_type == nil or trial_state.sequence[1].counter_type == 0) and stats.hit_type then
             local inferred_ct = counter_type_from_hit_type(stats.hit_type)
             if inferred_ct ~= 0 then trial_state.sequence[1].counter_type = inferred_ct end
@@ -6025,7 +6115,12 @@ end
 
 local function start_demo()
     if not trial_state.sequence or #trial_state.sequence == 0 then return end
-    if trial_state.sequence[1] and trial_state.sequence[1].has_piyo and not _G._allow_stun_demo then return end
+    local first_stun_step = trial_state.sequence[1]
+    local first_stun_gauges = type(first_stun_step) == "table" and first_stun_step.snapshot_gauges or nil
+    local manual_stun_demo_required = type(first_stun_step) == "table"
+        and first_stun_step.has_piyo == true
+        and not (type(first_stun_gauges) == "table" and first_stun_gauges.defender_burnout == true)
+    if manual_stun_demo_required and not _G._allow_stun_demo then return end
     
     -- 1. Check for embedded timeline directly in the file (Merged files)
     local timeline = trial_state.sequence[1].timeline

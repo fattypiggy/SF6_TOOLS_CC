@@ -573,8 +573,12 @@ local function draw_single_line_content()
                 if ctx.reset_visuals then ctx.reset_visuals() end
             end
             imgui.same_line(0, sp)
-            local has_piyo = trial_state.sequence and trial_state.sequence[1] and trial_state.sequence[1].has_piyo
-            if has_piyo and not _G._allow_stun_demo then
+            local first_stun_step = trial_state.sequence and trial_state.sequence[1]
+            local first_stun_gauges = type(first_stun_step) == "table" and first_stun_step.snapshot_gauges or nil
+            local manual_stun_demo_required = type(first_stun_step) == "table"
+                and first_stun_step.has_piyo == true
+                and not (type(first_stun_gauges) == "table" and first_stun_gauges.defender_burnout == true)
+            if manual_stun_demo_required and not _G._allow_stun_demo then
                 imgui.push_style_color(21, 0xFF444444)
                 imgui.push_style_color(22, 0xFF444444)
                 imgui.push_style_color(23, 0xFF444444)
@@ -689,8 +693,12 @@ local function draw_combo_trials_content(is_floating)
             end
         end
         if mode_all_stacked then imgui.spacing() end
-        local has_piyo2 = trial_state.sequence and trial_state.sequence[1] and trial_state.sequence[1].has_piyo
-        if has_piyo2 and not is_demo_active and not _G._allow_stun_demo then
+        local first_stun_step = trial_state.sequence and trial_state.sequence[1]
+        local first_stun_gauges = type(first_stun_step) == "table" and first_stun_step.snapshot_gauges or nil
+        local manual_stun_demo_required = type(first_stun_step) == "table"
+            and first_stun_step.has_piyo == true
+            and not (type(first_stun_gauges) == "table" and first_stun_gauges.defender_burnout == true)
+        if manual_stun_demo_required and not is_demo_active and not _G._allow_stun_demo then
             imgui.push_style_color(21, 0xFF444444)
             imgui.push_style_color(22, 0xFF444444)
             imgui.push_style_color(23, 0xFF444444)
