@@ -95,6 +95,16 @@ end
 local _dropdown_highlight_idx = nil
 local _dropdown_scroll_needed = false
 
+local CONTROL_CLASSIC_COLOR = 0xFFDDA0CC
+local CONTROL_MODERN_COLOR = 0xFF66A0DD
+
+local function combo_control_color(value)
+    local mode = tostring(value or ""):lower()
+    if mode == "classic" or mode:find("^%[c%]") then return CONTROL_CLASSIC_COLOR end
+    if mode == "modern" or mode:find("^%[m%]") then return CONTROL_MODERN_COLOR end
+    return nil
+end
+
 local function combo_openable(label, current_idx, items, force_open, btn_width)
     local popup_id = label .. "_popup"
     local preview = (items and items[current_idx]) or "---"
@@ -107,7 +117,10 @@ local function combo_openable(label, current_idx, items, force_open, btn_width)
 
     -- Full-width button with down arrow
     local w = btn_width or -1
+    local preview_color = combo_control_color(preview)
+    if preview_color then imgui.push_style_color(0, preview_color) end
     local clicked = imgui.button(preview .. "  \xe2\x96\xbc" .. label, Vector2f.new(w, 0))
+    if preview_color then imgui.pop_style_color(1) end
 
     local should_open = force_open or clicked
     if should_open then
@@ -134,10 +147,13 @@ local function combo_openable(label, current_idx, items, force_open, btn_width)
 
         for i = 1, #items do
             local is_highlighted = (i == _dropdown_highlight_idx)
+            local row_color = combo_control_color(items[i])
+            if row_color then imgui.push_style_color(0, row_color) end
             if imgui.menu_item(items[i], "", is_highlighted, true) then
                 new_idx = i
                 changed = true
             end
+            if row_color then imgui.pop_style_color(1) end
             -- Scroll to highlighted item
             if is_highlighted and _dropdown_scroll_needed then
                 pcall(imgui.set_scroll_here_y)
@@ -151,6 +167,191 @@ local function combo_openable(label, current_idx, items, force_open, btn_width)
     end
 
     return changed, new_idx
+end
+
+local CONTROL_FILTER_VALUES = { "auto", "all", "classic", "modern" }
+local CONTROL_FILTER_LABELS = { "Auto", "All", "Classic", "Modern" }
+
+local function combo_control_filter_index()
+    local current = "auto"
+    if file_system then
+        current = tostring(file_system.combo_control_filter or "auto"):lower()
+    end
+    for idx, value in ipairs(CONTROL_FILTER_VALUES) do
+        if value == current then return idx end
+    end
+    return 1
+end
+
+local function apply_combo_control_filter_idx(idx)
+    local value = CONTROL_FILTER_VALUES[idx or 1] or "auto"
+    if not file_system then return end
+    if file_system.combo_control_filter == value then return end
+    file_system.combo_control_filter = value
+    if file_system.refresh_combo_list_preserve_selection then
+        file_system.refresh_combo_list_preserve_selection(false)
+    elseif refresh_combo_list then
+        refresh_combo_list()
+    end
+end
+
+local function draw_combo_control_filter(id, width)
+    if file_system and file_system.combo_control_filter == "auto" and file_system.effective_combo_control_filter then
+        local effective_filter = file_system.effective_combo_control_filter("auto")
+        if effective_filter ~= file_system.combo_control_effective_filter then
+            file_system.combo_control_effective_filter = effective_filter
+            if file_system.refresh_combo_list_preserve_selection then
+                file_system.refresh_combo_list_preserve_selection(false)
+            end
+        end
+    end
+
+    local current_filter = tostring(file_system and file_system.combo_control_filter or "auto"):lower()
+    local filter_color = nil
+    if current_filter == "auto" then
+        filter_color = combo_control_color(file_system and file_system.combo_control_effective_filter or "classic")
+    else
+        filter_color = combo_control_color(current_filter)
+    end
+    if filter_color then imgui.push_style_color(0, filter_color) end
+    imgui.push_item_width(width)
+    local changed, new_idx = imgui.combo("##ControlFilter" .. tostring(id or ""), combo_control_filter_index(), CONTROL_FILTER_LABELS)
+    imgui.pop_item_width()
+    if filter_color then imgui.pop_style_color(1) end
+    if changed then apply_combo_control_filter_idx(new_idx) end
+end
+
+local function combo_empty_text(player_label)
+    local filter = tostring(file_system and file_system.combo_control_filter or "auto"):lower()
+    local effective_filter = filter
+    if filter == "auto" then
+        effective_filter = tostring(file_system and file_system.combo_control_effective_filter or "classic"):lower()
+    end
+    local skipped = (file_system and file_system.skipped_combos_p1 or 0) > 0
+    if skipped then return "连段文件无法读取（查看日志）" end
+    if effective_filter == "modern" then return "没有 Modern 文件" end
+    if effective_filter == "classic" then return "没有 Classic 文件" end
+    return "没有 " .. tostring(player_label or "P1") .. " 文件"
+end
+
+local function draw_top_combo_picker(id, dd_w, sp)
+    local filter_w = math.max(76, math.min(110, dd_w * 0.32))
+    local filtered_dd_w = math.max(50, dd_w - filter_w - sp)
+    draw_combo_control_filter(id, filter_w)
+    imgui.same_line(0, sp)
+
+    if #file_system.saved_combos_display_p1 == 0 then
+        imgui.push_item_width(filtered_dd_w)
+        imgui.combo("##EmptyP1", 1, { combo_empty_text("P1") })
+        imgui.pop_item_width()
+        return
+    end
+
+    local should_open = (_G.ComboTrials_OpenDropdown == true)
+    local changed, new_idx = combo_openable("##FilesP1", file_system.selected_file_idx_p1, file_system.saved_combos_display_p1, should_open, filtered_dd_w)
+    if changed then
+        file_system.selected_file_idx_p1 = new_idx
+        load_and_start_trial(0)
+    end
+end
+
+local function update_replay_recording_status(is_replay_mode)
+    if _G.ComboTrials_ReplayCancelPlayer ~= nil then
+        local cp = _G.ComboTrials_ReplayCancelPlayer
+        _G.ComboTrials_ReplayCancelPlayer = nil
+        if cp == 0 then _replay_status_p1 = "canceled" else _replay_status_p2 = "canceled" end
+        _replay_saved_clock = os.clock()
+    end
+
+    if _G.ComboTrials_ReplaySavePlayer ~= nil then
+        _replay_save_player = _G.ComboTrials_ReplaySavePlayer
+        _G.ComboTrials_ReplaySavePlayer = nil
+    end
+    if _G.ComboTrials_ReplayCanceled ~= nil then
+        local cp = _G.ComboTrials_ReplayCanceled
+        _G.ComboTrials_ReplayCanceled = nil
+        if cp == 0 then _replay_status_p1 = "canceled" else _replay_status_p2 = "canceled" end
+        _replay_saved_clock = os.clock()
+    end
+    if _G.ComboTrials_PendingSaveCanceled ~= nil then
+        local cp = _G.ComboTrials_PendingSaveCanceled
+        _G.ComboTrials_PendingSaveCanceled = nil
+        if cp == 0 then _replay_status_p1 = "canceled"
+        elseif cp == 1 then _replay_status_p2 = "canceled" end
+        _replay_saved_clock = os.clock()
+    end
+
+    if _prev_is_recording and not trial_state.is_recording then
+        local cur_st = (_replay_save_player == 0) and _replay_status_p1 or _replay_status_p2
+        if cur_st ~= "canceled" then
+            _replay_save_clock = os.clock()
+            _replay_saved_clock = 0
+            if _replay_save_player == 0 then _replay_status_p1 = "saving"
+            elseif _replay_save_player == 1 then _replay_status_p2 = "saving" end
+        end
+    end
+    _prev_is_recording = trial_state.is_recording
+
+    local now = os.clock()
+    for _, pi in ipairs({0, 1}) do
+        local st = (pi == 0) and _replay_status_p1 or _replay_status_p2
+        if st == "saving" and _replay_save_clock > 0 then
+            local fn = _G.ComboTrials_LastSavedFilename
+            local saved_pi = _G.ComboTrials_LastSavedPlayer
+            if fn and (saved_pi == nil or saved_pi == pi) then
+                if pi == 0 then _replay_status_p1 = "saved" else _replay_status_p2 = "saved" end
+                _replay_saved_clock = now
+                fn = fn:gsub("%.json$", "")
+                if pi == 0 then _replay_saved_fname_p1 = fn else _replay_saved_fname_p2 = fn end
+                _G.ComboTrials_LastSavedFilename = nil
+                _G.ComboTrials_LastSavedPlayer = nil
+            end
+        elseif st == "saved" and _replay_saved_clock > 0 then
+            if now - _replay_saved_clock >= 3.0 then
+                if pi == 0 then _replay_status_p1 = "waiting" else _replay_status_p2 = "waiting" end
+            end
+        elseif st == "canceled" and _replay_saved_clock > 0 then
+            if now - _replay_saved_clock >= 1.0 then
+                if pi == 0 then _replay_status_p1 = "waiting" else _replay_status_p2 = "waiting" end
+            end
+        end
+    end
+
+    if trial_state.is_recording then
+        if trial_state.recording_player == 0 then _replay_status_p1 = "recording"
+        elseif trial_state.recording_player == 1 then _replay_status_p2 = "recording" end
+    end
+
+    return now
+end
+
+local function replay_status_label(player_idx, width, now)
+    local st = (player_idx == 0) and _replay_status_p1 or _replay_status_p2
+    local label, color
+    if st == "waiting" then
+        label = "等待 P" .. (player_idx + 1) .. " 录制"
+        color = COLORS.DarkGrey
+    elseif st == "recording" then
+        label = "录制中"
+        color = COLORS.Red
+    elseif st == "saving" then
+        local dots_count = math.floor(((now or os.clock()) - _replay_save_clock) / 0.333) % 3 + 1
+        label = "正在保存" .. string.rep(".", dots_count)
+        color = COLORS.Orange
+    elseif st == "saved" then
+        local fn = (player_idx == 0) and _replay_saved_fname_p1 or _replay_saved_fname_p2
+        label = fn and ("已保存为 " .. fn) or "录制已保存"
+        color = COLORS.Green
+    elseif st == "canceled" then
+        label = "录制已取消"
+        color = COLORS.Orange
+    else
+        label = "---"
+        color = COLORS.DarkGrey
+    end
+    imgui.push_style_color(0, color)
+    imgui.button(label .. "##status_p" .. player_idx, Vector2f.new(width, 0))
+    imgui.pop_style_color(1)
 end
 
 local styled_button = UIKit.styled_button
@@ -345,128 +546,12 @@ local function draw_single_line_content()
     local is_replay_rec_p1 = (trial_state.is_recording and trial_state.recording_player == 0 and is_replay_mode)
     local is_replay_rec_p2 = (trial_state.is_recording and trial_state.recording_player == 1 and is_replay_mode)
 
-    -- Helper: draw a dropdown
-    local function draw_dd(id, display_list, selected_idx, width, on_change)
-        if #display_list == 0 then
-            imgui.push_item_width(width)
-            imgui.combo("##Empty" .. id, 1, { "没有文件" })
-            imgui.pop_item_width()
-        else
-            local changed, new_idx = combo_openable("##" .. id, selected_idx or 1, display_list, false, width)
-            if changed then on_change(new_idx) end
-        end
-    end
-
     -- === STATUS ENGINE (shared by replay and training) ===
-
-    -- Pick up cancel flag from external actions
-    if _G.ComboTrials_ReplayCancelPlayer ~= nil then
-        local cp = _G.ComboTrials_ReplayCancelPlayer
-        _G.ComboTrials_ReplayCancelPlayer = nil
-        if cp == 0 then _replay_status_p1 = "canceled" else _replay_status_p2 = "canceled" end
-        _replay_saved_clock = os.clock()
-    end
-
-    -- Pick up save flag from external actions
-    if _G.ComboTrials_ReplaySavePlayer ~= nil then
-        _replay_save_player = _G.ComboTrials_ReplaySavePlayer
-        _G.ComboTrials_ReplaySavePlayer = nil
-    end
-    if _G.ComboTrials_ReplayCanceled ~= nil then
-        local cp = _G.ComboTrials_ReplayCanceled
-        _G.ComboTrials_ReplayCanceled = nil
-        if cp == 0 then _replay_status_p1 = "canceled" else _replay_status_p2 = "canceled" end
-        _replay_saved_clock = os.clock()
-    end
-    if _G.ComboTrials_PendingSaveCanceled ~= nil then
-        local cp = _G.ComboTrials_PendingSaveCanceled
-        _G.ComboTrials_PendingSaveCanceled = nil
-        if cp == 0 then _replay_status_p1 = "canceled"
-        elseif cp == 1 then _replay_status_p2 = "canceled" end
-        _replay_saved_clock = os.clock()
-    end
-
-    -- Detect recording stop (transition is_recording true->false), skip if canceled
-    if _prev_is_recording and not trial_state.is_recording then
-        local cur_st = (_replay_save_player == 0) and _replay_status_p1 or _replay_status_p2
-        if cur_st ~= "canceled" then
-            _replay_save_clock = os.clock()
-            _replay_saved_clock = 0
-            if _replay_save_player == 0 then _replay_status_p1 = "saving"
-            elseif _replay_save_player == 1 then _replay_status_p2 = "saving" end
-        end
-    end
-    _prev_is_recording = trial_state.is_recording
-
-    -- Update saving/saved animation
-    local now = os.clock()
-    for _, pi in ipairs({0, 1}) do
-        local st = (pi == 0) and _replay_status_p1 or _replay_status_p2
-        if st == "saving" and _replay_save_clock > 0 then
-            local fn = _G.ComboTrials_LastSavedFilename
-            local saved_pi = _G.ComboTrials_LastSavedPlayer
-            if fn and (saved_pi == nil or saved_pi == pi) then
-                if pi == 0 then _replay_status_p1 = "saved" else _replay_status_p2 = "saved" end
-                _replay_saved_clock = now
-                fn = fn:gsub("%.json$", "")
-                if pi == 0 then _replay_saved_fname_p1 = fn else _replay_saved_fname_p2 = fn end
-                _G.ComboTrials_LastSavedFilename = nil
-                _G.ComboTrials_LastSavedPlayer = nil
-            end
-        elseif st == "saved" and _replay_saved_clock > 0 then
-            if now - _replay_saved_clock >= 3.0 then
-                if pi == 0 then _replay_status_p1 = "waiting" else _replay_status_p2 = "waiting" end
-            end
-        elseif st == "canceled" and _replay_saved_clock > 0 then
-            if now - _replay_saved_clock >= 1.0 then
-                if pi == 0 then _replay_status_p1 = "waiting" else _replay_status_p2 = "waiting" end
-            end
-        end
-    end
-
-    -- Update status based on current recording state
-    if trial_state.is_recording then
-        if trial_state.recording_player == 0 then _replay_status_p1 = "recording"
-        elseif trial_state.recording_player == 1 then _replay_status_p2 = "recording" end
-    end
-
-    -- Render status label helper
-    local function replay_status_label(player_idx, width)
-        local st = (player_idx == 0) and _replay_status_p1 or _replay_status_p2
-        local label, color
-        if st == "waiting" then
-            label = "等待 P" .. (player_idx + 1) .. " 录制"
-            color = COLORS.DarkGrey
-        elseif st == "recording" then
-            label = "录制中"
-            color = COLORS.Red
-        elseif st == "saving" then
-            local dots_count = math.floor((now - _replay_save_clock) / 0.333) % 3 + 1
-            label = "正在保存" .. string.rep(".", dots_count)
-            color = COLORS.Orange
-        elseif st == "saved" then
-            local fn = (player_idx == 0) and _replay_saved_fname_p1 or _replay_saved_fname_p2
-            if fn then
-                label = "已保存为 " .. fn
-            else
-                label = "录制已保存"
-            end
-            color = COLORS.Green
-        elseif st == "canceled" then
-            label = "录制已取消"
-            color = COLORS.Orange
-        else
-            label = "---"
-            color = COLORS.DarkGrey
-        end
-        imgui.push_style_color(0, color)
-        imgui.button(label .. "##status_p" .. player_idx, Vector2f.new(width, 0))
-        imgui.pop_style_color(1)
-    end
+    local now = update_replay_recording_status(is_replay_mode)
 
     if is_replay_mode then
         -- === REPLAY : status P1 | btn | btn | status P2 ===
-        replay_status_label(0, replay_dd_w)
+        replay_status_label(0, replay_dd_w, now)
         imgui.same_line(0, sp)
         if trial_state.is_recording then
             if styled_sf6_button("停止并保存", true, replay_btn_w, true, false, TRIAL_COLORS) then _replay_save_player = trial_state.recording_player; stop_recording_and_save() end
@@ -483,7 +568,7 @@ local function draw_single_line_content()
             if styled_sf6_button("录制 P2", false, replay_btn_w, true, false, P2_COLORS) then _replay_save_player = 1; start_recording(1) end
         end
         imgui.same_line(0, sp)
-        replay_status_label(1, replay_dd_w)
+        replay_status_label(1, replay_dd_w, now)
     elseif trial_state.is_recording or (_replay_status_p1 ~= "waiting" and not is_replay_mode) then
         -- === TRAINING RECORD (or post-record animation) ===
         if trial_state.is_recording then
@@ -491,7 +576,7 @@ local function draw_single_line_content()
             _replay_save_player = trial_state.recording_player or 0
         end
 
-        replay_status_label(0, dd_w)
+        replay_status_label(0, dd_w, now)
         imgui.same_line(0, sp)
         if trial_state.is_recording then
             if styled_sf6_button("停止并保存", true, dynamic_rec_w, true, false, TRIAL_COLORS) then _replay_save_player = trial_state.recording_player; stop_recording_and_save() end
@@ -505,20 +590,7 @@ local function draw_single_line_content()
         end
     elseif is_demo_active then
         -- === DEMO ===
-        if #file_system.saved_combos_display_p1 == 0 then
-            imgui.push_item_width(dd_w)
-            local empty_text = (file_system.skipped_combos_p1 or 0) > 0
-                and "连段文件无法读取（查看日志）" or "没有 P1 文件"
-            imgui.combo("##EmptyP1", 1, { empty_text })
-            imgui.pop_item_width()
-        else
-            local should_open = (_G.ComboTrials_OpenDropdown == true)
-            local f1_changed, new_idx1 = combo_openable("##FilesP1", file_system.selected_file_idx_p1, file_system.saved_combos_display_p1, should_open, dd_w)
-            if f1_changed then
-                file_system.selected_file_idx_p1 = new_idx1
-                load_and_start_trial(0)
-            end
-        end
+        draw_top_combo_picker("TopDemo", dd_w, sp)
         imgui.same_line(0, sp)
         if styled_sf6_button("重播演示", false, dynamic_rec_w, true, false, TRIAL_COLORS) then
             if ctx.start_demo then ctx.start_demo() end
@@ -529,20 +601,7 @@ local function draw_single_line_content()
         end
     else
         -- Normal / Playing mode: P1 dropdown + idle buttons, or playback controls
-        if #file_system.saved_combos_display_p1 == 0 then
-            imgui.push_item_width(dd_w)
-            local empty_text = (file_system.skipped_combos_p1 or 0) > 0
-                and "连段文件无法读取（查看日志）" or "没有 P1 文件"
-            imgui.combo("##EmptyP1", 1, { empty_text })
-            imgui.pop_item_width()
-        else
-            local should_open = (_G.ComboTrials_OpenDropdown == true)
-            local f1_changed, new_idx1 = combo_openable("##FilesP1", file_system.selected_file_idx_p1, file_system.saved_combos_display_p1, should_open, dd_w)
-            if f1_changed then
-                file_system.selected_file_idx_p1 = new_idx1
-                load_and_start_trial(0)
-            end
-        end
+        draw_top_combo_picker("TopNormal", dd_w, sp)
         imgui.same_line(0, sp)
         local btn_w = trial_state.is_playing and actual_btn_w or idle_btn_w
         if trial_state.is_playing then
@@ -656,12 +715,13 @@ local function draw_combo_trials_content(is_floating)
     -- =====================================
     imgui.begin_group()
     if not is_floating then imgui.text_colored("1. 文件管理", COLORS.Cyan) end
+    draw_combo_control_filter("Main", math.min(160, col1_w))
+    imgui.spacing()
 
     -- DROPDOWN COMBO FILES (full width)
     if #file_system.saved_combos_display_p1 == 0 then
         imgui.push_item_width(col1_w)
-        local empty_text = (file_system.skipped_combos_p1 or 0) > 0
-            and "连段文件无法读取（查看日志）" or "没有 P1 文件"
+        local empty_text = combo_empty_text("P1")
         imgui.combo("##EmptyP1", 1, { empty_text })
         imgui.pop_item_width()
     else

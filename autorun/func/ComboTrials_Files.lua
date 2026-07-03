@@ -6,6 +6,7 @@
 local json = json
 local fs = fs
 local log = log
+local sdk = sdk
 
 local M = {}
 
@@ -50,6 +51,22 @@ local function load_combo_json(path)
     local valid, reason = is_valid_combo_sequence(loaded)
     if not valid then return nil, reason end
     return loaded
+end
+
+local function combo_control_type_from_sequence(sequence)
+    local first = type(sequence) == "table" and sequence[1] or nil
+    local meta = type(first) == "table" and first._xt_meta or nil
+    if type(meta) ~= "table" then return "classic" end
+
+    local control_type = tostring(meta.control_type or ""):lower()
+    local input_profile = tostring(meta.timeline_input_profile or ""):lower()
+    if control_type == "modern" or input_profile == "modern" then return "modern" end
+    if control_type == "classic" then return "classic" end
+    return "classic"
+end
+
+local function combo_control_label(control_type)
+    return control_type == "modern" and "[M]" or "[C]"
 end
 
 function M.load_combo_from_file(path, force)
@@ -192,12 +209,69 @@ local function sanitize_utf8_display(value)
     return table.concat(out)
 end
 
-local function combo_display_name_from_file(filepath)
-    local fallback = sanitize_utf8_display(filepath:match("([^/\\]+)$") or filepath)
+local function escape_lua_pattern(value)
+    return tostring(value or ""):gsub("([^%w])", "%%%1")
+end
+
+local function combo_info_from_file(filepath, char_name)
+    local filename = filepath:match("([^/\\]+)$") or filepath
+    local fallback = sanitize_utf8_display(filename)
     local sequence, load_error = load_combo_json(filepath)
     if not sequence then
         return nil, load_error or "JSON load failed"
     end
+    local control_type = combo_control_type_from_sequence(sequence)
+
+    local function combo_file_key(name)
+        local key = tostring(name or "")
+        key = key:gsub("%.[Jj][Ss][Oo][Nn]$", "")
+
+        if type(char_name) == "string" and char_name ~= "" then
+            key = key:gsub("^" .. escape_lua_pattern(char_name) .. "_", "")
+        else
+            key = key:gsub("^[^_]+_(COMBO_)", "%1")
+            key = key:gsub("^[^_]+_(OKI_)", "%1")
+            key = key:gsub("^[^_]+_(SETPLAY_)", "%1")
+            key = key:gsub("^[^_]+_(PUNISH_)", "%1")
+        end
+
+        if key == "" then key = fallback:gsub("%.[Jj][Ss][Oo][Nn]$", "") end
+
+        local tags = {}
+        local raw_tokens = {}
+        for token in key:gmatch("[^_]+") do
+            raw_tokens[#raw_tokens + 1] = token
+        end
+
+        local attack_tokens = {
+            LP = true, MP = true, HP = true,
+            LK = true, MK = true, HK = true,
+            P = true, K = true, PP = true, KK = true
+        }
+        local i = 1
+        while i <= #raw_tokens do
+            local token = raw_tokens[i]
+            local next_token = raw_tokens[i + 1]
+            if token:match("^%d+$") and attack_tokens[next_token or ""] then
+                tags[#tags + 1] = token .. "_" .. next_token
+                i = i + 2
+            elseif token:match("^D%d+$") and next_token and next_token:match("^%d+$") then
+                tags[#tags + 1] = token .. "_" .. next_token
+                i = i + 2
+            else
+                tags[#tags + 1] = token
+                i = i + 1
+            end
+        end
+
+        local out = {}
+        for _, token in ipairs(tags) do
+            if token ~= "" then out[#out + 1] = "[" .. sanitize_utf8_display(token) .. "]" end
+        end
+        return table.concat(out, " ")
+    end
+
+    local short_key = combo_file_key(filename)
 
     local function clean_title(value)
         if type(value) ~= "string" then return nil end
@@ -208,31 +282,112 @@ local function combo_display_name_from_file(filepath)
 
     local xt_meta = sequence[1]._xt_meta
     local xt_title = type(xt_meta) == "table" and clean_title(xt_meta.title) or nil
-    if xt_title then
-        return fallback .. " " .. xt_title, nil
-    end
 
     local wtt_meta = sequence[1]._wtt_cn_meta
     local wtt_title = type(wtt_meta) == "table" and clean_title(wtt_meta.title) or nil
-    if wtt_title then
-        return fallback .. " " .. wtt_title, nil
-    end
 
-    return fallback, nil
+    local title = xt_title or wtt_title or ""
+    return {
+        prefix = combo_control_label(control_type),
+        title = title,
+        short_key = short_key,
+        control_type = control_type,
+    }, nil, control_type
+end
+
+local function build_combo_display_entry(info)
+    if type(info) ~= "table" then return tostring(info or "") end
+    local prefix = info.prefix or "[C]"
+    local title = tostring(info.title or "")
+    local title_text = title ~= "" and ("[" .. title .. "]") or ""
+    local left = prefix
+    if title_text ~= "" then left = left .. " " .. title_text end
+    local short_key = tostring(info.short_key or "")
+    return left .. " - " .. short_key
+end
+
+local function build_combo_display_list(info_list)
+    local display_list = {}
+    for idx, info in ipairs(info_list or {}) do
+        display_list[idx] = build_combo_display_entry(info)
+    end
+    return display_list
+end
+
+local function combo_display_name_from_file(filepath)
+    local info, display_error = combo_info_from_file(filepath)
+    if not info then return nil, display_error end
+    return build_combo_display_entry(info), nil
+end
+
+local function normalize_combo_control_filter(value)
+    value = tostring(value or "auto"):lower()
+    if value == "auto" or value == "all" or value == "classic" or value == "modern" then return value end
+    return "auto"
+end
+
+local function read_p1_select_menu_input_type()
+    local out = nil
+    pcall(function()
+        local tm = sdk and sdk.get_managed_singleton and sdk.get_managed_singleton("app.training.TrainingManager")
+        local t_data = tm and tm:get_field("_tData")
+        local select_menu = t_data and t_data:get_field("SelectMenu")
+        local player_data = select_menu and select_menu.PlayerDatas and select_menu.PlayerDatas[0]
+        if not player_data then return end
+
+        local ok, value = pcall(function()
+            local td = player_data:get_type_definition()
+            local field = td and td:get_field("InputType")
+            if field then return field:get_data(player_data) end
+        end)
+        if (not ok or value == nil) then
+            ok, value = pcall(function() return player_data.InputType end)
+        end
+        if ok then out = tonumber(value) end
+    end)
+    return out
+end
+
+local function effective_combo_control_filter(filter)
+    filter = normalize_combo_control_filter(filter)
+    if filter ~= "auto" then return filter end
+
+    local input_type = read_p1_select_menu_input_type()
+    if input_type == 1 then return "modern" end
+    return "classic"
+end
+
+local function filter_combo_lists(display_all, path_all, control_all)
+    local filter = normalize_combo_control_filter(file_system.combo_control_filter)
+    file_system.combo_control_filter = filter
+    local effective_filter = effective_combo_control_filter(filter)
+    file_system.combo_control_effective_filter = effective_filter
+
+    local info_list, path_list, control_list = {}, {}, {}
+    for idx, path in ipairs(path_all or {}) do
+        local control_type = control_all[idx] or "classic"
+        if effective_filter == "all" or effective_filter == control_type then
+            info_list[#info_list + 1] = display_all[idx]
+            path_list[#path_list + 1] = path
+            control_list[#control_list + 1] = control_type
+        end
+    end
+    local display_list = build_combo_display_list(info_list)
+    return display_list, path_list, control_list
 end
 
 local function scan_combo_files(player_idx)
-    local display_list, path_list = {}, {}
+    local display_list, path_list, control_list = {}, {}, {}
     local skipped_count = 0
     if not players[player_idx] then
         diag_combo_files("scan skipped player=" .. tostring(player_idx) .. " reason=missing_player")
-        return display_list, path_list, false, skipped_count
+        return display_list, path_list, control_list, false, skipped_count
     end
 
     local char_name = players[player_idx].profile_name
     if char_name == "Unknown" then
         diag_combo_files("scan skipped player=" .. tostring(player_idx) .. " reason=unknown_character")
-        return display_list, path_list, false, skipped_count
+        return display_list, path_list, control_list, false, skipped_count
     end
 
     if fs.create_dir then
@@ -247,7 +402,7 @@ local function scan_combo_files(player_idx)
         warn_combo_file_once(char_name, glob_ok and "glob returned invalid data" or files)
         diag_combo_files("glob failed player=" .. tostring(player_idx) .. " char=" .. tostring(char_name)
             .. " ok=" .. tostring(glob_ok) .. " error=" .. tostring(files))
-        return display_list, path_list, false, skipped_count
+        return display_list, path_list, control_list, false, skipped_count
     end
     diag_combo_files("glob result player=" .. tostring(player_idx) .. " char=" .. tostring(char_name)
         .. " found=" .. tostring(#files))
@@ -302,10 +457,11 @@ local function scan_combo_files(player_idx)
 
         for _, filepath in ipairs(files) do
             if type(filepath) == "string" and not filepath:find("_FAIL_", 1, true) then
-                local display_name, display_error = combo_display_name_from_file(filepath)
-                if display_name then
+                local display_info, display_error, control_type = combo_info_from_file(filepath, char_name)
+                if display_info then
                     table.insert(path_list, filepath)
-                    table.insert(display_list, display_name)
+                    table.insert(display_list, display_info)
+                    table.insert(control_list, control_type or "classic")
                 else
                     skipped_count = skipped_count + 1
                     warn_combo_file_once(filepath, display_error or "invalid combo file")
@@ -321,21 +477,31 @@ local function scan_combo_files(player_idx)
         .. " found=" .. tostring(files and #files or 0)
         .. " loaded=" .. tostring(#path_list)
         .. " skipped=" .. tostring(skipped_count)
-        .. " displayed=" .. tostring(#display_list))
-    return display_list, path_list, true, skipped_count
+        .. " displayed=" .. tostring(#display_list)
+        .. " filter=" .. tostring(file_system.combo_control_filter))
+    return display_list, path_list, control_list, true, skipped_count
 end
 
 local function update_combo_file_list(player_idx)
-    local display_list, path_list, scan_ok, skipped_count = scan_combo_files(player_idx)
+    local display_all, path_all, control_all, scan_ok, skipped_count = scan_combo_files(player_idx)
     if not scan_ok then return false end
+    local display_list, path_list, control_list = filter_combo_lists(display_all, path_all, control_all)
 
     if player_idx == 0 then
+        file_system.saved_combos_all_display_p1 = build_combo_display_list(display_all)
+        file_system.saved_combos_all_paths_p1 = path_all
+        file_system.saved_combos_all_control_p1 = control_all
         file_system.saved_combos_display_p1 = display_list
         file_system.saved_combos_paths_p1 = path_list
+        file_system.saved_combos_control_p1 = control_list
         file_system.skipped_combos_p1 = skipped_count
     else
+        file_system.saved_combos_all_display_p2 = build_combo_display_list(display_all)
+        file_system.saved_combos_all_paths_p2 = path_all
+        file_system.saved_combos_all_control_p2 = control_all
         file_system.saved_combos_display_p2 = display_list
         file_system.saved_combos_paths_p2 = path_list
+        file_system.saved_combos_control_p2 = control_list
         file_system.skipped_combos_p2 = skipped_count
     end
     return true
@@ -426,10 +592,14 @@ function M.init(context, opts)
     file_system.warn_combo_file_once = warn_combo_file_once
     file_system.is_valid_combo_sequence = is_valid_combo_sequence
     file_system.load_combo_json = load_combo_json
+    file_system.combo_control_type_from_sequence = combo_control_type_from_sequence
+    file_system.normalize_combo_control_filter = normalize_combo_control_filter
+    file_system.effective_combo_control_filter = effective_combo_control_filter
     file_system.sanitize_utf8_display = sanitize_utf8_display
     file_system.combo_display_name_from_file = combo_display_name_from_file
     file_system.scan_combo_files = scan_combo_files
     file_system.update_combo_file_list = update_combo_file_list
+    file_system.refresh_combo_list_preserve_selection = M.refresh_combo_list_preserve_selection
 
     return M
 end
