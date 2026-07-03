@@ -1,0 +1,47 @@
+{
+    "617": {
+        "modern_display": "AUTO + 強"
+    },
+    "605": {
+        "modern_display": "AUTO + 中"
+    },
+    "606": {
+        "modern_display": "> 中"
+    },
+    "978": {
+        "modern_display": "4 + SP > 6 + 攻撃"
+    },
+    "986": {
+        "modern_display": "> 6 + 攻撃",
+        "note": "Contextual follow-up display for the current Akuma modern samples."
+    },
+    "903": {
+        "modern_display": "AUTO + SP"
+    },
+    "1027": {
+        "modern_display": "空中 4 + AUTO + SP"
+    },
+    "961": {
+        "modern_display": "623 + 弱"
+    },
+    "672": {
+        "modern_display": "4 + 強",
+        "note": "Current sample display for Akuma 4HK unique attack."
+    },
+    "992": {
+        "modern_display": "2 + SP",
+        "note": "Current sample display for Akuma OD demon-flip route; confirm exact official notation later."
+    },
+    "952": {
+        "modern_display": "空中 SP",
+        "note": "Current sample display for Akuma air fireball route; confirm exact official notation later."
+    },
+    "1022": {
+        "modern_display": "4 + SP",
+        "note": "Current sample display for Akuma heavy Tatsumaki route."
+    },
+    "1226": {
+        "modern_display": "2 + SP + 強",
+        "note": "Current sample display for Akuma SA3 route; confirm exact official notation later."
+    }
+}

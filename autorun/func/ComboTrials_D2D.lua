@@ -32,6 +32,11 @@ local image_files = {
     ["lk"] = "lk.png",
     ["mk"] = "mk.png",
     ["hk"] = "hk.png",
+    ["modern_l"] = "modern_l.png",
+    ["modern_m"] = "modern_m.png",
+    ["modern_h"] = "modern_h.png",
+    ["modern_sp"] = "modern_sp.png",
+    ["modern_auto"] = "modern_auto.png",
     ["p"] = "P.png",
     ["k"] = "K.png",
     ["360"] = "360.png",
@@ -117,9 +122,88 @@ end
 -- =========================================================
 -- Follow-up group helpers
 -- =========================================================
+local MODERN_DISPLAY_DIR = "TrainingComboTrials_data/modern_display/"
+local modern_display_cache = {}
+
+local function get_sequence_meta(sequence)
+    if type(sequence) ~= "table" then return nil end
+    local first = sequence[1]
+    if type(first) ~= "table" then return nil end
+    if type(first._xt_meta) == "table" then return first._xt_meta end
+    return nil
+end
+
+local function is_modern_sequence(sequence)
+    local meta = get_sequence_meta(sequence)
+    if not meta then return false end
+    local control_type = tostring(meta.control_type or ""):lower()
+    local input_profile = tostring(meta.timeline_input_profile or ""):lower()
+    return control_type == "modern" or input_profile == "modern"
+end
+
+local function get_sequence_character(sequence)
+    local meta = get_sequence_meta(sequence)
+    if not meta then return nil end
+    local character = meta.character
+    if type(character) ~= "string" or character == "" then return nil end
+    return character
+end
+
+local function load_modern_display_map(character)
+    local key = tostring(character or "")
+    if key:lower() ~= "akuma" then return nil end
+    key = "Akuma"
+
+    if modern_display_cache[key] ~= nil then
+        return modern_display_cache[key] ~= false and modern_display_cache[key] or nil
+    end
+
+    local path = MODERN_DISPLAY_DIR .. key .. ".json"
+    local ok, loaded = false, nil
+    if type(_G.safe_load_json) == "function" then
+        ok, loaded = pcall(_G.safe_load_json, path)
+    elseif json and json.load_file then
+        ok, loaded = pcall(json.load_file, path)
+    end
+
+    if ok and type(loaded) == "table" then
+        modern_display_cache[key] = loaded
+        return loaded
+    end
+
+    modern_display_cache[key] = false
+    return nil
+end
+
+local function get_modern_display_motion(modern_map, step)
+    if type(modern_map) ~= "table" or type(step) ~= "table" then return nil end
+    local entry = modern_map[tostring(step.id or "")]
+    if type(entry) == "string" and entry ~= "" then return entry end
+    if type(entry) == "table" and type(entry.modern_display) == "string" and entry.modern_display ~= "" then
+        return entry.modern_display
+    end
+    return nil
+end
+
+local function clone_step_for_display(step, motion)
+    if not motion then return step end
+    local copy = {}
+    for k, v in pairs(step) do copy[k] = v end
+    copy.motion = motion
+    copy._ct_modern_display = true
+    return copy
+end
+
 local function build_display_lines(sequence)
     local lines = {}
-    for i, step in ipairs(sequence) do
+    local modern_map = nil
+    if is_modern_sequence(sequence) then
+        modern_map = load_modern_display_map(get_sequence_character(sequence))
+    end
+
+    for i, raw_step in ipairs(sequence) do
+        local modern_motion = get_modern_display_motion(modern_map, raw_step)
+        local step = clone_step_for_display(raw_step, modern_motion)
         local gid = step.group_id or i
         if #lines == 0 or lines[#lines].group_id ~= gid then
             table.insert(lines, { group_id = gid, first = i, last = i, steps = { step } })
@@ -173,6 +257,10 @@ local function merge_group_log_item(steps)
     local last  = steps[#steps]
     local all_hit = true
     for _, s in ipairs(steps) do if not s.has_hit then all_hit = false; break end end
+    local has_modern_display = false
+    for _, s in ipairs(steps) do
+        if s._ct_modern_display then has_modern_display = true; break end
+    end
 
     return {
         motion         = table.concat(motions, " "),
@@ -183,6 +271,7 @@ local function merge_group_log_item(steps)
         has_hit        = all_hit,
         combo_stats    = first.combo_stats,
         facing_left    = first.facing_left,
+        _ct_modern_display = has_modern_display,
     }
 end
 
@@ -230,6 +319,7 @@ local function parse_motion_to_icons(log_entry, trial_mode, should_flip, reverse
 
     -- Convert to uppercase IMMEDIATELY so that j. becomes J.
     s = s:upper()
+    s = s:gsub("＋", "+")
     if log_entry.id == 1231 and is_shun_goku_satsu_motion(s) then
         s = "LP,LP,6,LK,HP (瞬狱杀)"
     end
@@ -322,6 +412,10 @@ local function parse_motion_to_icons(log_entry, trial_mode, should_flip, reverse
     s = s:gsub("FOLLOW%-UP", "{followup}")
     s = localize_motion_text(s)
 
+    if log_entry._ct_modern_display then
+        s = s:gsub("%+", "{plus}")
+    end
+
     s = s:gsub("63214", "{hcb}")
     s = s:gsub("41236", "{hcf}")
     s = s:gsub("%[4%]", "{4_hold}")
@@ -347,6 +441,36 @@ local function parse_motion_to_icons(log_entry, trial_mode, should_flip, reverse
     s = s:gsub("%f[%a]HK%f[%A]", "{hk}")
     s = s:gsub("%f[%a]P%f[%A]", "{p}")
     s = s:gsub("%f[%a]K%f[%A]", "{k}")
+    s = s:gsub("%f[%a]MODERN_L%f[%A]", "{modern_l}")
+    s = s:gsub("%f[%a]MODERN_M%f[%A]", "{modern_m}")
+    s = s:gsub("%f[%a]MODERN_H%f[%A]", "{modern_h}")
+    s = s:gsub("%f[%a]MODERN_SP%f[%A]", "{modern_sp}")
+    s = s:gsub("%f[%a]MODERN_AUTO%f[%A]", "{modern_auto}")
+    s = s:gsub("%f[%a]AUTO%f[%A]", "{modern_auto}")
+    s = s:gsub("%f[%a]SP%f[%A]", "{modern_sp}")
+
+    local function replace_modern_text_token(src, token, img)
+        local repl = "{" .. img .. "}"
+        local sep = "[%s%+%{%}]"
+        for _ = 1, 3 do
+            local before = src
+            src = src:gsub("^" .. token .. "$", repl)
+            src = src:gsub("^" .. token .. "(" .. sep .. ")", repl .. "%1")
+            src = src:gsub("(" .. sep .. ")" .. token .. "$", "%1" .. repl)
+            src = src:gsub("(" .. sep .. ")" .. token .. "(" .. sep .. ")", "%1" .. repl .. "%2")
+            if src == before then break end
+        end
+        return src
+    end
+
+    s = replace_modern_text_token(s, "弱", "modern_l")
+    s = replace_modern_text_token(s, "中", "modern_m")
+    s = replace_modern_text_token(s, "強", "modern_h")
+    s = replace_modern_text_token(s, "强", "modern_h")
+    s = s:gsub("攻撃二つ", "{modern_l}{modern_m}")
+    s = s:gsub("攻击二つ", "{modern_l}{modern_m}")
+    s = s:gsub("攻撃", "{modern_h}")
+    s = s:gsub("攻击", "{modern_h}")
 
     local i = 1
     local current_text = ""
@@ -391,7 +515,10 @@ local function parse_motion_to_icons(log_entry, trial_mode, should_flip, reverse
     flush_text()
 
     -- NEW: Auto-insert PLUS icon between directions and attack buttons
-    local is_btn = { p = true, k = true, lp = true, mp = true, hp = true, lk = true, mk = true, hk = true, throw = true }
+    local is_btn = {
+        p = true, k = true, lp = true, mp = true, hp = true, lk = true, mk = true, hk = true, throw = true,
+        modern_l = true, modern_m = true, modern_h = true, modern_sp = true, modern_auto = true,
+    }
     local processed_tokens = {}
     local suppress_plus = false
     for _, tok in ipairs(motion_tokens) do
