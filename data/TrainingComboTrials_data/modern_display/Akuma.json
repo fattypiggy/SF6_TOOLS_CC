@@ -1,47 +1,99 @@
 {
+    "_meta": {
+        "schema": "xt.modern_display.v1",
+        "character": "Akuma",
+        "updated_at": "2026-07-04",
+        "description": "Modern control display mapping for Akuma"
+    },
     "617": {
-        "modern_display": "AUTO + 強"
+        "classic_display": "HK",
+        "modern_display": "AUTO + 強",
+        "control_support": "classic_modern",
+        "source": "community_sample",
+        "note": "Verified by current Akuma modern control sample."
     },
     "605": {
-        "modern_display": "AUTO + 中"
+        "classic_display": "MP",
+        "modern_display": "AUTO + 中",
+        "control_support": "classic_modern",
+        "source": "community_sample",
+        "note": "Verified by current Akuma modern control sample."
     },
     "606": {
-        "modern_display": "> 中"
+        "classic_display": ">MP",
+        "modern_display": "> 中",
+        "control_support": "classic_modern",
+        "source": "community_sample",
+        "note": "Group-aware follow-up display verified by current Akuma modern control sample."
     },
     "978": {
-        "modern_display": "4 + SP > 6 + 攻撃"
+        "classic_display": "214+PP",
+        "modern_display": "4 + SP > 6 + 攻撃",
+        "control_support": "classic_modern",
+        "source": "community_sample",
+        "note": "Verified by current Akuma modern control sample; exact official notation still needs confirmation."
     },
     "986": {
+        "classic_display": ">6+P",
         "modern_display": "> 6 + 攻撃",
-        "note": "Contextual follow-up display for the current Akuma modern samples."
+        "control_support": "classic_modern",
+        "source": "community_sample",
+        "note": "Contextual follow-up display verified by current Akuma modern control sample; exact official notation still needs confirmation."
     },
     "903": {
-        "modern_display": "AUTO + SP"
+        "classic_display": "236+HP",
+        "modern_display": "AUTO + SP",
+        "control_support": "classic_modern",
+        "source": "community_sample",
+        "note": "Verified by current Akuma modern control sample."
     },
     "1027": {
-        "modern_display": "空中 4 + AUTO + SP"
+        "classic_display": "214+KK",
+        "modern_display": "空中 4 + AUTO + SP",
+        "control_support": "classic_modern",
+        "source": "community_sample",
+        "note": "Verified by current Akuma modern control sample."
     },
     "961": {
-        "modern_display": "623 + 弱"
+        "classic_display": "623+LP",
+        "modern_display": "623 + 弱",
+        "control_support": "classic_modern",
+        "source": "community_sample",
+        "note": "Verified by current Akuma modern control sample."
     },
     "672": {
+        "classic_display": "4HK",
         "modern_display": "4 + 強",
-        "note": "Current sample display for Akuma 4HK unique attack."
+        "control_support": "classic_modern",
+        "source": "community_sample",
+        "note": "Verified by current Akuma modern control sample; exact official notation still needs confirmation."
     },
     "992": {
+        "classic_display": "236+KK",
         "modern_display": "2 + SP",
-        "note": "Current sample display for Akuma OD demon-flip route; confirm exact official notation later."
+        "control_support": "classic_modern",
+        "source": "community_sample",
+        "note": "Verified by current Akuma modern control sample; exact official notation still needs confirmation."
     },
     "952": {
+        "classic_display": "j.236+P",
         "modern_display": "空中 SP",
-        "note": "Current sample display for Akuma air fireball route; confirm exact official notation later."
+        "control_support": "classic_modern",
+        "source": "community_sample",
+        "note": "Verified by current Akuma modern control sample; exact official notation still needs confirmation."
     },
     "1022": {
+        "classic_display": "214+HK",
         "modern_display": "4 + SP",
-        "note": "Current sample display for Akuma heavy Tatsumaki route."
+        "control_support": "classic_modern",
+        "source": "community_sample",
+        "note": "Verified by current Akuma modern control sample; exact official notation still needs confirmation."
     },
     "1226": {
+        "classic_display": "236236+K",
         "modern_display": "2 + SP + 強",
-        "note": "Current sample display for Akuma SA3 route; confirm exact official notation later."
+        "control_support": "classic_modern",
+        "source": "community_sample",
+        "note": "Verified by current Akuma modern control sample; exact official notation still needs confirmation."
     }
 }
