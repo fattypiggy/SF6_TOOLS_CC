@@ -17,6 +17,13 @@ local ActionMatcher = ComboTrialsModules.ActionMatcher
 local CharacterRules = ComboTrialsModules.CharacterRules
 local Validator = ComboTrialsModules.Validator
 
+-- DEV ONLY / DO NOT COMMIT ENABLED.
+-- Temporary self-contained HP restore test mode for Jamie 1000/10000 HP.
+CT_DEV_HP_RESTORE_TEST = false
+if CT_DEV_HP_RESTORE_TEST then
+    _G.CT_HP_RESTORE_TRACE = true
+end
+
 pcall(function()
     if fs and fs.create_dir then fs.create_dir("TrainingComboTrials_data/exceptions") end
 end)
@@ -249,6 +256,7 @@ local trial_state = {
     saved_start_location = nil,
     flip_inputs = false,   -- Whether to visually flip the input display
     _rec_gauges = nil,     -- Gauge snapshot at recording start
+    _rec_hp_snapshot = nil,
     _rec_hit_type = nil,   -- CH/PC detected on first hit
     _rec_scene_state = nil,
     _saved_unique_resources = nil,
@@ -258,6 +266,12 @@ local trial_state = {
     _pending_victim_hp = nil,
     _pending_attacker_hp = nil,
     _hp_inject_frames = 0,
+    _hp_restore_token = 0,
+    _hp_restore = nil,
+    _hp_restore_debug = nil,
+    _hp_training_setting_backup = nil,
+    _hp_snapshot_applied_current_session = false,
+    _hp_setting_restore_debug = nil,
     _rec_pending_snapshot = 0,
     _was_playing = false,   -- Previous state for detecting transitions
     _step1_wrong_pending = false,
@@ -1237,6 +1251,59 @@ local function get_combo_count(p_obj)
     return s and res or 0
 end
 
+function normalize_hp_value(value)
+    local n = tonumber(value)
+    if n == nil then return nil end
+    return math.floor(n + 0.5)
+end
+
+function read_player_hp_snapshot(player)
+    if not player then return nil end
+    local current_hp, max_hp, heal_hp = nil, nil, nil
+    pcall(function() current_hp = normalize_hp_value(player.vital_new) end)
+    pcall(function() max_hp = normalize_hp_value(player.vital_max) end)
+    pcall(function() heal_hp = normalize_hp_value(player.heal_new) end)
+    if current_hp == nil then return nil end
+    if max_hp == nil or max_hp <= 0 then max_hp = current_hp end
+
+    local snapshot = {
+        current_hp = current_hp,
+        max_hp = max_hp
+    }
+    if heal_hp ~= nil then snapshot.heal_hp = heal_hp end
+    return snapshot
+end
+
+function hp_snapshot_is_damaged(snapshot)
+    if type(snapshot) ~= "table" then return false end
+    local current_hp = tonumber(snapshot.current_hp)
+    local max_hp = tonumber(snapshot.max_hp)
+    return current_hp ~= nil and max_hp ~= nil and current_hp < max_hp
+end
+
+function copy_hp_snapshot(snapshot)
+    if type(snapshot) ~= "table" then return nil end
+    local current_hp = normalize_hp_value(snapshot.current_hp)
+    if current_hp == nil then return nil end
+    local out = { current_hp = current_hp }
+    local max_hp = normalize_hp_value(snapshot.max_hp)
+    local heal_hp = normalize_hp_value(snapshot.heal_hp)
+    if max_hp ~= nil then out.max_hp = max_hp end
+    if heal_hp ~= nil then out.heal_hp = heal_hp end
+    return out
+end
+
+function capture_trial_hp_snapshot(attacker_idx)
+    local victim_idx = 1 - attacker_idx
+    local attacker = (attacker_idx == 0) and GS.p1 or GS.p2
+    local victim = (victim_idx == 0) and GS.p1 or GS.p2
+    if not attacker or not victim then return nil end
+    return {
+        attacker = read_player_hp_snapshot(attacker),
+        victim = read_player_hp_snapshot(victim)
+    }
+end
+
 -- Gauge snapshot (same pattern as SheldonsBoxes)
 -- attacker_idx = 0 or 1 (the player performing the combo)
 local function snapshot_gauges(attacker_idx)
@@ -1259,6 +1326,7 @@ local function snapshot_gauges(attacker_idx)
         local a_dr = attacker.focus_new
         local a_sa = atk_team.mSuperGauge
         local d_dr = victim.focus_new
+        local hp_snapshot = capture_trial_hp_snapshot(attacker_idx)
         local d_burnout = nil
         local tm = sdk.get_managed_singleton("app.training.TrainingManager")
         local t_data = tm and tm:get_field("_tData")
@@ -1277,6 +1345,8 @@ local function snapshot_gauges(attacker_idx)
             attacker_super = a_sa,
             defender_drive = d_dr,
             defender_burnout = d_burnout,
+            hp_attacker = hp_snapshot and hp_snapshot.attacker or nil,
+            hp_victim = hp_snapshot and hp_snapshot.victim or nil,
             -- Min trackers (updated each frame in on_frame)
             min_victim_hp = v_hp,
             min_atk_drive = a_dr,
@@ -1286,7 +1356,7 @@ local function snapshot_gauges(attacker_idx)
     return result
 end
 
-local function clear_trial_vital_state()
+function clear_trial_vital_state()
     trial_state._pending_victim_hp = nil
     trial_state._pending_attacker_hp = nil
     trial_state._hp_inject_frames = 0
@@ -1295,15 +1365,15 @@ local function clear_trial_vital_state()
 end
 
 -- Combo playback must use the training room's current health settings.
-local function apply_trial_vital()
+function apply_trial_vital()
     clear_trial_vital_state()
 end
 
-local function reinject_trial_vital()
+function reinject_trial_vital()
     clear_trial_vital_state()
 end
 
-local DRIVE_SETTING_FIELDS = {
+DRIVE_SETTING_FIELDS = {
     "DG_Type",
     "DG_Stock",
     "DG_Point",
@@ -1313,8 +1383,11 @@ local DRIVE_SETTING_FIELDS = {
     "DG_Timer"
 }
 
-local function restore_trial_vital()
+function restore_trial_vital(skip_hp_setting_restore)
     clear_trial_vital_state()
+    if skip_hp_setting_restore ~= true and type(restore_hp_training_setting_if_needed) == "function" then
+        restore_hp_training_setting_if_needed("restore_trial_vital", trial_state.playing_player)
+    end
 
     local saved_drive_settings = trial_state._saved_drive_settings
     if type(saved_drive_settings) ~= "table" then return end
@@ -1346,6 +1419,704 @@ local function restore_trial_vital()
 
     trial_state._saved_drive_settings = nil
     if changed then tm._IsReqRefresh = true end
+end
+
+HP_RESTORE_DEBUG_PATH = "TrainingComboTrials_data/LastHpRestoreDebug.json"
+CT_DEV_HP_TEST_TITLE = "【HP测试】Jamie attacker 1000HP"
+CT_DEV_HP_TEST_FILENAME = "Jamie_DEV_HP_RESTORE_TEST_1000.json"
+CT_DEV_HP_TEST_PATH = "TrainingComboTrials_data/CustomCombos/Jamie/" .. CT_DEV_HP_TEST_FILENAME
+ct_dev_hp_restore_test_state = {
+    enabled = CT_DEV_HP_RESTORE_TEST == true,
+    test_json_path = CT_DEV_HP_TEST_PATH,
+    test_title = CT_DEV_HP_TEST_TITLE,
+    source_template_path = nil,
+    test_json_write_ok = false,
+    test_json_write_error = nil,
+    attempted = false,
+    attempt_count = 0
+}
+
+function read_player_hp_fields_for_debug(player)
+    if not player then return { missing_player = true } end
+    local out = {}
+    local ok
+    ok, out.vital_new = pcall(function() return player.vital_new end)
+    out.vital_new_ok = ok == true
+    ok, out.vital_old = pcall(function() return player.vital_old end)
+    out.vital_old_ok = ok == true
+    ok, out.heal_new = pcall(function() return player.heal_new end)
+    out.heal_new_ok = ok == true
+    ok, out.vital_max = pcall(function() return player.vital_max end)
+    out.vital_max_ok = ok == true
+    return out
+end
+
+VITAL_PARAM_FIELDS = {
+    "Vital_Type",
+    "Vital_Point",
+    "Vital_Point_Type",
+    "Vital_Timer",
+    "Is_Vital_Infinity",
+    "Is_Vital_No_Recovery",
+    "Is_Vital_Recovery_Timer",
+    "Is_KO",
+    "Is_Point_Lock"
+}
+
+function read_player_vital_params_for_debug(player_params)
+    if not player_params then return { missing_player_params = true } end
+    local out = {}
+    for _, field_name in ipairs(VITAL_PARAM_FIELDS) do
+        local ok, value = pcall(function() return player_params[field_name] end)
+        out[field_name] = ok and value or nil
+        out[field_name .. "_ok"] = ok == true
+    end
+    return out
+end
+
+function hp_snapshot_to_vital_point(snapshot)
+    if type(snapshot) ~= "table" then return nil end
+    local current_hp = tonumber(snapshot.current_hp)
+    if current_hp == nil then return nil end
+    local max_hp = tonumber(snapshot.max_hp)
+    local point = nil
+    if max_hp ~= nil and max_hp > 0 then
+        point = math.floor((current_hp * 100 / max_hp) + 0.5)
+    elseif current_hp >= 0 and current_hp <= 100 then
+        point = math.floor(current_hp + 0.5)
+    end
+    if point == nil then return nil end
+    if point < 0 then point = 0 end
+    if point > 100 then point = 100 end
+    return point
+end
+
+_tf_parameter_setting_cache = nil
+function get_tf_parameter_setting()
+    if _tf_parameter_setting_cache then return _tf_parameter_setting_cache end
+    local fallback = nil
+    pcall(function()
+        local tm = sdk.get_managed_singleton("app.training.TrainingManager")
+        if not tm then return end
+        local dict = tm:get_field("_tfFuncs")
+        if not dict then return end
+        local entries = dict:get_field("_entries")
+        if not entries then return end
+        pcall(function()
+            local entry = entries:call("get_Item", 6)
+            fallback = entry and entry:get_field("value") or nil
+        end)
+        local count = entries:call("get_Count")
+        for i = 0, count - 1 do
+            local entry = entries:call("get_Item", i)
+            local val = entry and entry:get_field("value") or nil
+            if val then
+                local td = val:get_type_definition()
+                local full_name = td and td:get_full_name() or ""
+                if full_name:find("tf_ParameterSetting") or full_name:find("ParameterSetting") then
+                    _tf_parameter_setting_cache = val
+                    return
+                end
+            end
+        end
+    end)
+    _tf_parameter_setting_cache = _tf_parameter_setting_cache or fallback
+    return _tf_parameter_setting_cache
+end
+
+function describe_re_object_for_debug(obj)
+    if not obj then return nil end
+    local ok, name = pcall(function()
+        local td = obj:get_type_definition()
+        return td and td:get_full_name() or nil
+    end)
+    return ok and name or nil
+end
+
+function get_training_parameter_probe_objects(attacker_idx)
+    local out = {
+        attacker_idx = attacker_idx,
+        attacker_label = attacker_idx == 1 and "p2" or "p1"
+    }
+    pcall(function()
+        out.tm = sdk.get_managed_singleton("app.training.TrainingManager")
+        if not out.tm then return end
+        out.training_data = out.tm:get_field("_tData")
+        if not out.training_data then return end
+        out.parameter_setting = out.training_data:get_field("ParameterSetting")
+        if out.parameter_setting then
+            pcall(function() out.param_func = out.parameter_setting:get_field("ParamFunc") end)
+            if not out.param_func then pcall(function() out.param_func = out.parameter_setting.ParamFunc end) end
+            local player_datas = out.parameter_setting.PlayerDatas
+            out.player_params = player_datas and player_datas[attacker_idx] or nil
+        end
+        if not out.param_func then
+            pcall(function() out.param_func = out.training_data:get_field("ParamFunc") end)
+            if not out.param_func then pcall(function() out.param_func = out.training_data.ParamFunc end) end
+        end
+        out.tf_ps = get_tf_parameter_setting()
+    end)
+    return out
+end
+
+function probe_method_exists(obj, method_name)
+    if not obj then return false, "missing_object" end
+    local ok, method = pcall(function()
+        local td = obj:get_type_definition()
+        return td and td:get_method(method_name) or nil
+    end)
+    if not ok then return false, tostring(method) end
+    return method ~= nil, method ~= nil and nil or "missing_method"
+end
+
+function ct_hp_copy_vital_setting_fields(player_params)
+    local fields = {}
+    if not player_params then return fields end
+    for _, field_name in ipairs(VITAL_PARAM_FIELDS) do
+        local ok, value = pcall(function() return player_params[field_name] end)
+        if ok and value ~= nil then fields[field_name] = value end
+    end
+    return fields
+end
+
+function ct_hp_backup_training_setting_once(player_idx, phase)
+    player_idx = tonumber(player_idx or 0) or 0
+    if player_idx ~= 1 then player_idx = 0 end
+
+    if type(trial_state._hp_training_setting_backup) ~= "table" then
+        trial_state._hp_training_setting_backup = {
+            has_backup = false,
+            players = {}
+        }
+    end
+
+    local backup = trial_state._hp_training_setting_backup
+    backup.players = backup.players or {}
+    if type(backup.players[player_idx]) == "table" then
+        return backup.players[player_idx]
+    end
+
+    local objects = get_training_parameter_probe_objects(player_idx)
+    local fields = ct_hp_copy_vital_setting_fields(objects.player_params)
+    local item = {
+        player_index = player_idx,
+        player_side = player_idx == 1 and "p2" or "p1",
+        fields = fields,
+        has_backup = next(fields) ~= nil,
+        backup_source_phase = phase,
+        before = read_player_vital_params_for_debug(objects.player_params)
+    }
+    backup.players[player_idx] = item
+    backup.has_backup = backup.has_backup or item.has_backup
+    backup.player_index = backup.player_index or player_idx
+    backup.player_side = backup.player_side or item.player_side
+    backup.fields = backup.fields or fields
+    backup.backup_source_phase = backup.backup_source_phase or phase
+    return item
+end
+
+function ct_hp_write_vital_setting_fields(player_params, fields)
+    local result = { ok = true, errors = {} }
+    if not player_params then
+        result.ok = false
+        result.errors.missing_player_params = true
+        return result
+    end
+    for field_name, value in pairs(fields or {}) do
+        local ok, err = pcall(function() player_params[field_name] = value end)
+        if not ok then
+            result.ok = false
+            result.errors[field_name] = tostring(err)
+        end
+    end
+    return result
+end
+
+function ct_hp_default_full_vital_fields()
+    return {
+        Vital_Point = 100,
+        Is_Vital_Infinity = false,
+        Is_Vital_No_Recovery = false,
+        Is_Vital_Recovery_Timer = false,
+        Is_KO = false,
+        Is_Point_Lock = false
+    }
+end
+
+function restore_hp_training_setting_if_needed(reason, preferred_player_idx)
+    local backup = trial_state._hp_training_setting_backup
+    local had_backup = type(backup) == "table" and backup.has_backup == true and type(backup.players) == "table"
+    local applied = trial_state._hp_snapshot_applied_current_session == true
+    local debug = {
+        called = false,
+        reason = reason,
+        had_backup = had_backup,
+        hp_snapshot_applied_current_session = applied,
+        switching_from_hp_snapshot_to_plain_trial = (reason or ""):find("plain_trial", 1, true) ~= nil and (had_backup or applied),
+        restores = {}
+    }
+
+    if not had_backup and not applied then
+        debug.skip_reason = "no_hp_snapshot_state"
+        trial_state._hp_setting_restore_debug = debug
+        if type(write_hp_restore_debug_dump) == "function" then
+            pcall(write_hp_restore_debug_dump, "hp_setting_restore_skipped", { hp_setting_restore = debug })
+        end
+        return debug
+    end
+
+    debug.called = true
+    local restored_any = false
+    local bapply_target = nil
+
+    if had_backup then
+        for player_idx, item in pairs(backup.players) do
+            local idx = tonumber(player_idx) or tonumber(item.player_index or 0) or 0
+            if idx ~= 1 then idx = 0 end
+            local objects = get_training_parameter_probe_objects(idx)
+            local restore_item = {
+                player_index = idx,
+                player_side = idx == 1 and "p2" or "p1",
+                fields = item.fields or {},
+                before = read_player_vital_params_for_debug(objects.player_params)
+            }
+            local write_result = ct_hp_write_vital_setting_fields(objects.player_params, item.fields or {})
+            restore_item.write_ok = write_result.ok == true
+            restore_item.write_errors = write_result.errors
+            restore_item.after = read_player_vital_params_for_debug(objects.player_params)
+            table.insert(debug.restores, restore_item)
+            debug.player_index = debug.player_index or idx
+            debug.player_side = debug.player_side or restore_item.player_side
+            debug.fields = debug.fields or restore_item.fields
+            debug.before = debug.before or restore_item.before
+            debug.after = debug.after or restore_item.after
+            restored_any = true
+            bapply_target = bapply_target or objects.tf_ps
+        end
+    else
+        local idx = tonumber(preferred_player_idx or trial_state.playing_player or 0) or 0
+        if idx ~= 1 then idx = 0 end
+        local objects = get_training_parameter_probe_objects(idx)
+        local fallback_fields = ct_hp_default_full_vital_fields()
+        local restore_item = {
+            player_index = idx,
+            player_side = idx == 1 and "p2" or "p1",
+            fallback_full_hp = true,
+            fields = fallback_fields,
+            before = read_player_vital_params_for_debug(objects.player_params)
+        }
+        local write_result = ct_hp_write_vital_setting_fields(objects.player_params, fallback_fields)
+        restore_item.write_ok = write_result.ok == true
+        restore_item.write_errors = write_result.errors
+        restore_item.after = read_player_vital_params_for_debug(objects.player_params)
+        table.insert(debug.restores, restore_item)
+        debug.player_index = idx
+        debug.player_side = restore_item.player_side
+        debug.fields = fallback_fields
+        debug.before = restore_item.before
+        debug.after = restore_item.after
+        restored_any = true
+        bapply_target = objects.tf_ps
+    end
+
+    if bapply_target then
+        local bapply_ok, bapply_err = pcall(function()
+            bapply_target:call("bApply")
+        end)
+        debug.bapply_called = true
+        debug.bapply_ok = bapply_ok == true
+        if not bapply_ok then debug.bapply_error = tostring(bapply_err) end
+    else
+        debug.bapply_called = false
+        debug.bapply_ok = false
+        debug.bapply_error = "missing_tf_parameter_setting"
+    end
+
+    debug.restored_any = restored_any
+    if debug.bapply_ok == true then
+        trial_state._hp_snapshot_applied_current_session = false
+        trial_state._hp_training_setting_backup = nil
+        debug.backup_cleared = true
+    else
+        debug.backup_cleared = false
+    end
+    trial_state._hp_setting_restore_debug = debug
+    if type(write_hp_restore_debug_dump) == "function" then
+        pcall(write_hp_restore_debug_dump, "hp_setting_restore", { hp_setting_restore = debug })
+    end
+    return debug
+end
+
+function current_trial_title()
+    local first = trial_state.sequence and trial_state.sequence[1]
+    if type(first) ~= "table" then return nil end
+    local xt_meta = type(first._xt_meta) == "table" and first._xt_meta or nil
+    if xt_meta and xt_meta.title then return xt_meta.title end
+    local wtt_meta = type(first._wtt_cn_meta) == "table" and first._wtt_cn_meta or nil
+    if wtt_meta and wtt_meta.title then return wtt_meta.title end
+    return nil
+end
+
+function build_hp_restore_debug_dump(phase, extra)
+    local first = trial_state.sequence and trial_state.sequence[1]
+    local read_snapshot, read_skip_reason = read_attacker_hp_restore_snapshot()
+    local tm = sdk.get_managed_singleton("app.training.TrainingManager")
+    local target_idx = trial_state._hp_restore and trial_state._hp_restore.target_player or trial_state.playing_player or 0
+    local target_player = target_idx == 1 and GS.p2 or GS.p1
+    local param_probe = get_training_parameter_probe_objects(target_idx)
+    local loaded_title = current_trial_title()
+    local runtime_inject = extra and extra.runtime_inject or nil
+    local dump = {
+        timestamp = os.date("%Y-%m-%d %H:%M:%S"),
+        frame = engine_frame_count or 0,
+        phase = phase,
+        dev_test = ct_dev_hp_restore_test_state,
+        trial_file = trial_state.current_file or trial_state.current_file_path,
+        trial_filename = trial_state.current_file_name,
+        trial_title = loaded_title,
+        loaded_trial = {
+            loaded_title = loaded_title,
+            loaded_filename = trial_state.current_file_name,
+            sequence_length = trial_state.sequence and #trial_state.sequence or 0,
+            first_step_id = type(first) == "table" and first.id or nil,
+            first_step_motion = type(first) == "table" and first.motion or nil,
+            first_snapshot_gauges = type(first) == "table" and first.snapshot_gauges or nil
+        },
+        playing_player = trial_state.playing_player,
+        current_step = trial_state.current_step,
+        pending_reinject_settings = trial_state._pending_reinject_settings == true,
+        tm_is_req_refresh = tm and tm:get_field("_IsReqRefresh") or nil,
+        first_snapshot_gauges = type(first) == "table" and first.snapshot_gauges or nil,
+        read_attacker_hp_restore_snapshot = {
+            snapshot = read_snapshot,
+            skip_reason = read_skip_reason
+        },
+        snapshot_parsing = {
+            snapshot_found = type(read_snapshot) == "table",
+            snapshot_current_hp = read_snapshot and read_snapshot.current_hp or nil,
+            snapshot_max_hp = read_snapshot and read_snapshot.max_hp or nil,
+            snapshot_heal_hp = read_snapshot and read_snapshot.heal_hp or nil,
+            skip_reason = read_skip_reason
+        },
+        hp_restore_state = trial_state._hp_restore,
+        training_setting_probe = trial_state._hp_restore and trial_state._hp_restore.training_probe or nil,
+        runtime_inject = runtime_inject,
+        hp_setting_backup = {
+            exists = type(trial_state._hp_training_setting_backup) == "table"
+                and trial_state._hp_training_setting_backup.has_backup == true,
+            player_index = type(trial_state._hp_training_setting_backup) == "table"
+                and trial_state._hp_training_setting_backup.player_index or nil,
+            fields = type(trial_state._hp_training_setting_backup) == "table"
+                and trial_state._hp_training_setting_backup.fields or nil,
+            players = type(trial_state._hp_training_setting_backup) == "table"
+                and trial_state._hp_training_setting_backup.players or nil
+        },
+        hp_setting_restore = trial_state._hp_setting_restore_debug,
+        hp_snapshot_applied_current_session = trial_state._hp_snapshot_applied_current_session == true,
+        switching_from_hp_snapshot_to_plain_trial = trial_state._hp_setting_restore_debug
+            and trial_state._hp_setting_restore_debug.switching_from_hp_snapshot_to_plain_trial or false,
+        safety = {
+            did_call_reset = false,
+            did_call_reload = false,
+            did_call_start_trial = false,
+            did_set_IsReqRefresh = false,
+            no_hp_snapshot_skip_old_json = read_snapshot == nil
+        },
+        target_player = target_idx == 1 and "p2" or "p1",
+        target_player_idx = target_idx,
+        target_hp_now = read_player_hp_fields_for_debug(target_player),
+        target_vital_params_now = read_player_vital_params_for_debug(param_probe.player_params),
+        param_func_exists = param_probe.param_func ~= nil,
+        param_func_type = describe_re_object_for_debug(param_probe.param_func),
+        tf_parameter_setting_exists = param_probe.tf_ps ~= nil,
+        tf_parameter_setting_type = describe_re_object_for_debug(param_probe.tf_ps)
+    }
+    if type(extra) == "table" then
+        for k, v in pairs(extra) do dump[k] = v end
+    end
+    return dump
+end
+
+function write_hp_restore_debug_dump(phase, extra)
+    if rawget(_G, "CT_HP_RESTORE_TRACE") ~= true and CT_DEV_HP_RESTORE_TEST ~= true then return end
+    local dump = build_hp_restore_debug_dump(phase, extra)
+    trial_state._hp_restore_debug_file = dump
+    pcall(function()
+        json.dump_file(HP_RESTORE_DEBUG_PATH, dump)
+    end)
+end
+
+function hp_restore_trace(event)
+    if type(event) ~= "table" then return end
+    event.frame = engine_frame_count or 0
+    trial_state._hp_restore_debug = event
+    write_hp_restore_debug_dump(event.phase or "trace", { trace_event = event })
+
+    if rawget(_G, "CT_HP_RESTORE_TRACE") ~= true then return end
+    local msg = "[HPRestore]"
+        .. " phase=" .. tostring(event.phase)
+        .. " token=" .. tostring(event.token)
+        .. " found=" .. tostring(event.found)
+        .. " restored=" .. tostring(event.restored)
+        .. " retry=" .. tostring(event.retry_count)
+        .. " target=" .. tostring(event.target_player)
+        .. " skip=" .. tostring(event.skip_reason)
+        .. " refresh_before=" .. tostring(event.refresh_before)
+        .. " refresh_after=" .. tostring(event.refresh_after)
+        .. " restore_count=" .. tostring(event.restore_count)
+    if file_system and file_system.diag_log then
+        pcall(file_system.diag_log, msg)
+    else
+        pcall(print, msg)
+    end
+end
+
+function record_hp_restore_state(state, phase, extra)
+    if type(state) ~= "table" then return end
+    local event = {
+        phase = phase,
+        token = state.token,
+        found = state.found,
+        snapshot = state.snapshot,
+        restored = state.restored,
+        retry_count = state.retry_count,
+        target_player = state.target_player,
+        skip_reason = state.skip_reason,
+        restore_count = state.restore_count
+    }
+    if type(extra) == "table" then
+        for k, v in pairs(extra) do event[k] = v end
+    end
+    hp_restore_trace(event)
+end
+
+function read_attacker_hp_restore_snapshot()
+    local first = trial_state.sequence and trial_state.sequence[1]
+    if type(first) ~= "table" then return nil, "missing_first_step" end
+    local gauges = first.snapshot_gauges
+    if type(gauges) ~= "table" then return nil, "missing_snapshot_gauges" end
+    local attacker = gauges.attacker
+    if type(attacker) ~= "table" then return nil, "missing_attacker_hp_snapshot" end
+    local snapshot = copy_hp_snapshot(attacker)
+    if not snapshot or snapshot.current_hp == nil then return nil, "missing_attacker_current_hp" end
+    return snapshot, nil
+end
+
+function init_hp_restore_attempt(phase, player_idx)
+    trial_state._hp_restore_token = (trial_state._hp_restore_token or 0) + 1
+    local snapshot, skip_reason = read_attacker_hp_restore_snapshot()
+    local found = type(snapshot) == "table"
+    local state = {
+        token = trial_state._hp_restore_token,
+        found = found,
+        snapshot = snapshot,
+        target_player = tonumber(player_idx or trial_state.playing_player or 0) or 0,
+        restored = false,
+        finished = not found,
+        retry_count = 0,
+        max_retries = 5,
+        restore_count = 0,
+        training_setting_applied = false,
+        training_setting_apply_count = 0,
+        training_refresh_request_count = 0,
+        last_phase = phase,
+        skip_reason = found and nil or skip_reason
+    }
+    trial_state._hp_restore = state
+    if not found then
+        local restore_debug = restore_hp_training_setting_if_needed("plain_trial_" .. tostring(phase or "attempt"), state.target_player)
+        state.hp_setting_restore = restore_debug
+        state.switching_from_hp_snapshot_to_plain_trial = restore_debug and restore_debug.switching_from_hp_snapshot_to_plain_trial or false
+    end
+    record_hp_restore_state(state, phase or "init")
+end
+
+function apply_hp_restore_training_setting_once(phase)
+    local state = trial_state._hp_restore
+    if type(state) ~= "table" or state.found ~= true then return false end
+    if state.training_setting_applied == true then return false end
+
+    state.training_setting_applied = true
+    state.training_setting_apply_count = (state.training_setting_apply_count or 0) + 1
+
+    local snapshot = state.snapshot
+    local vital_point = hp_snapshot_to_vital_point(snapshot)
+    local attacker_idx = tonumber(state.target_player or trial_state.playing_player or 0) or 0
+    if attacker_idx ~= 1 then attacker_idx = 0 end
+
+    local objects = get_training_parameter_probe_objects(attacker_idx)
+    local tm = objects.tm or sdk.get_managed_singleton("app.training.TrainingManager")
+    local refresh_before = tm and tm:get_field("_IsReqRefresh")
+    local probe = {
+        phase = phase,
+        recorded_by = trial_state.sequence and trial_state.sequence[1] and trial_state.sequence[1].recorded_by or nil,
+        playing_player = trial_state.playing_player,
+        target_player_idx = attacker_idx,
+        target_player = attacker_idx == 1 and "p2" or "p1",
+        snapshot = snapshot,
+        vital_point = vital_point,
+        vital_point_percent = vital_point,
+        param_func_exists = objects.param_func ~= nil,
+        param_func_type = describe_re_object_for_debug(objects.param_func),
+        tf_parameter_setting_exists = objects.tf_ps ~= nil,
+        tf_parameter_setting_type = describe_re_object_for_debug(objects.tf_ps),
+        player_params_exists = objects.player_params ~= nil,
+        before_params = read_player_vital_params_for_debug(objects.player_params),
+        refresh_before = refresh_before
+    }
+
+    probe.set_vital_point_exists, probe.set_vital_point_method_error = probe_method_exists(objects.param_func, "SetVitalPoint")
+    probe.set_vital_type_exists, probe.set_vital_type_method_error = probe_method_exists(objects.param_func, "SetVitalType")
+    probe.set_vital_infinity_exists, probe.set_vital_infinity_method_error = probe_method_exists(objects.param_func, "SetVitalInfinity")
+    probe.set_vital_no_recovery_exists, probe.set_vital_no_recovery_method_error = probe_method_exists(objects.param_func, "SetVitalNoRecovery")
+
+    if vital_point == nil then
+        state.training_setting_skip_reason = "missing_vital_point"
+        probe.skip_reason = state.training_setting_skip_reason
+    elseif not objects.player_params then
+        state.training_setting_skip_reason = "missing_player_params"
+        probe.skip_reason = state.training_setting_skip_reason
+    else
+        probe.hp_setting_backup = ct_hp_backup_training_setting_once(attacker_idx, phase)
+        if objects.param_func then
+            probe.set_vital_point_called = true
+            local call_ok, call_result = pcall(function()
+                return objects.param_func:call("SetVitalPoint", attacker_idx, vital_point)
+            end)
+            probe.set_vital_point_call_ok = call_ok == true
+            if not call_ok then probe.set_vital_point_call_error = tostring(call_result) end
+        else
+            probe.set_vital_point_called = false
+            probe.set_vital_point_call_error = "missing_param_func"
+        end
+
+        local write_ok, write_err = pcall(function()
+            objects.player_params.Vital_Point = vital_point
+        end)
+        probe.write_vital_point_ok = write_ok == true
+        if not write_ok then probe.write_vital_point_error = tostring(write_err) end
+    end
+
+    probe.after_write_params = read_player_vital_params_for_debug(objects.player_params)
+
+    if objects.tf_ps then
+        local bapply_ok, bapply_err = pcall(function()
+            objects.tf_ps:call("bApply")
+        end)
+        probe.bapply_called = true
+        probe.bapply_ok = bapply_ok == true
+        if not bapply_ok then probe.bapply_error = tostring(bapply_err) end
+    else
+        probe.bapply_called = false
+        probe.bapply_error = "missing_tf_parameter_setting"
+    end
+
+    probe.refresh_after = tm and tm:get_field("_IsReqRefresh")
+    if refresh_before ~= true and probe.refresh_after == true then
+        state.training_refresh_request_count = (state.training_refresh_request_count or 0) + 1
+    end
+    probe.refresh_request_count = state.training_refresh_request_count or 0
+    probe.after_apply_params = read_player_vital_params_for_debug(objects.player_params)
+    if probe.write_vital_point_ok == true or probe.set_vital_point_call_ok == true then
+        trial_state._hp_snapshot_applied_current_session = true
+        state.hp_snapshot_applied_current_session = true
+    end
+
+    state.training_probe = probe
+    record_hp_restore_state(state, phase or "training_setting_probe", { hp_training_probe = probe })
+    return probe.write_vital_point_ok == true or probe.set_vital_point_call_ok == true
+end
+
+function apply_pending_hp_restore_once(phase)
+    local state = trial_state._hp_restore
+    if type(state) ~= "table" or state.finished == true then return false end
+    state.last_phase = phase
+    state.apply_called = true
+
+    if state.restored == true then
+        state.finished = true
+        state.skip_reason = "already_restored"
+        return false
+    end
+
+    local tm = sdk.get_managed_singleton("app.training.TrainingManager")
+    local refresh_before = tm and tm:get_field("_IsReqRefresh")
+    if refresh_before == true then
+        state.skip_reason = "training_refresh_active"
+        record_hp_restore_state(state, phase, { refresh_before = refresh_before })
+        return false
+    end
+
+    local target = state.target_player == 1 and GS.p2 or GS.p1
+    if not target then
+        state.retry_count = (state.retry_count or 0) + 1
+        state.skip_reason = "missing_player_object"
+        if state.retry_count >= (state.max_retries or 5) then
+            state.finished = true
+            state.skip_reason = "retry_limit_missing_player_object"
+        end
+        record_hp_restore_state(state, phase, { refresh_before = refresh_before })
+        return false
+    end
+
+    local hp = normalize_hp_value(state.snapshot and state.snapshot.current_hp)
+    if hp == nil then
+        state.finished = true
+        state.skip_reason = "missing_current_hp"
+        record_hp_restore_state(state, phase, { refresh_before = refresh_before })
+        return false
+    end
+
+    local before = read_player_hp_snapshot(target)
+    local before_fields = read_player_hp_fields_for_debug(target)
+    local heal_hp = normalize_hp_value(state.snapshot.heal_hp) or hp
+    local write_vital_new_ok, write_vital_new_err = pcall(function() target.vital_new = hp end)
+    local write_vital_old_ok, write_vital_old_err = pcall(function() target.vital_old = hp end)
+    local write_heal_new_ok, write_heal_new_err = pcall(function() target.heal_new = heal_hp end)
+    local after = read_player_hp_snapshot(target)
+    local after_fields = read_player_hp_fields_for_debug(target)
+    local refresh_after = tm and tm:get_field("_IsReqRefresh")
+
+    state.restored = true
+    state.finished = true
+    state.restore_count = (state.restore_count or 0) + 1
+    state.skip_reason = nil
+    local write_errors = {
+        vital_new = write_vital_new_ok and nil or tostring(write_vital_new_err),
+        vital_old = write_vital_old_ok and nil or tostring(write_vital_old_err),
+        heal_new = write_heal_new_ok and nil or tostring(write_heal_new_err)
+    }
+    local runtime_inject = {
+        phase = phase,
+        did_call_runtime_inject = true,
+        before_fields = before_fields,
+        after_fields = after_fields,
+        write_vital_new_ok = write_vital_new_ok == true,
+        write_vital_old_ok = write_vital_old_ok == true,
+        write_heal_new_ok = write_heal_new_ok == true,
+        write_errors = write_errors,
+        restore_count = state.restore_count
+    }
+    record_hp_restore_state(state, phase, {
+        before = before,
+        before_fields = before_fields,
+        after = after,
+        after_fields = after_fields,
+        did_call_runtime_inject = true,
+        write_results = {
+            vital_new = write_vital_new_ok == true,
+            vital_old = write_vital_old_ok == true,
+            heal_new = write_heal_new_ok == true
+        },
+        write_vital_new_ok = write_vital_new_ok == true,
+        write_vital_old_ok = write_vital_old_ok == true,
+        write_heal_new_ok = write_heal_new_ok == true,
+        write_errors = write_errors,
+        runtime_inject = runtime_inject,
+        refresh_before = refresh_before,
+        refresh_after = refresh_after
+    })
+    return true
 end
 
 -- Sets the Dummy Counter state (0=Normal, 1=Counter, 2=Punish Counter)
@@ -2514,12 +3285,24 @@ ComboTrials_Files.init(ctx, {
 
 local function load_combo_from_file(path, force)
     restore_dummy_action_type()
-    return ComboTrials_Files.load_combo_from_file(path, force)
+    local ok = ComboTrials_Files.load_combo_from_file(path, force)
+    if ok and type(read_attacker_hp_restore_snapshot) == "function"
+        and type(restore_hp_training_setting_if_needed) == "function" then
+        local snapshot = read_attacker_hp_restore_snapshot()
+        if type(snapshot) ~= "table" then
+            restore_hp_training_setting_if_needed("load_plain_trial", trial_state.playing_player)
+        end
+    end
+    return ok
 end
 
 local function clear_combo_state()
     restore_dummy_action_type()
-    return ComboTrials_Files.clear_combo_state()
+    local ok = ComboTrials_Files.clear_combo_state()
+    if type(restore_hp_training_setting_if_needed) == "function" then
+        restore_hp_training_setting_if_needed("clear_combo_state", trial_state.playing_player)
+    end
+    return ok
 end
 
 local function reset_player_action_buffers(p_state)
@@ -2578,7 +3361,7 @@ end
 local reset_combo_visual_runtime
 local step_combo_reset_gc
 
-local function clear_trial_attempt_state(player_idx)
+local function clear_trial_attempt_state(player_idx, phase)
     trial_state.success_timer = 0
     trial_state.fail_timer = 0
     trial_state.fail_reason = nil
@@ -2602,6 +3385,7 @@ local function clear_trial_attempt_state(player_idx)
     trial_state._ui_step_hold_until_frame = nil
     trial_state.last_played_frame = engine_frame_count
     begin_trial_action_grace()
+    init_hp_restore_attempt(phase or "attempt", player_idx or trial_state.playing_player)
 
     reset_player_action_buffers(players[player_idx or trial_state.playing_player])
     for _, item in ipairs(trial_state.sequence) do
@@ -2665,6 +3449,7 @@ local function start_recording(player_idx)
     -- Capture live position and refresh (same behavior as start_trial)
     trial_state.start_pos_p1, trial_state.start_pos_p2, trial_state.start_pos_p1_raw, trial_state.start_pos_p2_raw =
         capture_current_positions()
+    trial_state._rec_hp_snapshot = capture_trial_hp_snapshot(player_idx)
     apply_forced_position(true) -- skip_mirror: record in normal position
 
     trial_state._rec_gauges = nil
@@ -2684,11 +3469,13 @@ local function start_trial(player_idx)
         trial_state._pending_attacker_hp = nil
         trial_state._hp_inject_frames = 0
     else
-        restore_trial_vital()
+        local starting_hp_snapshot = type(read_attacker_hp_restore_snapshot()) == "table"
+        restore_trial_vital(starting_hp_snapshot)
         unique_resources.restore()
     end
     trial_state.is_recording = false
     trial_state._rec_gauges = nil
+    trial_state._rec_hp_snapshot = nil
     trial_state._rec_hit_type = nil
     trial_state._rec_environment = nil
     trial_state._rec_scene_state = nil
@@ -2696,7 +3483,7 @@ local function start_trial(player_idx)
     trial_state.playing_player = player_idx
     trial_state._was_playing = false
     trial_state._hp_inject_frames = 0
-    clear_trial_attempt_state(player_idx)
+    clear_trial_attempt_state(player_idx, "start_trial")
 
     trial_state.live_start_pos_p1, trial_state.live_start_pos_p2, trial_state.live_start_pos_p1_raw, trial_state.live_start_pos_p2_raw = capture_current_positions()
 
@@ -2709,6 +3496,7 @@ local function start_trial(player_idx)
 
     -- INJECT FIRST-STEP TRAINING ENVIRONMENT
     apply_trial_training_environment()
+    apply_hp_restore_training_setting_once("start_trial_training_setting")
     update_trial_flip_state()
     apply_forced_position()
     trial_state._pending_reinject_settings = true
@@ -2721,6 +3509,7 @@ local function cancel_recording()
     trial_state.current_step = 1
     trial_state._rec_environment = nil
     trial_state._rec_scene_state = nil
+    trial_state._rec_hp_snapshot = nil
     -- Flush displayed input history
     reset_combo_visual_runtime()
     step_combo_reset_gc()
@@ -2796,10 +3585,11 @@ end
 
 local function reset_trial_steps()
     clear_pending_position_injection()
-    clear_trial_attempt_state(trial_state.playing_player)
+    clear_trial_attempt_state(trial_state.playing_player, "reset_trial")
     -- Keep the training room's health settings for the next attempt
     reinject_trial_vital()
     apply_trial_training_environment()
+    apply_hp_restore_training_setting_once("reset_trial_training_setting")
     update_trial_flip_state()
     -- Reset positions if forced pos / mirror is active
     apply_forced_position()
@@ -2872,6 +3662,213 @@ function file_system.request_combo_list_refresh(reason, reload_current_file)
     file_system.diag_log("refresh requested reason=" .. tostring(reason)
         .. " reload=" .. tostring(reload_current_file)
         .. " pending_reload=" .. tostring(file_system.combo_list_refresh_pending_reload))
+end
+
+function ct_dev_hp_state_patch(fields)
+    if type(fields) ~= "table" then return end
+    for k, v in pairs(fields) do
+        ct_dev_hp_restore_test_state[k] = v
+    end
+end
+
+function ct_dev_deep_copy(value)
+    if type(value) ~= "table" then return value end
+    local out = {}
+    for k, v in pairs(value) do
+        out[ct_dev_deep_copy(k)] = ct_dev_deep_copy(v)
+    end
+    return out
+end
+
+function ct_dev_sequence_title(sequence)
+    local first = type(sequence) == "table" and sequence[1] or nil
+    if type(first) ~= "table" then return "" end
+    local meta = type(first._xt_meta) == "table" and first._xt_meta or first._wtt_cn_meta
+    if type(meta) == "table" and meta.title then return tostring(meta.title) end
+    return ""
+end
+
+function ct_dev_candidate_score(path, sequence)
+    local hay = tostring(path or "") .. " " .. ct_dev_sequence_title(sequence)
+    local first = type(sequence) == "table" and sequence[1] or nil
+    if type(first) == "table" then
+        local meta = type(first._xt_meta) == "table" and first._xt_meta or first._wtt_cn_meta
+        if type(meta) == "table" then
+            hay = hay .. " " .. tostring(meta.note or "") .. " " .. tostring(meta.character or "")
+        end
+    end
+    for _, step in ipairs(sequence or {}) do
+        if type(step) == "table" then
+            hay = hay .. " " .. tostring(step.id or "") .. " " .. tostring(step.motion or "")
+        end
+    end
+    hay = hay:lower()
+
+    local score = 0
+    if hay:find("jamie", 1, true) then score = score + 20 end
+    if hay:find("sa3", 1, true) then score = score + 50 end
+    if hay:find("ca", 1, true) then score = score + 30 end
+    if hay:find("236236", 1, true) then score = score + 40 end
+    if hay:find("5482", 1, true) then score = score + 40 end
+    if tostring(path or ""):find(CT_DEV_HP_TEST_FILENAME, 1, true) then score = score - 1000 end
+    return score
+end
+
+function ct_dev_minimal_hp_test_sequence()
+    return {
+        {
+            id = 5482,
+            motion = "236236P",
+            motion_aliases = {},
+            delay_from_prev = 0,
+            counter_type = 0,
+            recorded_by = 0,
+            _xt_meta = {
+                title = CT_DEV_HP_TEST_TITLE,
+                note = "DEV HP restore test, attacker current_hp=1000",
+                author = "DEV",
+                tags = { "dev", "hp_restore" },
+                schema = 1
+            },
+            snapshot_gauges = {
+                attacker = {
+                    current_hp = 1000,
+                    max_hp = 10000,
+                    heal_hp = 1000
+                }
+            }
+        }
+    }
+end
+
+function ct_dev_find_hp_restore_template()
+    local best_path, best_sequence, best_score = nil, nil, -100000
+
+    if type(trial_state.sequence) == "table" and type(trial_state.sequence[1]) == "table" then
+        local current_path = trial_state.current_file_path or trial_state.current_file or "current_loaded_sequence"
+        local score = ct_dev_candidate_score(current_path, trial_state.sequence)
+        if score > 0 and not tostring(current_path):find(CT_DEV_HP_TEST_FILENAME, 1, true) and score > best_score then
+            best_path = current_path
+            best_sequence = ct_dev_deep_copy(trial_state.sequence)
+            best_score = score
+        end
+    end
+
+    local glob_ok, files = false, nil
+    if fs and fs.glob then
+        glob_ok, files = pcall(fs.glob, "TrainingComboTrials_data\\\\CustomCombos\\\\Jamie\\\\.*json")
+    end
+    if glob_ok and type(files) == "table" then
+        for _, path in ipairs(files) do
+            if type(path) == "string"
+                and not path:find("_FAIL_", 1, true)
+                and not path:find(CT_DEV_HP_TEST_FILENAME, 1, true) then
+                local ok, sequence = pcall(json.load_file, path)
+                if ok and type(sequence) == "table" and type(sequence[1]) == "table" then
+                    local score = ct_dev_candidate_score(path, sequence)
+                    if score > best_score then
+                        best_path = path
+                        best_sequence = sequence
+                        best_score = score
+                    end
+                end
+            end
+        end
+    end
+
+    if best_sequence then return best_path, best_sequence, best_score end
+    return "generated_minimal_fallback", ct_dev_minimal_hp_test_sequence(), 0
+end
+
+function ct_dev_patch_hp_test_sequence(sequence)
+    if type(sequence) ~= "table" or type(sequence[1]) ~= "table" then
+        return nil, "template is not a combo sequence"
+    end
+    local out = ct_dev_deep_copy(sequence)
+    local first = out[1]
+
+    if type(first._xt_meta) ~= "table" then first._xt_meta = {} end
+    first._xt_meta.title = CT_DEV_HP_TEST_TITLE
+    local old_note = tostring(first._xt_meta.note or "")
+    local dev_note = "DEV HP restore test, attacker current_hp=1000"
+    if old_note:find(dev_note, 1, true) then
+        first._xt_meta.note = old_note
+    elseif old_note ~= "" then
+        first._xt_meta.note = old_note .. "\n" .. dev_note
+    else
+        first._xt_meta.note = dev_note
+    end
+
+    local snapshot = type(first.snapshot_gauges) == "table" and first.snapshot_gauges or {}
+    snapshot.attacker = {
+        current_hp = 1000,
+        max_hp = 10000,
+        heal_hp = 1000
+    }
+    first.snapshot_gauges = snapshot
+    return out, nil
+end
+
+function ct_dev_write_hp_restore_test_combo()
+    if CT_DEV_HP_RESTORE_TEST ~= true then return false end
+    if ct_dev_hp_restore_test_state.test_json_write_ok == true then return true end
+
+    ct_dev_hp_state_patch({
+        enabled = true,
+        attempted = true,
+        attempt_count = (ct_dev_hp_restore_test_state.attempt_count or 0) + 1,
+        test_json_path = CT_DEV_HP_TEST_PATH,
+        test_title = CT_DEV_HP_TEST_TITLE
+    })
+
+    if fs and fs.create_dir then
+        pcall(fs.create_dir, "TrainingComboTrials_data/CustomCombos")
+        pcall(fs.create_dir, "TrainingComboTrials_data/CustomCombos/Jamie")
+    end
+
+    local source_path, source_sequence, source_score = ct_dev_find_hp_restore_template()
+    local test_sequence, patch_error = ct_dev_patch_hp_test_sequence(source_sequence)
+    if not test_sequence then
+        ct_dev_hp_state_patch({
+            source_template_path = source_path,
+            source_template_score = source_score,
+            test_json_write_ok = false,
+            test_json_write_error = patch_error or "patch failed"
+        })
+        write_hp_restore_debug_dump("dev_test_json_patch_failed", { dev_test = ct_dev_hp_restore_test_state })
+        return false
+    end
+
+    local write_ok, write_error = pcall(json.dump_file, CT_DEV_HP_TEST_PATH, test_sequence)
+    ct_dev_hp_state_patch({
+        source_template_path = source_path,
+        source_template_score = source_score,
+        test_json_write_ok = write_ok == true,
+        test_json_write_error = write_ok and nil or tostring(write_error)
+    })
+
+    file_system.diag_log("[HPRestoreDev] test_json_path=" .. tostring(CT_DEV_HP_TEST_PATH)
+        .. " source=" .. tostring(source_path)
+        .. " title=" .. tostring(CT_DEV_HP_TEST_TITLE)
+        .. " write_ok=" .. tostring(write_ok)
+        .. " error=" .. tostring(write_error))
+
+    if write_ok then
+        file_system.request_combo_list_refresh("dev hp restore test generated", false)
+    end
+    write_hp_restore_debug_dump(write_ok and "dev_test_json_written" or "dev_test_json_write_failed", {
+        dev_test = ct_dev_hp_restore_test_state
+    })
+    return write_ok == true
+end
+
+function ct_dev_hp_restore_test_tick()
+    if CT_DEV_HP_RESTORE_TEST ~= true then return end
+    if ct_dev_hp_restore_test_state.test_json_write_ok == true then return end
+    local now = engine_frame_count or 0
+    if ct_dev_hp_restore_test_state.next_attempt_frame and now < ct_dev_hp_restore_test_state.next_attempt_frame then return end
+    ct_dev_hp_restore_test_state.next_attempt_frame = now + 120
+    ct_dev_write_hp_restore_test_combo()
 end
 
 function file_system.combo_list_external_refresh_busy()
@@ -3753,6 +4750,7 @@ local function ct_handle_playing_transition()
 end
 
 local function ct_handle_position_correction(_in_replay)
+    local hp_restore_checked = false
     if d2d_cfg.forced_position_idx == 1 then
         clear_pending_position_injection()
     end
@@ -3791,7 +4789,13 @@ local function ct_handle_position_correction(_in_replay)
         if tm_s and tm_s:get_field("_IsReqRefresh") == false then
             trial_state._pending_reinject_settings = false
             apply_trial_training_environment()
+            apply_pending_hp_restore_once("post_refresh_reinject")
+            hp_restore_checked = true
         end
+    end
+
+    if trial_state.is_playing and not trial_state._pending_reinject_settings and not hp_restore_checked then
+        apply_pending_hp_restore_once("post_refresh_retry")
     end
 end
 
@@ -6074,6 +7078,7 @@ re.on_frame(function()
         pcall(_ct_replay_bridge_poll)
     end
 
+    ct_dev_hp_restore_test_tick()
 
     if _G.CurrentTrainerMode ~= 4 then ct_auto_refresh_combo_list(); ct_handle_mode_exit(); return end
 
@@ -6213,6 +7218,20 @@ function save_trial_sequence(meta)
             snapshot.defender_drive = tonumber(init.defender_drive) or 0
             trial_state.sequence[1].snapshot_gauges = snapshot
         end
+        local hp_init = trial_state._rec_hp_snapshot
+        local hp_attacker = (type(hp_init) == "table" and hp_init.attacker) or (init and init.hp_attacker) or nil
+        local hp_victim = (type(hp_init) == "table" and hp_init.victim) or (init and init.hp_victim) or nil
+        if hp_snapshot_is_damaged(hp_attacker) or hp_snapshot_is_damaged(hp_victim) then
+            local snapshot = trial_state.sequence[1].snapshot_gauges
+            if type(snapshot) ~= "table" then snapshot = {} end
+            if hp_snapshot_is_damaged(hp_attacker) then
+                snapshot.attacker = copy_hp_snapshot(hp_attacker)
+            end
+            if hp_snapshot_is_damaged(hp_victim) then
+                snapshot.victim = copy_hp_snapshot(hp_victim)
+            end
+            trial_state.sequence[1].snapshot_gauges = snapshot
+        end
         if (trial_state.sequence[1].counter_type == nil or trial_state.sequence[1].counter_type == 0) and stats.hit_type then
             local inferred_ct = counter_type_from_hit_type(stats.hit_type)
             if inferred_ct ~= 0 then trial_state.sequence[1].counter_type = inferred_ct end
@@ -6221,6 +7240,7 @@ function save_trial_sequence(meta)
             trial_state.sequence[1].raw_input_file = logger_state.last_export_name
         end
         trial_state._rec_gauges = nil
+        trial_state._rec_hp_snapshot = nil
         trial_state._rec_hit_type = nil
     end
 
