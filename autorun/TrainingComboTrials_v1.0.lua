@@ -24,6 +24,20 @@ if CT_DEV_HP_RESTORE_TEST then
     _G.CT_HP_RESTORE_TRACE = true
 end
 
+local function ct_default_global_flag(name, value)
+    if rawget(_G, name) == nil then _G[name] = value end
+end
+
+ct_default_global_flag("CT_HP_RESTORE_TRACE", false)
+ct_default_global_flag("CT_UNIQUE_TRACE", false)
+ct_default_global_flag("CT_DEMO_TRACE", false)
+ct_default_global_flag("CT_VERIFY_TRACE", false)
+ct_default_global_flag("CT_HONDA_NORMAL_DUMP", false)
+ct_default_global_flag("CT_SAME_ACTION_TRACE", false)
+ct_default_global_flag("CT_SAME_ACTION_TRACE_FILE", false)
+ct_default_global_flag("CT_AUTO_FILE_SCAN", false)
+ct_default_global_flag("CT_SAVE_STATE_POC", false)
+
 pcall(function()
     if fs and fs.create_dir then fs.create_dir("TrainingComboTrials_data/exceptions") end
 end)
@@ -553,7 +567,8 @@ local file_system = {
     auto_load = true,
     forced_position_options = { "GAME SETTINGS", "FORCED", "MIRROR" },
 
-    combo_list_auto_refresh_frames = 120,
+    combo_list_auto_refresh_enabled = false,
+    combo_list_auto_refresh_frames = 600,
     combo_list_auto_refresh_counter = 0,
     combo_list_was_active = false,
     combo_list_pending_save_refreshed = false,
@@ -567,8 +582,14 @@ local file_system = {
     trialhub_sync_counter = 0,
     trialhub_last_marker = nil,
     trialhub_sync_warn_counter = 0,
+    trialhub_signal_last_path = nil,
+    trialhub_signal_last_raw = nil,
+    trialhub_signal_last_data = nil,
+    trialhub_signal_last_error = nil,
+    replay_bridge_poll_frames = 10,
+    replay_bridge_poll_counter = nil,
 
-    diag_enabled = true,
+    diag_enabled = false,
     diag_frame = 0,
     diag_last_runtime_allowed = nil,
     diag_last_mode = nil,
@@ -4300,6 +4321,11 @@ local function _ct_update_flip_live()
 end
 
 local function _ct_replay_bridge_poll()
+    local frames = file_system.replay_bridge_poll_frames or 10
+    file_system.replay_bridge_poll_counter = (file_system.replay_bridge_poll_counter or frames) + 1
+    if file_system.replay_bridge_poll_counter < frames then return end
+    file_system.replay_bridge_poll_counter = 0
+
     local b = json.load_file("SF6_TrainingRemoteControl_data/Replay_WebBridge.json")
     if b and b._web_timestamp then
         if not _G._replay_bridge_ts then _G._replay_bridge_ts = 0 end
@@ -4755,6 +4781,7 @@ local function ct_auto_refresh_combo_list()
     file_system.combo_list_pending_save_refreshed = false
     if file_system.run_pending_combo_list_refresh() then return end
     if busy then return end
+    if not file_system.combo_list_auto_refresh_enabled and rawget(_G, "CT_AUTO_FILE_SCAN") ~= true then return end
 
     file_system.combo_list_auto_refresh_counter = file_system.combo_list_auto_refresh_counter + 1
     if file_system.combo_list_auto_refresh_counter >= file_system.combo_list_auto_refresh_frames then
@@ -4783,12 +4810,36 @@ local function read_trialhub_sync_signal()
         "TrialHub/sync_signal.json"
     }
     for _, path in ipairs(paths) do
-        local ok, data = pcall(json.load_file, path)
-        if ok and type(data) == "table" then
-            file_system.trialhub_sync_warn_counter = 0
-            return data, nil, path
-        elseif not ok then
-            return nil, data, path
+        local ok_open, f = pcall(io.open, path, "r")
+        if ok_open and f then
+            local raw = f:read("*a") or ""
+            f:close()
+            local trimmed = raw:match("^%s*(.-)%s*$") or ""
+            if trimmed ~= "" then
+                if file_system.trialhub_signal_last_path == path
+                    and file_system.trialhub_signal_last_raw == raw then
+                    return file_system.trialhub_signal_last_data, file_system.trialhub_signal_last_error, path
+                end
+
+                local ok, data = pcall(json.load_file, path)
+                file_system.trialhub_signal_last_path = path
+                file_system.trialhub_signal_last_raw = raw
+                if ok and type(data) == "table" then
+                    file_system.trialhub_signal_last_data = data
+                    file_system.trialhub_signal_last_error = nil
+                    file_system.trialhub_sync_warn_counter = 0
+                    return data, nil, path
+                elseif not ok then
+                    file_system.trialhub_signal_last_data = nil
+                    file_system.trialhub_signal_last_error = data
+                    return nil, data, path
+                else
+                    file_system.trialhub_signal_last_data = nil
+                    file_system.trialhub_signal_last_error = nil
+                end
+            end
+        elseif not ok_open then
+            return nil, f, path
         end
     end
     return nil, nil, nil
@@ -5520,7 +5571,7 @@ _G.CTSameActionTrace.max_events = 500
 function _G.CTSameActionTrace.enabled()
     local same_flag = rawget(_G, "CT_SAME_ACTION_TRACE")
     if same_flag ~= nil then return same_flag == true end
-    return rawget(_G, "CT_VERIFY_TRACE") ~= false
+    return rawget(_G, "CT_VERIFY_TRACE") == true
 end
 
 function _G.CTSameActionTrace.target()
@@ -7367,19 +7418,23 @@ re.on_frame(function()
         pcall(_ct_update_flip_live)
     end
 
-    -- REPLAY REMOTE STATE (before mode gate so it always publishes)
-    if not _G._replay_web_counter then _G._replay_web_counter = 0 end
-    _G._replay_web_counter = _G._replay_web_counter + 1
-    if _G._replay_web_counter >= 10 then
-        _G._replay_web_counter = 0
-        pcall(function()
-            json.dump_file("SF6_TrainingRemoteControl_data/Replay_WebState.json", {
-                in_replay = _in_replay,
-                is_recording = _in_replay and trial_state.is_recording or false,
-                recording_player = _in_replay and trial_state.recording_player or -1,
-                hide_ui = _G._tsm_hide_ui or false,
+    -- REPLAY REMOTE STATE
+    if _in_replay then
+        if not _G._replay_web_counter then _G._replay_web_counter = 0 end
+        _G._replay_web_counter = _G._replay_web_counter + 1
+        if _G._replay_web_counter >= 60 then
+            _G._replay_web_counter = 0
+            pcall(function()
+                json.dump_file("SF6_TrainingRemoteControl_data/Replay_WebState.json", {
+                    in_replay = _in_replay,
+                    is_recording = trial_state.is_recording or false,
+                    recording_player = trial_state.recording_player or -1,
+                    hide_ui = _G._tsm_hide_ui or false,
+                })
             })
-        end)
+        end
+    else
+        _G._replay_web_counter = 0
     end
 
 
@@ -7976,6 +8031,11 @@ end
 
 local _ss_hooked = false
 re.on_frame(function()
+    if rawget(_G, "CT_SAVE_STATE_POC") ~= true then
+        _save_pending = false
+        _pending_restore = 0
+        return
+    end
     if not RuntimeSafety.is_training_allowed() then
         _save_pending = false
         _pending_restore = 0

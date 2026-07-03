@@ -14,12 +14,17 @@ local build_state_summary
 
 local function honda_normal_dump_enabled()
     local flag = rawget(_G, "CT_HONDA_NORMAL_DUMP")
-    return flag ~= false
+    return flag == true
 end
 
 local function verify_trace_enabled()
     local flag = rawget(_G, "CT_VERIFY_TRACE")
-    return flag ~= false
+    return flag == true
+end
+
+local function state_dump_enabled()
+    local flag = rawget(_G, "CT_STATE_DUMP_TRACE")
+    return flag == true
 end
 
 function DebugTrace.record_validation_debug(state, data)
@@ -48,7 +53,7 @@ function DebugTrace.record_match_probe(state, data)
         if not state._verify_trace_dump then
             state._verify_trace_dump = {
                 timestamp = os.date("%Y-%m-%d %H:%M:%S"),
-                note = "Rolling ComboTrials validation trace. Disable with _G.CT_VERIFY_TRACE=false.",
+                note = "Rolling ComboTrials validation trace. Enable with _G.CT_VERIFY_TRACE=true.",
                 path = VERIFY_TRACE_PATH,
                 events = {}
             }
@@ -64,7 +69,7 @@ function DebugTrace.record_match_probe(state, data)
             DebugTrace.write_json(VERIFY_TRACE_PATH, dump)
         end)
     end
-    if build_state_summary then
+    if state_dump_enabled() and build_state_summary then
         pcall(function()
             DebugTrace.write_json(STATE_DUMP_PATH, build_state_summary(state))
         end)
@@ -221,7 +226,7 @@ function DebugTrace.record_honda_normal_input(state, event)
     if not state._honda_normal_dump then
         state._honda_normal_dump = {
             timestamp = os.date("%Y-%m-%d %H:%M:%S"),
-            note = "Temporary EHonda recording-only action dump. Disable with _G.CT_HONDA_NORMAL_DUMP=false.",
+            note = "Temporary EHonda recording-only action dump. Enable with _G.CT_HONDA_NORMAL_DUMP=true.",
             events = {}
         }
     end
