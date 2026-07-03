@@ -6950,12 +6950,13 @@ local function ct_player_universal_hold(p_idx, p_state)
         else
             -- Optional retrieval of perfect windows (e.g. Luke)
             local p_min, p_max = nil, nil
-            local act_id_str = tostring(p_state.prev_act_id)
+            local act_id_str = tostring(uh.expected_action_id or p_state.prev_act_id)
             local exc = CharacterRules.get_exception(p_state.exceptions, common_exceptions, act_id_str)
             if exc then p_min = exc.perfect_min; p_max = exc.perfect_max end
 
+            local release_frames = math.max(0, (tonumber(uh.frames) or 0) - 1)
             local final_status = evaluate_charge_status(
-                uh.profile_name, uh.frames,
+                uh.profile_name, release_frames,
                 uh.charge_min, uh.charge_max,
                 p_min, p_max
             )
@@ -6980,7 +6981,7 @@ local function ct_player_universal_hold(p_idx, p_state)
 
             local diff_str = ""
             if uh.expected_frames then
-                local diff = uh.frames - uh.expected_frames
+                local diff = release_frames - uh.expected_frames
                 local sign = diff > 0 and "+" or ""
                 diff_str = string.format(" [%s%df]", sign, diff)
             end

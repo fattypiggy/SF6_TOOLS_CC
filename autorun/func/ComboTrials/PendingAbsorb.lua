@@ -150,6 +150,7 @@ function PendingAbsorb.apply_matched_step(ctx, params)
                 charge_min = expected.charge_min,
                 charge_max = expected.charge_max,
                 profile_name = ctx.p_state and ctx.p_state.profile_name or nil,
+                expected_action_id = expected.id,
                 linked_transition_id = expected.linked_transition_id,
                 expected_frames = expected.hold_frames,
                 hold_partial_check = expected.hold_partial_check
