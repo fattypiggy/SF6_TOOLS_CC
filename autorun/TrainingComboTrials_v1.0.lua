@@ -3115,12 +3115,13 @@ function ct_trial_dummy_guard_type()
     return guard_type
 end
 
-local function apply_trial_training_environment()
+local function apply_trial_training_environment(skip_refresh_settings)
     local first_ct = trial_state.sequence and trial_state.sequence[1] and trial_state.sequence[1].counter_type or 0
-    unique_resources.apply_recorded()
+    local apply_refresh_settings = skip_refresh_settings ~= true
+    if apply_refresh_settings then unique_resources.apply_recorded() end
     local first_step = trial_state.sequence and trial_state.sequence[1]
     local snapshot_gauges = type(first_step) == "table" and first_step.snapshot_gauges or nil
-    if type(snapshot_gauges) == "table" and snapshot_gauges.defender_burnout == true then
+    if apply_refresh_settings and type(snapshot_gauges) == "table" and snapshot_gauges.defender_burnout == true then
         local attacker_idx = tonumber(trial_state.playing_player or 0) or 0
         local defender_idx = 1 - attacker_idx
         local tm = sdk.get_managed_singleton("app.training.TrainingManager")
@@ -5045,7 +5046,7 @@ local function ct_handle_position_correction(_in_replay)
         local tm_s = sdk.get_managed_singleton("app.training.TrainingManager")
         if tm_s and tm_s:get_field("_IsReqRefresh") == false then
             trial_state._pending_reinject_settings = false
-            apply_trial_training_environment()
+            apply_trial_training_environment(true)
             apply_pending_hp_restore_once("post_refresh_reinject")
             hp_restore_checked = true
         end
