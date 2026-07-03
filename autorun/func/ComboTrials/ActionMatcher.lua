@@ -9,6 +9,12 @@ end
 function ActionMatcher.normalize_motion_token(value)
     local s = tostring(value or ""):upper():gsub("%s+", "")
     s = s:gsub("^>%s*", "")
+    s = s:gsub("%(空挥%)", "")
+    s = s:gsub("%(绌烘尌%)", "")
+    s = s:gsub("%(WHIFF%)", "")
+    s = s:gsub("（空挥）", "")
+    s = s:gsub("（绌烘尌）", "")
+    s = s:gsub("（WHIFF）", "")
     return s
 end
 

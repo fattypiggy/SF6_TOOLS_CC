@@ -4406,6 +4406,100 @@ local function is_same_action_continuation_step(prev_step, step, combo_count)
     return true
 end
 
+function ct_is_zero_combo_pressure_validation_step(step)
+    if type(step) ~= "table" then return false end
+    if step.display_only == true then return false end
+    if (tonumber(step.expected_combo) or 0) ~= 0 then return false end
+    if step.hit_result == "block" then return true end
+
+    local motion = tostring(step.motion or "")
+    local motion_upper = motion:upper()
+    if motion:find("空挥", 1, true) ~= nil or motion_upper:find("WHIFF", 1, true) ~= nil then
+        return true
+    end
+    return step.has_hit ~= true and (tonumber(step.damage_at_step) or 0) == 0
+end
+
+function ct_is_unreported_same_action_pressure_step(prev_step, step)
+    if not prev_step or not step then return false end
+    if prev_step.id == nil or step.id == nil then return false end
+    if prev_step.id ~= step.id then return false end
+    return ct_is_zero_combo_pressure_validation_step(prev_step)
+        and ct_is_zero_combo_pressure_validation_step(step)
+end
+
+function ct_should_ignore_duplicate_previous_pressure_action(prev_step, expected, act_id)
+    if not prev_step or not expected then return false end
+    if prev_step.id == nil or expected.id == nil or act_id == nil then return false end
+    if prev_step.id ~= act_id then return false end
+    if expected.id == act_id then return false end
+    return ct_is_zero_combo_pressure_validation_step(prev_step)
+end
+
+function ct_try_skip_unreported_same_action_pressure_step(args)
+    if type(args) ~= "table" then return nil end
+    if not args.expected or args.action_match_matched then return nil end
+    if not ct_is_unreported_same_action_pressure_step(args.prev_step, args.expected) then return nil end
+
+    local state = args.state
+    local sequence = state and state.sequence or nil
+    local current_step = state and state.current_step or nil
+    if type(sequence) ~= "table" or not current_step then return nil end
+
+    local next_step_idx = current_step + 1
+    local next_expected = sequence[next_step_idx]
+    if not next_expected then return nil end
+
+    local next_action_match = args.ActionMatcher.match_expected_action(
+        next_expected,
+        args.act_id,
+        args.motion,
+        args.input
+    )
+    if not next_action_match or not next_action_match.matched then return nil end
+
+    local validation_frame = args.synthetic and (args.synthetic_frame or engine_frame_count) or engine_frame_count
+    local last_played = state.last_played_frame or validation_frame
+    local virtual_frame = validation_frame - (tonumber(next_expected.delay_from_prev) or 0)
+    local min_virtual_frame = last_played + (tonumber(args.expected.delay_from_prev) or 0)
+    if virtual_frame < min_virtual_frame then virtual_frame = min_virtual_frame end
+
+    args.expected.actual_combo = math.max(tonumber(args.expected.actual_combo) or 0, args.combo_count or 0)
+    args.expected.last_frame_diff = args.Validator.calculate_frame_diff(
+        virtual_frame - last_played,
+        args.expected.delay_from_prev
+    )
+    state.last_played_frame = virtual_frame
+    state.current_step = next_step_idx
+    state.ui_visual_step = state.current_step
+    state.floating_info = nil
+
+    local probe = args.match_probe
+    if probe then
+        probe.branch = "pressure_same_action_unreported_skip"
+        probe.reject_reason = nil
+        probe.skipped_step = next_step_idx - 1
+        probe.skipped_expected_id = args.expected.id
+        probe.skipped_expected_motion = args.expected.motion
+        probe.next_step = next_step_idx
+        probe.next_expected_id = next_expected.id
+        probe.next_expected_motion = next_expected.motion
+        probe.next_action_match = {
+            matched = next_action_match.matched,
+            match_reason = next_action_match.match_reason,
+            expected_id = next_action_match.expected_id,
+            actual_action_id = next_action_match.actual_action_id
+        }
+        args.DebugTrace.record_match_probe(state, probe)
+    end
+
+    return {
+        expected = next_expected,
+        action_match = next_action_match,
+        prev_step = state.current_step > 1 and sequence[state.current_step - 1] or nil
+    }
+end
+
 local function build_same_action_auto_advance_debug(prev_step, step, combo_count, call_site)
     local prev_combo = prev_step and (tonumber(prev_step.expected_combo) or 0) or nil
     local expected_combo = step and (tonumber(step.expected_combo) or 0) or nil
@@ -6586,6 +6680,43 @@ local function ct_player_process_actions(p_idx, p_state, actions_to_process)
                                 action_code = action_code,
                                 branch_type = b_type
                             })
+                            if expected and not action_match.matched
+                                and ct_is_unreported_same_action_pressure_step(trace_prev_step, expected) then
+                                _pf.pressure_skip = ct_try_skip_unreported_same_action_pressure_step({
+                                    state = trial_state,
+                                    expected = expected,
+                                    prev_step = trace_prev_step,
+                                    action_match_matched = action_match.matched,
+                                    act_id = act_id,
+                                    motion = motion_str,
+                                    input = real_input_str,
+                                    synthetic = process_act.synthetic,
+                                    synthetic_frame = process_act.engine_frame,
+                                    combo_count = _pf.current_combo or 0,
+                                    ActionMatcher = ActionMatcher,
+                                    Validator = Validator,
+                                    DebugTrace = DebugTrace,
+                                    match_probe = match_probe
+                                })
+                                if _pf.pressure_skip then
+                                    expected = _pf.pressure_skip.expected
+                                    action_match = _pf.pressure_skip.action_match
+                                    trace_prev_step = _pf.pressure_skip.prev_step
+                                    _pf.pressure_skip = nil
+                                    match_probe = build_match_probe(expected, "intentional_action_after_pressure_same_skip")
+                                    match_probe.action_match = {
+                                        matched = action_match.matched,
+                                        match_reason = action_match.match_reason,
+                                        expected_id = action_match.expected_id,
+                                        actual_action_id = action_match.actual_action_id,
+                                        source = action_match.source,
+                                        edge_type = action_match.edge_type,
+                                        synthetic = action_match.synthetic
+                                    }
+                                else
+                                    _pf.pressure_skip = nil
+                                end
+                            end
                             local skip_current_action = false
                             if expected and not action_match.matched then
                                 local recent_absorb = CharacterRules.find_recent_absorb_confirmation(
@@ -6891,6 +7022,14 @@ local function ct_player_process_actions(p_idx, p_state, actions_to_process)
                                     ComboTrialsModules.PendingAbsorb.clear(trial_state, "drive_rush_tolerance")
                                     trial_state.last_played_frame = engine_frame_count
                                     trial_state.current_step = trial_state.current_step + 1
+                                elseif ct_should_ignore_duplicate_previous_pressure_action(trace_prev_step, expected, act_id) then
+                                    match_probe.branch = "pressure_duplicate_previous_action_ignored"
+                                    match_probe.reject_reason = nil
+                                    match_probe.ignored_duplicate_previous_id = act_id
+                                    match_probe.previous_id = trace_prev_step and trace_prev_step.id or nil
+                                    match_probe.waiting_for_expected_id = expected and expected.id or nil
+                                    match_probe.waiting_for_expected_motion = expected and expected.motion or nil
+                                    DebugTrace.record_match_probe(trial_state, match_probe)
                                 elseif act_id == trial_state.sequence[1].id then
                                     match_probe.branch = "restart_from_first_step"
                                     DebugTrace.record_match_probe(trial_state, match_probe)
