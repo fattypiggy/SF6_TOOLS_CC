@@ -2231,6 +2231,8 @@ local function set_dummy_guard_type(guard_val)
     pcall(function()
         local tm = sdk.get_managed_singleton("app.training.TrainingManager")
         if not tm then return end
+        local guard_func = tm:call("get_GuardFunc")
+        if guard_func then pcall(function() guard_func:call("ChangeGuardType", 1, guard_val) end) end
         local tData = tm:get_field("_tData")
         local gs = tData:get_field("GuardSetting")
         local dd = gs:get_field("DummyData")
@@ -2962,6 +2964,157 @@ local function trial_requires_dummy_crouch()
     return false
 end
 
+CT_TRIAL_DEFENSE_FIELDS = {
+    "DR_Type",
+    "DP_Type",
+    "DR_Guard_Weight",
+    "DR_Getup_Weight",
+    "DR_No_Weight"
+}
+
+_ct_tf_defense_system_cache = nil
+function ct_get_tf_defense_system()
+    if _ct_tf_defense_system_cache then return _ct_tf_defense_system_cache end
+    pcall(function()
+        local tm = sdk.get_managed_singleton("app.training.TrainingManager")
+        if not tm then return end
+        local dict = tm:get_field("_tfFuncs")
+        if not dict then return end
+        local entries = dict:get_field("_entries")
+        if not entries then return end
+        local count = entries:call("get_Count")
+        for i = 0, count - 1 do
+            local entry = entries:call("get_Item", i)
+            local val = entry and entry:get_field("value") or nil
+            if val then
+                local td = val:get_type_definition()
+                local full_name = td and td:get_full_name() or ""
+                if full_name:find("tf_DefenseSystem") then
+                    _ct_tf_defense_system_cache = val
+                    return
+                end
+            end
+        end
+    end)
+    return _ct_tf_defense_system_cache
+end
+
+function ct_get_trial_defense_objects(player_idx)
+    local out = { player_idx = tonumber(player_idx or 1) or 1 }
+    if out.player_idx ~= 1 then out.player_idx = 0 end
+    pcall(function()
+        out.tm = sdk.get_managed_singleton("app.training.TrainingManager")
+        out.defense_func = out.tm and out.tm:call("get_DefenseFunc") or nil
+        local t_data = out.tm and out.tm:get_field("_tData") or nil
+        out.defense_system = t_data and t_data:get_field("DefenseSystem") or nil
+        if out.defense_system then
+            out.dummy_data = out.defense_system.DummyData
+            out.player_data = out.defense_system.PlayerDatas and out.defense_system.PlayerDatas[out.player_idx] or nil
+        end
+        out.tf_defense = ct_get_tf_defense_system()
+    end)
+    return out
+end
+
+function ct_copy_trial_defense_fields(obj)
+    local fields = {}
+    if not obj then return fields end
+    for _, field_name in ipairs(CT_TRIAL_DEFENSE_FIELDS) do
+        local ok, value = pcall(function() return obj[field_name] end)
+        if ok and value ~= nil then fields[field_name] = value end
+    end
+    return fields
+end
+
+function ct_write_trial_defense_fields(obj, fields)
+    if not obj then return end
+    for field_name, value in pairs(fields or {}) do
+        pcall(function() obj[field_name] = value end)
+    end
+end
+
+function ct_backup_trial_defense_settings(defender_idx)
+    defender_idx = tonumber(defender_idx or 1) or 1
+    if defender_idx ~= 1 then defender_idx = 0 end
+    if type(trial_state._trial_defense_backup) == "table" then return end
+    local objects = ct_get_trial_defense_objects(defender_idx)
+    trial_state._trial_defense_backup = {
+        player_idx = defender_idx,
+        dummy = ct_copy_trial_defense_fields(objects.dummy_data),
+        player = ct_copy_trial_defense_fields(objects.player_data)
+    }
+end
+
+function restore_trial_defense_settings()
+    local backup = trial_state._trial_defense_backup
+    if type(backup) ~= "table" then return false end
+    local objects = ct_get_trial_defense_objects(backup.player_idx)
+    ct_write_trial_defense_fields(objects.dummy_data, backup.dummy)
+    ct_write_trial_defense_fields(objects.player_data, backup.player)
+    if objects.tf_defense then pcall(function() objects.tf_defense:call("bApply") end) end
+    trial_state._trial_defense_backup = nil
+    return true
+end
+
+function apply_trial_defense_cleanup()
+    local attacker_idx = tonumber(trial_state.playing_player or 0) or 0
+    if attacker_idx ~= 1 then attacker_idx = 0 end
+    local defender_idx = 1 - attacker_idx
+    ct_backup_trial_defense_settings(defender_idx)
+
+    local objects = ct_get_trial_defense_objects(defender_idx)
+    if objects.defense_func then
+        pcall(function() objects.defense_func:call("SetDriveParry", defender_idx, 0) end)
+        pcall(function() objects.defense_func:call("ChangeDRType", defender_idx, 0) end)
+        pcall(function() objects.defense_func:call("SetDR_Guard_Weight", defender_idx, 0) end)
+        pcall(function() objects.defense_func:call("SetDR_Getup_Weight", defender_idx, 0) end)
+        pcall(function() objects.defense_func:call("SetDR_No_Weight", defender_idx, 100) end)
+    end
+
+    local disabled = {
+        DR_Type = 0,
+        DP_Type = 0,
+        DR_Guard_Weight = 0,
+        DR_Getup_Weight = 0,
+        DR_No_Weight = 100
+    }
+    ct_write_trial_defense_fields(objects.dummy_data, disabled)
+    ct_write_trial_defense_fields(objects.player_data, disabled)
+    if objects.tf_defense then pcall(function() objects.tf_defense:call("bApply") end) end
+end
+
+function ct_trial_dummy_guard_type()
+    local first_step = trial_state.sequence and trial_state.sequence[1]
+    if type(first_step) ~= "table" then return 2 end
+
+    local meta = type(first_step._xt_meta) == "table" and first_step._xt_meta or nil
+    local env = meta and type(meta.environment) == "table" and meta.environment or nil
+    local guard_type = tonumber(first_step.dummy_guard_type)
+        or (meta and tonumber(meta.dummy_guard_type) or nil)
+        or (env and tonumber(env.dummy_guard_type) or nil)
+
+    if guard_type == nil then
+        local guard_name = first_step.dummy_guard
+            or (meta and meta.dummy_guard or nil)
+            or (env and env.dummy_guard or nil)
+        if type(guard_name) == "string" then
+            local guard_text = guard_name:lower()
+            if guard_text == "none" or guard_text == "no" or guard_text == "off" then
+                guard_type = 0
+            elseif guard_text == "after_first_hit" or guard_text == "after-first-hit" or guard_text == "after first hit" then
+                guard_type = 2
+            elseif guard_text == "all" or guard_text == "guard_all" or guard_text == "full" then
+                guard_type = 3
+            elseif guard_text == "random" then
+                guard_type = 4
+            end
+        end
+    end
+
+    if guard_type == nil or guard_type < 0 or guard_type > 4 then guard_type = 2 end
+    return guard_type
+end
+
 local function apply_trial_training_environment()
     local first_ct = trial_state.sequence and trial_state.sequence[1] and trial_state.sequence[1].counter_type or 0
     unique_resources.apply_recorded()
@@ -3000,7 +3153,10 @@ local function apply_trial_training_environment()
         set_dummy_action_type(DUMMY_ACTION_STAND)
     end
     set_dummy_counter_type(first_ct or 0)
-    set_dummy_guard_type(2)
+    local dummy_guard_type = ct_trial_dummy_guard_type()
+    _G.CT_COMBO_TRIALS_DUMMY_GUARD_TYPE = dummy_guard_type
+    set_dummy_guard_type(dummy_guard_type)
+    apply_trial_defense_cleanup()
 end
 
 local function capture_current_positions()
@@ -4392,6 +4548,7 @@ local function ct_handle_web_commands()
                 )
             end
             trial_state.is_playing = false; ct_ticker("连段训练已停止")
+            restore_trial_defense_settings()
         end
         if cmd == "toggle_position" then
             d2d_cfg.forced_position_idx = (d2d_cfg.forced_position_idx or 1) + 1
@@ -4641,6 +4798,7 @@ local function ct_handle_mode_exit()
 
             restore_trial_vital()
             unique_resources.restore()
+            restore_trial_defense_settings()
             restore_dummy_counter_type()
             restore_dummy_guard_type()
             restore_dummy_action_type()
@@ -4737,6 +4895,7 @@ local function ct_handle_playing_transition()
         -- Transition ON -> OFF: restore trial-only settings and reset positions to default
         restore_trial_vital()
         unique_resources.restore()
+        restore_trial_defense_settings()
         trial_state._pending_reinject_settings = false
         restore_dummy_action_type()
         set_dummy_counter_type(0)

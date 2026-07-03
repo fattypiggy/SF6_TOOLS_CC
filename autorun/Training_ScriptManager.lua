@@ -308,8 +308,12 @@ local function update_guard_logic()
         set_guard_type(GUARD_ALL)
 
     elseif current_mode == 4 then
-        -- >>> COMBO TRIALS >>> GUARD_AFTER_FIRST_HIT (2)
-        set_guard_type(GUARD_AFTER_FIRST_HIT)
+        -- >>> COMBO TRIALS >>> use the guard type selected by the active trial
+        local combo_guard_type = tonumber(_G.CT_COMBO_TRIALS_DUMMY_GUARD_TYPE)
+        if combo_guard_type == nil or combo_guard_type < 0 or combo_guard_type > 4 then
+            combo_guard_type = GUARD_AFTER_FIRST_HIT
+        end
+        set_guard_type(combo_guard_type)
 
 
     elseif current_mode == 0 then
