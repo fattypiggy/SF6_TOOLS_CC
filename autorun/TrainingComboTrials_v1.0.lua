@@ -3432,6 +3432,10 @@ local function normalize_sequence_counter_types(sequence)
     end
 end
 
+function ct_is_ingrid_charge_stock_action(char_name, act_id)
+    return tostring(char_name or "") == "Ingrid" and tonumber(act_id) == 969
+end
+
 local ComboTrials_Files = require("func/ComboTrials_Files")
 ComboTrials_Files.init(ctx, {
     normalize_sequence_counter_types = normalize_sequence_counter_types,
@@ -6373,6 +6377,12 @@ local function ct_player_process_actions(p_idx, p_state, actions_to_process)
                         trial_state.sequence[#trial_state.sequence].damage_at_step = math.max(0, rg.victim_hp - v_hp_now)
                     end
 
+                    local recorded_hold_frames = tonumber(hold_frames or 0) or 0
+                    local buffered_hold_frames = tonumber(process_act.buffer_hold_frames or 0) or 0
+                    if buffered_hold_frames > recorded_hold_frames then
+                        recorded_hold_frames = buffered_hold_frames
+                    end
+
                     table.insert(trial_state.sequence, {
                         id = act_id,
                         motion = motion_str,
@@ -6381,7 +6391,7 @@ local function ct_player_process_actions(p_idx, p_state, actions_to_process)
                         dual_threshold = dual_threshold,
                         charge_min = charge_min,
                         charge_max = charge_max,
-                        hold_frames = 0,
+                        hold_frames = recorded_hold_frames,
                         hold_partial_check = ActionMatcher.hold_partial_check_enabled(exc),
                         expected_combo = 0,
                         actual_combo = 0,
@@ -7333,11 +7343,12 @@ function save_trial_sequence(meta)
                 if not last_step.has_hit and (last_step.expected_combo or 0) == 0 then
                     local p_id = last_step.id or 0
                     local is_mov = (p_id == 17 or p_id == 18 or p_id == 36 or p_id == 37 or p_id == 38) or is_drive_rush_id(p_id)
+                    local is_ingrid_charge_stock = ct_is_ingrid_charge_stock_action(char_name, p_id)
                     local m_str = last_step.motion and last_step.motion:upper() or ""
                     local is_parry = m_str:match("PARRY")
                     local is_dash = m_str:match("DASH") or m_str:match("66") or m_str:match("44") or is_drive_rush_motion(last_step.motion)
 
-                    if not is_mov and not is_parry and not is_dash and not m_str:match("空挥") and not m_str:match("WHIFF") then
+                    if not is_mov and not is_ingrid_charge_stock and not is_parry and not is_dash and not m_str:match("空挥") and not m_str:match("WHIFF") then
                         last_step.motion = last_step.motion .. " (空挥)"
                     end
                 end
