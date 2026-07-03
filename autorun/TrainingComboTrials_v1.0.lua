@@ -555,17 +555,26 @@ end
 local file_system = {
     saved_combos_display_p1 = {},
     saved_combos_paths_p1 = {},
+    saved_combos_control_p1 = {},
+    saved_combos_all_display_p1 = {},
+    saved_combos_all_paths_p1 = {},
+    saved_combos_all_control_p1 = {},
     skipped_combos_p1 = 0,
     selected_file_idx_p1 = 1,
 
     saved_combos_display_p2 = {},
     saved_combos_paths_p2 = {},
+    saved_combos_control_p2 = {},
+    saved_combos_all_display_p2 = {},
+    saved_combos_all_paths_p2 = {},
+    saved_combos_all_control_p2 = {},
     skipped_combos_p2 = 0,
     selected_file_idx_p2 = 1,
 
     last_p1_id = -1,
     auto_load = true,
     forced_position_options = { "GAME SETTINGS", "FORCED", "MIRROR" },
+    combo_control_filter = "auto",
 
     combo_list_auto_refresh_enabled = false,
     combo_list_auto_refresh_frames = 600,
@@ -7429,9 +7438,9 @@ re.on_frame(function()
                     in_replay = _in_replay,
                     is_recording = trial_state.is_recording or false,
                     recording_player = trial_state.recording_player or -1,
-                    hide_ui = _G._tsm_hide_ui or false,
+                    hide_ui = _G._tsm_hide_ui or false
                 })
-            })
+            end)
         end
     else
         _G._replay_web_counter = 0
