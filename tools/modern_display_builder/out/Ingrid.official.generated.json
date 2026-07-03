@@ -1,0 +1,11 @@
+{
+  "_meta": {
+    "schema": "xt.modern_display.v1",
+    "character": "Ingrid",
+    "generated_from": "capcom_official",
+    "source_url": "https://www.streetfighter.com/6/zh-hant/character/ingrid/frame",
+    "source_chunk": "https://www.streetfighter.com/6/_next/static/chunks/pages/character/%5Bname%5D/frame-0108e6f0609afb42.js",
+    "updated_at": "2026-07-04",
+    "description": "Official Ingrid modern display candidate generated from Capcom frame data."
+  }
+}

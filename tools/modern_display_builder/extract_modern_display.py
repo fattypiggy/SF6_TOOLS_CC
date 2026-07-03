@@ -55,17 +55,61 @@ def fetch_text(url: str, referer: str | None = None) -> str:
 def character_to_slug(character: str) -> str:
     normalized = character.strip().lower().replace("-", "_").replace(" ", "_")
     aliases = {
+        "aki": "aki",
         "akuma": "gouki_akuma",
+        "alex": "alex",
+        "blanka": "blanka",
+        "cammy": "cammy",
+        "chunli": "chunli",
+        "chun_li": "chunli",
+        "cviper": "cviper",
+        "c_viper": "cviper",
+        "dee_jay": "deejay",
+        "deejay": "deejay",
+        "dhalsim": "dhalsim",
+        "ed": "ed",
+        "ehonda": "ehonda",
+        "e_honda": "ehonda",
+        "elena": "elena",
         "gouki": "gouki_akuma",
         "gouki_akuma": "gouki_akuma",
+        "guile": "guile",
+        "ingrid": "ingrid",
+        "jamie": "jamie",
+        "jp": "jp",
+        "juri": "juri",
+        "ken": "ken",
+        "kimberly": "kimberly",
+        "lily": "lily",
+        "luke": "luke",
+        "mai": "mai",
+        "manon": "manon",
+        "marisa": "marisa",
+        "mbison": "vega_mbison",
+        "m_bison": "vega_mbison",
+        "rashid": "rashid",
+        "ryu": "ryu",
+        "sagat": "sagat",
+        "terry": "terry",
+        "vega_mbison": "vega_mbison",
+        "zangief": "zangief",
     }
     return aliases.get(normalized, normalized)
 
 
 def character_display_name(character: str) -> str:
-    if character_to_slug(character) == "gouki_akuma":
-        return "Akuma"
-    return character.strip()
+    slug = character_to_slug(character)
+    display_names = {
+        "aki": "AKI",
+        "gouki_akuma": "Akuma",
+        "chunli": "ChunLi",
+        "cviper": "CViper",
+        "deejay": "DeeJay",
+        "ehonda": "EHonda",
+        "vega_mbison": "MBison",
+        "jp": "JP",
+    }
+    return display_names.get(slug, character.strip())
 
 
 def read_local_text(path: Path) -> str:

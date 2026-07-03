@@ -8,15 +8,11 @@ The generated files are candidates for review. They must not automatically overw
 data/TrainingComboTrials_data/modern_display/<Character>.json
 ```
 
-## Current Scope
+## Scope
 
-The first supported target is Akuma:
+`extract_modern_display.py` supports single-character candidate generation.
 
-```text
-https://www.streetfighter.com/6/zh-hant/character/gouki_akuma/frame
-```
-
-The tool only reads official frame/command data and writes a candidate JSON. It does not modify Lua, validators, timeline data, recorder logic, or the official runtime mapping.
+`batch_build_modern_display.py` reads `characters.json`, generates official candidates, merges them into runtime mapping JSON files, and writes markdown reports. It does not modify Lua, validators, timeline data, recorder logic, website code, or raw official dumps.
 
 ## Usage
 
@@ -55,6 +51,27 @@ python tools/modern_display_builder/extract_modern_display.py `
 - the frame page JavaScript chunk itself
 
 Do not commit large raw HTML or JavaScript dumps. Small generated candidate JSON files and markdown diff reports are acceptable when they are useful for review.
+
+Batch build and merge every manifest character:
+
+```powershell
+python tools/modern_display_builder/batch_build_modern_display.py
+```
+
+Rebuild one manifest character:
+
+```powershell
+python tools/modern_display_builder/batch_build_modern_display.py --character Ryu
+```
+
+Batch outputs:
+
+- `tools/modern_display_builder/out/<Character>.official.generated.json`
+- `data/TrainingComboTrials_data/modern_display/<Character>.json`
+- `docs/modern_display_<Character>_official_diff.md`
+- `docs/modern_display_all_characters_batch_report.md`
+
+If a page is reachable but no official action IDs are found, the batch report marks that character as failed/skipped and does not create an empty formal mapping.
 
 ## Output Shape
 
