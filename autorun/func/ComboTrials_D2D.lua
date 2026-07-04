@@ -261,6 +261,14 @@ local function merge_group_log_item(steps)
     for _, s in ipairs(steps) do
         if s._ct_modern_display then has_modern_display = true; break end
     end
+    local ui_result_text = nil
+    local ui_result_kind = nil
+    for _, s in ipairs(steps) do
+        if s.ui_result_text then
+            ui_result_text = s.ui_result_text
+            ui_result_kind = s.ui_result_kind
+        end
+    end
 
     return {
         motion         = table.concat(motions, " "),
@@ -272,6 +280,8 @@ local function merge_group_log_item(steps)
         combo_stats    = first.combo_stats,
         facing_left    = first.facing_left,
         _ct_modern_display = has_modern_display,
+        ui_result_text = ui_result_text,
+        ui_result_kind = ui_result_kind,
     }
 end
 
@@ -1165,6 +1175,17 @@ local function d2d_draw_inner()
             d2d_anim.active_y = nil
         end
 
+        local result_col_w = (d2d_cfg.result_col_width or 0.027) * sw
+        local result_colors = {
+            ok = 0xFFFFA500,
+            early = 0xFF00FFAD,
+            late = 0xFF00A5FF,
+            wrong = 0xFFFF0000,
+            missing = 0xFFFF0000,
+            drop = 0xFFFF0000,
+            fail = 0xFFFF0000,
+        }
+
         -- Draw text and icons for each visible display line
         for dl_idx = start_idx, math.min(start_idx + visible - 1, n_lines) do
             local dl = display_lines[dl_idx]
@@ -1185,8 +1206,17 @@ local function d2d_draw_inner()
                 current_should_flip = (trial_state.flip_inputs ~= step_facing_left) ~= init_facing_left
             end
 
+            local result_x = trial_x
+            local command_x = trial_x + result_col_w
+            if assets.font and log_item.ui_result_text and log_item.ui_result_text ~= "" then
+                local result_text = tostring(log_item.ui_result_text)
+                local result_color = result_colors[log_item.ui_result_kind or ""] or 0xFFFFFFFF
+                d2d.text(assets.font, result_text, result_x + 2, y + final_text_y_offset + 2, 0xFF000000)
+                d2d.text(assets.font, result_text, result_x, y + final_text_y_offset, result_color)
+            end
+
             local tokens = parse_motion_to_icons(log_item, mode, current_should_flip, true)
-            draw_parsed_line(tokens, trial_x, y, icon_w, icon_h, spacing_x, final_text_y_offset, is_aligned_right, nil)
+            draw_parsed_line(tokens, command_x, y, icon_w, icon_h, spacing_x, final_text_y_offset, is_aligned_right, nil)
 
             -- Smart overlay removed — bar images (done/fail/success) handle all visual states
         end

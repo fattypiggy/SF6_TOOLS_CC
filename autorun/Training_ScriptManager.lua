@@ -880,7 +880,7 @@ re.on_frame(function()
     end
 
 
-    local scripts_active = (_G.CurrentTrainerMode == 2 or (_G.CurrentTrainerMode == 4 and _G.ComboTrials_HideNativeHUD))
+    local scripts_active = (_G.CurrentTrainerMode == 2)
     manage_ui_visibility(scripts_active)
 
     if not _G._tsm_web_counter then

@@ -3585,6 +3585,8 @@ local function clear_trial_attempt_state(player_idx, phase)
         item.actual_combo = 0
         item.has_hit = false
         item.last_frame_diff = nil
+        item.ui_result_text = nil
+        item.ui_result_kind = nil
     end
     reset_combo_visual_runtime()
     step_combo_reset_gc()
@@ -4507,6 +4509,7 @@ function ct_try_skip_unreported_same_action_pressure_step(args)
         virtual_frame - last_played,
         args.expected.delay_from_prev
     )
+    ComboTrialsModules.PendingAbsorb.set_timing_ui_result(state, current_step, args.expected.last_frame_diff)
     state.last_played_frame = virtual_frame
     state.current_step = next_step_idx
     state.ui_visual_step = state.current_step
@@ -4642,6 +4645,7 @@ local function advance_same_action_continuation_steps(combo_count, call_site)
         step.has_hit = true
         step.actual_combo = math.max(tonumber(step.actual_combo) or 0, combo_count or 0)
         step.last_frame_diff = 0
+        ComboTrialsModules.PendingAbsorb.set_timing_ui_result(trial_state, trial_state.current_step, step.last_frame_diff)
         trial_state.current_step = trial_state.current_step + 1
         trial_state.last_played_frame = engine_frame_count
         trial_state.ui_visual_step = trial_state.current_step
@@ -5466,6 +5470,7 @@ local function ct_player_validation(p_idx, p_state)
                             reject_reason = "pressure_tail_timeout_skipped"
                         })
                         expected.last_frame_diff = frames_since - delay
+                        ComboTrialsModules.PendingAbsorb.set_timing_ui_result(trial_state, trial_state.current_step, expected.last_frame_diff)
                         expected.actual_combo = _pf.current_combo or 0
                         trial_state.last_played_frame = engine_frame_count
                         trial_state.current_step = trial_state.current_step + 1
@@ -7461,7 +7466,7 @@ re.on_frame(function()
     ct_auto_refresh_combo_list()
     ct_poll_trialhub_sync_signal()
     ct_handle_first_frame_init()
-    _G.ComboTrials_HideNativeHUD = (trial_state.is_recording or trial_state.is_playing)
+    _G.ComboTrials_HideNativeHUD = false
 
     local is_game_paused = GS.in_pause_menu
     ct_handle_pause_positions(is_game_paused, _in_replay)
@@ -7524,6 +7529,7 @@ re.on_frame(function()
         p_state.last_combo_count = _pf.current_combo
         ::ct_next_player::
     end
+    ComboTrialsModules.PendingAbsorb.sync_failure_ui_result(trial_state)
 end)
 
 

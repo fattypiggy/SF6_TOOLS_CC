@@ -2,6 +2,53 @@ local PendingAbsorb = {
     name = "ComboTrials.PendingAbsorb"
 }
 
+local function frame_diff_result(frame_diff)
+    local diff = tonumber(frame_diff)
+    if not diff or diff == 0 then return "完美", "ok" end
+    if diff < 0 then return string.format("快 %df", math.abs(diff)), "early" end
+    return string.format("慢 %df", diff), "late"
+end
+
+local function fail_reason_result(reason)
+    local s = tostring(reason or "")
+    local upper = s:upper()
+    if upper:find("WRONG MOVE", 1, true) then return "错误", "wrong" end
+    if upper:find("MISSED INPUT", 1, true) then return "无输入", "missing" end
+    if upper:find("COMBO DROP", 1, true) or upper:find("COMBO DROPPED", 1, true) then return "断连", "drop" end
+
+    local early = upper:match("TOO EARLY%s*%((%d+)F%)")
+    if early then return string.format("快 %sf", early), "early" end
+    local late = upper:match("TOO LATE%s*%((%d+)F%)")
+    if late then return string.format("慢 %sf", late), "late" end
+
+    return "失败", "fail"
+end
+
+function PendingAbsorb.set_ui_result(state, step_idx, text, kind)
+    if not state or type(state.sequence) ~= "table" then return end
+    local idx = tonumber(step_idx)
+    if not idx then return end
+    if idx < 1 then idx = 1 end
+    if idx > #state.sequence then idx = #state.sequence end
+    local step = state.sequence[idx]
+    if not step then return end
+    step.ui_result_text = text
+    step.ui_result_kind = kind
+end
+
+function PendingAbsorb.set_timing_ui_result(state, step_idx, frame_diff)
+    local text, kind = frame_diff_result(frame_diff)
+    PendingAbsorb.set_ui_result(state, step_idx, text, kind)
+end
+
+function PendingAbsorb.sync_failure_ui_result(state)
+    if not state or type(state.sequence) ~= "table" or #state.sequence == 0 then return end
+    local failing = (state.fail_timer and state.fail_timer > 0) or state.manual_reset_pending
+    if not failing or not state.fail_reason then return end
+    local text, kind = fail_reason_result(state.fail_reason)
+    PendingAbsorb.set_ui_result(state, state.current_step or 1, text, kind)
+end
+
 function PendingAbsorb.clear(state, reason)
     if state and state._pending_current_absorb then
         state._pending_current_absorb.clear_reason = reason
@@ -121,6 +168,7 @@ function PendingAbsorb.apply_matched_step(ctx, params)
         state.sequence[matched_step].has_hit = false
         state.sequence[matched_step].last_frame_diff = frame_diff
         state.sequence[matched_step].actual_combo = combo_count
+        PendingAbsorb.set_timing_ui_result(state, matched_step, frame_diff)
         state.current_step = state.current_step + 1
         PendingAbsorb.clear(state, "step_advanced")
 
@@ -183,6 +231,7 @@ function PendingAbsorb.apply_matched_step(ctx, params)
     else
         state.fail_reason = "COMBO DROPPED"
     end
+    PendingAbsorb.sync_failure_ui_result(state)
 
     if state.fail_timer and state.fail_timer > 0 then
         ctx.DebugTrace.log_trial_failure(ctx.file_system, state, ctx.frame, ctx.pf, not hp_ok and "action_hp_setup_validation" or "action_step_validation", {
