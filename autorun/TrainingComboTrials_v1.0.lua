@@ -7099,16 +7099,6 @@ local function ct_player_process_actions(p_idx, p_state, actions_to_process)
                                     match_probe.waiting_for_expected_id = expected and expected.id or nil
                                     match_probe.waiting_for_expected_motion = expected and expected.motion or nil
                                     DebugTrace.record_match_probe(trial_state, match_probe)
-                                elseif act_id == trial_state.sequence[1].id then
-                                    match_probe.branch = "restart_from_first_step"
-                                    DebugTrace.record_match_probe(trial_state, match_probe)
-                                    trial_state.fail_timer = 0
-                                    trial_state.fail_reason = nil
-                                    reset_trial_steps()
-                                    trial_step_idx = 1
-                                    trial_state.sequence[1].has_hit = false
-                                    trial_state.current_step = 2
-                                    trial_state.last_played_frame = engine_frame_count
                                 elseif first_step_dr_parry_reset_candidate and not combo_in_progress and not just_confirmed_recent_absorb then
                                     match_probe.branch = "reset_first_step_dr_parry"
                                     DebugTrace.record_match_probe(trial_state, match_probe)
