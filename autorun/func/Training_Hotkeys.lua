@@ -382,6 +382,23 @@ local function find_conflicts(scope_id, action_id)
     return #hits > 0 and table.concat(hits, ", ") or nil
 end
 
+local function draw_action_row(label, binding_label, draw_controls)
+    local cursor = imgui.get_cursor_pos()
+    local window_w = imgui.get_window_size().x
+    local label_w = imgui.calc_text_size(label).x
+    local binding_w = imgui.calc_text_size(binding_label).x
+    local controls_w = imgui.calc_text_size("绑定").x + imgui.calc_text_size("清除").x + 44
+    local right_aligned_x = window_w - controls_w - 24
+    local controls_x = math.max(cursor.x + label_w + binding_w + 24, right_aligned_x, 360)
+    local binding_x = math.max(cursor.x + label_w + 12, controls_x - binding_w - 12)
+
+    imgui.text(label)
+    imgui.set_cursor_pos(Vector2f.new(binding_x, cursor.y))
+    imgui.text_colored(binding_label, 0xFF00FFFF)
+    imgui.set_cursor_pos(Vector2f.new(controls_x, cursor.y))
+    draw_controls()
+end
+
 function M.is_input_blocked()
     return capture ~= nil or capture_release_wait
 end
@@ -453,14 +470,12 @@ local function draw_scope(scope)
         local action = scope.actions[action_id]
         if action then
             imgui.separator()
-            imgui.text(action.label or action_id)
-            imgui.same_line(230)
-            imgui.text_colored(M.combo_name(scope_cfg.bindings[action_id]), 0xFF00FFFF)
-
             local cap = capture and capture.scope_id == scope.id and capture.action_id == action_id
-            if cap then
-                imgui.text_colored("请按下键盘键或设备按钮；ESC 取消。", 0xFF00A5FF)
-            else
+            draw_action_row(action.label or action_id, M.combo_name(scope_cfg.bindings[action_id]), function()
+                if cap then
+                    imgui.text_colored("请按下键盘键或设备按钮；ESC 取消。", 0xFF00A5FF)
+                    return
+                end
                 if imgui.button("绑定##hk_bind_" .. scope.id .. "_" .. action_id) then
                     capture = {
                         scope_id = scope.id,
@@ -474,7 +489,7 @@ local function draw_scope(scope)
                     scope_cfg.bindings[action_id] = nil
                     save_config()
                 end
-            end
+            end)
 
             local conflict = find_conflicts(scope.id, action_id)
             if conflict then
