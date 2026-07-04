@@ -769,6 +769,8 @@ ctx.stop_demo_playback = function(reason, old_file, new_file, stop_trial)
     demo_state.countdown = 0
     demo_state.sequence = {}
     demo_state.p1_mask = 0
+    demo_state._last_tick_frame = nil
+    demo_state._state_reinjected = false
     demo_state._total_frames = 0
     demo_state._piyo_waiting = false
     demo_state._piyo_triggered = false
@@ -7781,6 +7783,123 @@ local function parse_timeline_line(line)
     return { frames = frames, mask = mask }
 end
 
+CTStunDemoRuntime = CTStunDemoRuntime or {}
+
+function CTStunDemoRuntime.needs_state_restore()
+    local first = trial_state.sequence and trial_state.sequence[1]
+    if type(first) ~= "table" then return false end
+    local gauges = first.snapshot_gauges
+    return first.has_piyo == true
+        or (type(gauges) == "table" and gauges.defender_burnout == true)
+end
+
+function CTStunDemoRuntime.get_training_player_params(player_idx)
+    local out = get_training_parameter_probe_objects(player_idx)
+    if type(out) ~= "table" then out = {} end
+    if not out.player_params and out.parameter_setting and out.parameter_setting.PlayerDatas then
+        pcall(function() out.player_params = out.parameter_setting.PlayerDatas[player_idx] end)
+    end
+    return out
+end
+
+function CTStunDemoRuntime.save_drive_settings_once(player_idx, player_params)
+    if not player_params then return end
+    if type(trial_state._saved_drive_settings) ~= "table" then
+        trial_state._saved_drive_settings = {}
+    end
+    if trial_state._saved_drive_settings[player_idx] ~= nil then return end
+
+    local saved_drive = {}
+    for _, field_name in ipairs(DRIVE_SETTING_FIELDS) do
+        local value = player_params[field_name]
+        if value ~= nil then saved_drive[field_name] = value end
+    end
+    if next(saved_drive) ~= nil then trial_state._saved_drive_settings[player_idx] = saved_drive end
+end
+
+function CTStunDemoRuntime.restore_pre_demo_state()
+    if not CTStunDemoRuntime.needs_state_restore() then return false end
+
+    local first = trial_state.sequence and trial_state.sequence[1]
+    local gauges = type(first) == "table" and first.snapshot_gauges or nil
+    if not (type(gauges) == "table" and gauges.defender_burnout == true) then return false end
+
+    local attacker_idx = tonumber(trial_state.playing_player or 0) or 0
+    if attacker_idx ~= 1 then attacker_idx = 0 end
+    local defender_idx = 1 - attacker_idx
+    local objects = CTStunDemoRuntime.get_training_player_params(defender_idx)
+    local params = objects.player_params
+    if not params then return false end
+
+    local tm = objects.tm or sdk.get_managed_singleton("app.training.TrainingManager")
+    local refresh_before = tm and tm:get_field("_IsReqRefresh") == true
+    local defender_drive = math.max(0, tonumber(gauges.defender_drive) or 0)
+    local defender_stock = math.floor((defender_drive + 5000) / 10000)
+
+    CTStunDemoRuntime.save_drive_settings_once(defender_idx, params)
+    pcall(function() params.DG_Point = defender_drive end)
+    pcall(function() params.DG_Stock = defender_stock end)
+    pcall(function() params.Is_DG_Break = true end)
+
+    if objects.param_func then
+        pcall(function() objects.param_func:call("SetDGDetailPoint", defender_idx, defender_drive) end)
+        pcall(function() objects.param_func:call("SetDGStock", defender_idx, defender_stock) end)
+    end
+
+    local defender = (defender_idx == 1) and GS.p2 or GS.p1
+    if defender then pcall(function() defender.focus_new = defender_drive end) end
+
+    if tm and refresh_before ~= true and tm:get_field("_IsReqRefresh") == true then
+        pcall(function() tm:set_field("_IsReqRefresh", false) end)
+    end
+    return true
+end
+
+function CTStunDemoRuntime.advance_timeline_frames(frame_count)
+    frame_count = tonumber(frame_count or 0) or 0
+    if frame_count <= 0 then return 0 end
+
+    local advanced = 0
+    while advanced < frame_count do
+        local step = demo_state.sequence[demo_state.current_step]
+        if not step then break end
+
+        local step_frames = tonumber(step.frames or 0) or 0
+        if step_frames <= 0 then
+            demo_state.current_step = demo_state.current_step + 1
+            demo_state.current_frame = 0
+        else
+            local current_frame = tonumber(demo_state.current_frame or 0) or 0
+            local remaining = step_frames - current_frame
+            if remaining <= 0 then
+                demo_state.current_step = demo_state.current_step + 1
+                demo_state.current_frame = 0
+            else
+                local consume = math.min(frame_count - advanced, remaining)
+                demo_state.current_frame = current_frame + consume
+                advanced = advanced + consume
+                if demo_state.current_frame >= step_frames then
+                    demo_state.current_step = demo_state.current_step + 1
+                    demo_state.current_frame = 0
+                end
+            end
+        end
+    end
+
+    return advanced
+end
+
+function CTStunDemoRuntime.catch_up_missed_engine_frames()
+    if not CTStunDemoRuntime.needs_state_restore() then return 0 end
+    local now_frame = engine_frame_count or 0
+    local last_frame = demo_state._last_tick_frame
+    if type(last_frame) ~= "number" then return 0 end
+
+    local missed = now_frame - last_frame - 1
+    if missed <= 0 then return 0 end
+    return CTStunDemoRuntime.advance_timeline_frames(missed)
+end
+
 local function start_demo()
     if not trial_state.sequence or #trial_state.sequence == 0 then return end
     local first_stun_step = trial_state.sequence[1]
@@ -7834,6 +7953,8 @@ local function start_demo()
     demo_state.current_frame = 0
     demo_state.current_step = 1
     demo_state.p1_mask = 0
+    demo_state._last_tick_frame = nil
+    demo_state._state_reinjected = false
     demo_state._total_frames = 0
     demo_state._piyo_waiting = false
     demo_state._piyo_triggered = false
@@ -8165,6 +8286,7 @@ table.insert(_G._shared_input_pre, function(p_id, args)
         if not trial_state.is_playing then
             demo_state.is_playing = false
             demo_state.p1_mask = 0
+            demo_state._last_tick_frame = nil
         else
             local pm = sdk.get_managed_singleton("app.PauseManager")
             local is_paused = false
@@ -8181,25 +8303,33 @@ table.insert(_G._shared_input_pre, function(p_id, args)
                 if demo_state.countdown and demo_state.countdown > 0 then
                     demo_state.countdown = demo_state.countdown - 1
                     demo_state.p1_mask = 0
+                    demo_state._last_tick_frame = nil
                 else
+                    CTStunDemoRuntime.catch_up_missed_engine_frames()
                     local step = demo_state.sequence[demo_state.current_step]
                     if step then
-                        demo_state.p1_mask = step.mask
-                        demo_state.current_frame = demo_state.current_frame + 1
-                        if demo_state.current_frame >= step.frames then
-                            demo_state.current_step = demo_state.current_step + 1
-                            demo_state.current_frame = 0
+                        if demo_state.current_step == 1
+                            and demo_state.current_frame == 0
+                            and demo_state._state_reinjected ~= true then
+                            CTStunDemoRuntime.restore_pre_demo_state()
+                            demo_state._state_reinjected = true
                         end
+                        demo_state.p1_mask = step.mask
+                        CTStunDemoRuntime.advance_timeline_frames(1)
+                        demo_state._last_tick_frame = engine_frame_count or 0
                     else
                         demo_state.current_step = 1
                         demo_state.current_frame = 0
                         demo_state.countdown = 10
                         demo_state.p1_mask = 0
+                        demo_state._last_tick_frame = nil
+                        demo_state._state_reinjected = false
                         reset_trial_steps()
                     end
                 end
             else
                 demo_state.p1_mask = 0
+                demo_state._last_tick_frame = nil
             end
         end
         tick_done_this_frame = true
