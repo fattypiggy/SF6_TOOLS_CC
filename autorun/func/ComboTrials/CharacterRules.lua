@@ -76,6 +76,7 @@ function CharacterRules.find_recent_absorb_confirmation(character_rules, common_
                     recent_index = i,
                     combo_count = combo_count,
                     start_frame = recent.start_frame,
+                    action_instance = recent.action_instance,
                     motion = recent.motion,
                     real_input = recent.real_input,
                     intentional = recent.intentional,

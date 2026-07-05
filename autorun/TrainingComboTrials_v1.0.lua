@@ -227,6 +227,7 @@ end
 local players = {
     [0] = {
         log = {}, prev_act_id = -1, prev_act_frame = -1, last_combo_count = 0,
+        action_instance_counter = 0, current_action_instance = 0, buffer_action_instance = 0,
         bcm_cache = {}, trigger_mask_cache = {}, cache_built = false,
         last_bcm_ptr = "", last_direct_input = 0, input_history_queue = {},
         profile_name = "Unknown", last_profile_name = "", exceptions = {},
@@ -237,6 +238,7 @@ local players = {
     },
     [1] = {
         log = {}, prev_act_id = -1, prev_act_frame = -1, last_combo_count = 0,
+        action_instance_counter = 0, current_action_instance = 0, buffer_action_instance = 0,
         bcm_cache = {}, trigger_mask_cache = {}, cache_built = false,
         last_bcm_ptr = "", last_direct_input = 0, input_history_queue = {},
         profile_name = "Unknown", last_profile_name = "", exceptions = {},
@@ -765,6 +767,7 @@ ctx.stop_demo_playback = function(reason, old_file, new_file, stop_trial)
     if not had_demo_state then return end
 
     demo_state.is_playing = false
+    trial_state._demo_timing_ui_baseline = false
     demo_state.current_frame = 0
     demo_state.current_step = 1
     demo_state.countdown = 0
@@ -3438,8 +3441,269 @@ local function assign_groups(sequence)
     end
 end
 
+CTTimelineSequenceNormalizer = CTTimelineSequenceNormalizer or {}
+CTTimelineSequenceNormalizer.button_order = { "LP", "MP", "HP", "LK", "MK", "HK" }
+CTTimelineSequenceNormalizer.button_set = { LP = true, MP = true, HP = true, LK = true, MK = true, HK = true }
+
+function CTTimelineSequenceNormalizer.compact_motion(value)
+    return tostring(value or ""):upper():gsub("%s+", "")
+end
+
+function CTTimelineSequenceNormalizer.button_table_key(buttons)
+    if type(buttons) ~= "table" then return "" end
+    local out = {}
+    for _, btn in ipairs(CTTimelineSequenceNormalizer.button_order) do
+        if buttons[btn] then out[#out + 1] = btn end
+    end
+    return table.concat(out, "+")
+end
+
+function CTTimelineSequenceNormalizer.parse_input(rest)
+    local dir = "5"
+    local buttons = {}
+    for part in tostring(rest or ""):gmatch("[^+]+") do
+        local token = tostring(part:match("^%s*(.-)%s*$") or ""):upper()
+        if token:match("^[1-9]$") then
+            dir = token
+        elseif CTTimelineSequenceNormalizer.button_set[token] then
+            buttons[token] = true
+        elseif token == "P" then
+            buttons.LP = true; buttons.MP = true; buttons.HP = true
+        elseif token == "K" then
+            buttons.LK = true; buttons.MK = true; buttons.HK = true
+        end
+    end
+    return dir, buttons
+end
+
+function CTTimelineSequenceNormalizer.build_press_events(timeline)
+    local events = {}
+    local frame = 0
+    local prev_buttons = {}
+    if type(timeline) ~= "table" then return events end
+
+    for idx, line in ipairs(timeline) do
+        local frames_str, rest = tostring(line or ""):match("^(%d+)f%s*:%s*(.*)$")
+        local duration = tonumber(frames_str)
+        if duration then
+            local dir, buttons = CTTimelineSequenceNormalizer.parse_input(rest)
+            local newly_pressed = {}
+            for btn, pressed in pairs(buttons) do
+                if pressed and not prev_buttons[btn] then newly_pressed[btn] = true end
+            end
+            local new_key = CTTimelineSequenceNormalizer.button_table_key(newly_pressed)
+            if new_key ~= "" then
+                events[#events + 1] = {
+                    index = idx,
+                    start_frame = frame,
+                    duration = duration,
+                    dir = dir,
+                    input = tostring(rest or ""),
+                    buttons = buttons,
+                    button_key = CTTimelineSequenceNormalizer.button_table_key(buttons),
+                    new_buttons = newly_pressed,
+                    new_button_key = new_key
+                }
+            end
+            frame = frame + duration
+            prev_buttons = buttons
+        end
+    end
+
+    return events
+end
+
+function CTTimelineSequenceNormalizer.simple_motion_parts(step)
+    local motion = CTTimelineSequenceNormalizer.compact_motion(step and step.motion or ""):gsub("^J%.", "")
+    local dir, btn = motion:match("^([1-9])([LMH][PK])$")
+    if dir and btn then return dir, btn end
+    btn = motion:match("^([LMH][PK])$")
+    if btn then return "5", btn end
+    return nil, nil
+end
+
+function CTTimelineSequenceNormalizer.mirror_dir(dir)
+    return ({ ["1"] = "3", ["3"] = "1", ["4"] = "6", ["6"] = "4", ["7"] = "9", ["9"] = "7" })[tostring(dir or "")] or tostring(dir or "")
+end
+
+function CTTimelineSequenceNormalizer.direction_matches(event_dir, step_dir)
+    event_dir = tostring(event_dir or "5")
+    step_dir = tostring(step_dir or "5")
+    if step_dir == "2" and (event_dir == "1" or event_dir == "2" or event_dir == "3") then return true end
+    return event_dir == step_dir or event_dir == CTTimelineSequenceNormalizer.mirror_dir(step_dir)
+end
+
+function CTTimelineSequenceNormalizer.motion_anchor_parts(step)
+    local motion = CTTimelineSequenceNormalizer.compact_motion(step and step.motion or ""):gsub("^J%.", "")
+    local dirs, btn = motion:match("^([1-9]+)%+([LMH]?[PK])$")
+    if not dirs or not btn then
+        dirs, btn = motion:match("^([1-9]+)([LMH][PK])$")
+    end
+    if not dirs or not btn then return nil, nil end
+    return dirs:sub(-1), btn
+end
+
+function CTTimelineSequenceNormalizer.button_matches_token(event, token)
+    if type(event) ~= "table" then return false end
+    token = tostring(token or ""):upper()
+    if token == "P" then
+        return event.new_button_key == "LP" or event.new_button_key == "MP" or event.new_button_key == "HP"
+    elseif token == "K" then
+        return event.new_button_key == "LK" or event.new_button_key == "MK" or event.new_button_key == "HK"
+    end
+    return event.new_button_key == token
+end
+
+function CTTimelineSequenceNormalizer.is_drive_rush_step(step)
+    local motion = CTTimelineSequenceNormalizer.compact_motion(step and step.motion or "")
+    return motion == "DRC" or motion:find("DRIVERUSH", 1, true) ~= nil
+        or is_drive_rush_id(step and step.id)
+end
+
+function CTTimelineSequenceNormalizer.is_simple_button_step(step)
+    if type(step) ~= "table" or CTTimelineSequenceNormalizer.is_drive_rush_step(step) then return false end
+    local dir, btn = CTTimelineSequenceNormalizer.simple_motion_parts(step)
+    return dir ~= nil and btn ~= nil
+end
+
+function CTTimelineSequenceNormalizer.event_matches_step(event, step)
+    if type(event) ~= "table" or type(step) ~= "table" then return false end
+    if CTTimelineSequenceNormalizer.is_drive_rush_step(step) then
+        return event.new_buttons and event.new_buttons.MP and event.new_buttons.MK
+            and event.new_button_key == "MP+MK"
+    end
+
+    local dir, btn = CTTimelineSequenceNormalizer.simple_motion_parts(step)
+    if dir and btn then
+        return event.new_button_key == btn and CTTimelineSequenceNormalizer.direction_matches(event.dir, dir)
+    end
+
+    dir, btn = CTTimelineSequenceNormalizer.motion_anchor_parts(step)
+    if not dir or not btn then return false end
+    return CTTimelineSequenceNormalizer.button_matches_token(event, btn)
+        and (event.dir == "5" or CTTimelineSequenceNormalizer.direction_matches(event.dir, dir))
+end
+
+function CTTimelineSequenceNormalizer.find_event_for_step(events, start_idx, step)
+    for i = math.max(1, tonumber(start_idx) or 1), #events do
+        if CTTimelineSequenceNormalizer.event_matches_step(events[i], step) then return i end
+    end
+    return nil
+end
+
+function CTTimelineSequenceNormalizer.clone_step(step)
+    local clone = {}
+    for k, v in pairs(step) do
+        if k ~= "_xt_meta" and k ~= "_wtt_cn_meta" and k ~= "timeline"
+            and k ~= "scene_state" and k ~= "snapshot_gauges" then
+            if k == "motion_aliases" and type(v) == "table" then
+                local aliases = {}
+                for i, alias in ipairs(v) do aliases[i] = alias end
+                clone[k] = aliases
+            else
+                clone[k] = v
+            end
+        end
+    end
+    clone._ct_timeline_expanded = true
+    return clone
+end
+
+function CTTimelineSequenceNormalizer.repeat_combo_value(prev_combo, final_combo, occurrence, repeat_count)
+    prev_combo = tonumber(prev_combo) or 0
+    final_combo = tonumber(final_combo) or 0
+    if final_combo <= prev_combo or repeat_count <= 1 then return final_combo end
+    if occurrence >= repeat_count then return final_combo end
+    local value = prev_combo + occurrence
+    if value > final_combo then value = final_combo end
+    return value
+end
+
+function CTTimelineSequenceNormalizer.expand(sequence)
+    if type(sequence) ~= "table" or type(sequence[1]) ~= "table" then return end
+    local timeline = sequence[1].timeline
+    if type(timeline) ~= "table" or #timeline == 0 then return end
+
+    local events = CTTimelineSequenceNormalizer.build_press_events(timeline)
+    if #events == 0 then return end
+
+    local matches = {}
+    local search_idx = 1
+    for i, step in ipairs(sequence) do
+        local event_idx = CTTimelineSequenceNormalizer.find_event_for_step(events, search_idx, step)
+        matches[i] = event_idx
+        if event_idx then search_idx = event_idx + 1 end
+    end
+
+    local expanded = {}
+    local changed = false
+    local last_expanded_event_idx = nil
+    local last_expanded_was_inserted = false
+
+    for i, step in ipairs(sequence) do
+        local prev_combo = #expanded > 0 and (tonumber(expanded[#expanded].expected_combo) or 0) or 0
+        local final_combo = tonumber(step.expected_combo) or 0
+        local duplicate_events = {}
+        local step_event_idx = matches[i]
+
+        if CTTimelineSequenceNormalizer.is_simple_button_step(step) and step_event_idx then
+            local next_event_idx = nil
+            for j = i + 1, #sequence do
+                if matches[j] then next_event_idx = matches[j]; break end
+            end
+            if next_event_idx then
+                local scan_end = next_event_idx - 1
+                for event_idx = step_event_idx + 1, scan_end do
+                    if CTTimelineSequenceNormalizer.event_matches_step(events[event_idx], step) then
+                        duplicate_events[#duplicate_events + 1] = event_idx
+                    end
+                end
+            end
+        end
+        local max_extra_events = math.max(0, final_combo - prev_combo - 1)
+        while #duplicate_events > max_extra_events do
+            table.remove(duplicate_events)
+        end
+
+        local repeat_count = 1 + #duplicate_events
+        if repeat_count > 1 then
+            step.expected_combo = CTTimelineSequenceNormalizer.repeat_combo_value(prev_combo, final_combo, 1, repeat_count)
+            changed = true
+        end
+
+        if step_event_idx and last_expanded_event_idx and last_expanded_was_inserted then
+            step.delay_from_prev = math.max(0, (events[step_event_idx].start_frame or 0) - (events[last_expanded_event_idx].start_frame or 0))
+            changed = true
+        end
+
+        expanded[#expanded + 1] = step
+        if step_event_idx then
+            last_expanded_event_idx = step_event_idx
+            last_expanded_was_inserted = false
+        end
+
+        local previous_event_idx = step_event_idx
+        for occurrence, event_idx in ipairs(duplicate_events) do
+            local clone = CTTimelineSequenceNormalizer.clone_step(step)
+            clone.expected_combo = CTTimelineSequenceNormalizer.repeat_combo_value(prev_combo, final_combo, occurrence + 1, repeat_count)
+            clone.delay_from_prev = previous_event_idx and math.max(0, (events[event_idx].start_frame or 0) - (events[previous_event_idx].start_frame or 0)) or 0
+            clone._ct_timeline_source_step = i
+            clone._ct_timeline_event_index = events[event_idx].index
+            expanded[#expanded + 1] = clone
+            previous_event_idx = event_idx
+            last_expanded_event_idx = event_idx
+            last_expanded_was_inserted = true
+        end
+    end
+
+    if not changed then return end
+    for i = #sequence, 1, -1 do sequence[i] = nil end
+    for i, step in ipairs(expanded) do sequence[i] = step end
+end
+
 local function normalize_sequence_counter_types(sequence)
     if type(sequence) ~= "table" or type(sequence[1]) ~= "table" then return end
+    CTTimelineSequenceNormalizer.expand(sequence)
     local first = sequence[1]
     if (first.counter_type == nil or first.counter_type == 0) and type(first.combo_stats) == "table" then
         local inferred = counter_type_from_hit_type(first.combo_stats.hit_type)
@@ -3510,8 +3774,11 @@ local function reset_player_action_buffers(p_state)
     p_state.prev_act_frame = -1
     p_state.last_direct_input = direct_input
     p_state.last_combo_count = 0
+    p_state.action_instance_counter = p_state.action_instance_counter or 0
+    p_state.current_action_instance = p_state.action_instance_counter
     p_state.buffer_act_id = act_id
     p_state.buffer_act_frame = act_frame
+    p_state.buffer_action_instance = p_state.current_action_instance
     p_state.buffer_start_frame = engine_frame_count
     p_state.buffer_flags = _pf.flags or 0
     p_state.buffer_action_code = _pf.action_code or 0
@@ -3575,6 +3842,8 @@ local function clear_trial_attempt_state(player_idx, phase)
     trial_state._final_finish_max_observed_combo = nil
     trial_state._pending_current_absorb = nil
     trial_state._pending_block_outcome = nil
+    trial_state._consumed_action_instances = nil
+    trial_state._last_matched_action_instance = nil
     trial_state._ui_step_hold_step = nil
     trial_state._ui_step_hold_until_frame = nil
     trial_state.last_played_frame = engine_frame_count
@@ -4434,10 +4703,16 @@ local function is_post_hit_setup_step(step_idx)
     return false
 end
 
-local function is_same_action_continuation_step(prev_step, step, combo_count)
+local function is_same_action_continuation_step(prev_step, step, combo_count, current_action_instance)
     if not prev_step or not step then return false end
     if prev_step.id == nil or step.id == nil then return false end
     if prev_step.id ~= step.id then return false end
+    local timeline_expanded_repeat = step._ct_timeline_expanded == true
+    if prev_step.action_instance and current_action_instance
+        and prev_step.action_instance == current_action_instance
+        and not timeline_expanded_repeat then
+        return false
+    end
 
     local prev_combo = tonumber(prev_step.expected_combo) or 0
     local expected_combo = tonumber(step.expected_combo) or 0
@@ -4469,11 +4744,15 @@ function ct_is_unreported_same_action_pressure_step(prev_step, step)
         and ct_is_zero_combo_pressure_validation_step(step)
 end
 
-function ct_should_ignore_duplicate_previous_pressure_action(prev_step, expected, act_id)
+function ct_should_ignore_duplicate_previous_pressure_action(prev_step, expected, act_id, candidate_action_instance)
     if not prev_step or not expected then return false end
     if prev_step.id == nil or expected.id == nil or act_id == nil then return false end
     if prev_step.id ~= act_id then return false end
     if expected.id == act_id then return false end
+    if prev_step.action_instance and candidate_action_instance
+        and prev_step.action_instance ~= candidate_action_instance then
+        return false
+    end
     return ct_is_zero_combo_pressure_validation_step(prev_step)
 end
 
@@ -4506,10 +4785,11 @@ function ct_try_skip_unreported_same_action_pressure_step(args)
     if virtual_frame < min_virtual_frame then virtual_frame = min_virtual_frame end
 
     args.expected.actual_combo = math.max(tonumber(args.expected.actual_combo) or 0, args.combo_count or 0)
-    args.expected.last_frame_diff = args.Validator.calculate_frame_diff(
+    local raw_frame_diff = args.Validator.calculate_frame_diff(
         virtual_frame - last_played,
         args.expected.delay_from_prev
     )
+    args.expected.last_frame_diff = raw_frame_diff
     ComboTrialsModules.PendingAbsorb.set_timing_ui_result(state, current_step, args.expected.last_frame_diff)
     state.last_played_frame = virtual_frame
     state.current_step = next_step_idx
@@ -4543,11 +4823,14 @@ function ct_try_skip_unreported_same_action_pressure_step(args)
 end
 
 local function build_same_action_auto_advance_debug(prev_step, step, combo_count, call_site)
+    local current_player = players[trial_state.playing_player or 0]
+    local current_action_instance = current_player and current_player.current_action_instance or nil
     local prev_combo = prev_step and (tonumber(prev_step.expected_combo) or 0) or nil
     local expected_combo = step and (tonumber(step.expected_combo) or 0) or nil
     local current_combo = combo_count or 0
     local same_id = prev_step and step and prev_step.id ~= nil and step.id ~= nil and prev_step.id == step.id
     local combo_progression = expected_combo ~= nil and prev_combo ~= nil and expected_combo > 0 and expected_combo > prev_combo
+    local timeline_expanded_repeat = step and step._ct_timeline_expanded == true
     local block_reason = nil
 
     if not prev_step or not step then
@@ -4556,6 +4839,10 @@ local function build_same_action_auto_advance_debug(prev_step, step, combo_count
         block_reason = "missing_step_id"
     elseif prev_step.id ~= step.id then
         block_reason = "different_action_id"
+    elseif prev_step.action_instance and current_action_instance
+        and prev_step.action_instance == current_action_instance
+        and not timeline_expanded_repeat then
+        block_reason = "same_action_instance_duplicate"
     elseif expected_combo <= 0 then
         block_reason = "expected_combo_not_positive"
     elseif expected_combo <= prev_combo then
@@ -4583,6 +4870,9 @@ local function build_same_action_auto_advance_debug(prev_step, step, combo_count
         auto_advance_expected_combo = expected_combo,
         auto_advance_current_combo = current_combo,
         auto_advance_combo_count = current_combo,
+        auto_advance_prev_action_instance = prev_step and prev_step.action_instance or nil,
+        auto_advance_current_action_instance = current_action_instance,
+        auto_advance_timeline_expanded_repeat = timeline_expanded_repeat,
         auto_advance_block_reason = block_reason,
         auto_advance_call_site = call_site,
         auto_advance_checked_at_frame = engine_frame_count
@@ -4633,7 +4923,9 @@ local function advance_same_action_continuation_steps(combo_count, call_site)
         local prev_step = trial_state.sequence[trial_state.current_step - 1]
         local step = trial_state.sequence[trial_state.current_step]
         local auto_advance_debug = build_same_action_auto_advance_debug(prev_step, step, combo_count, call_site)
-        if not is_same_action_continuation_step(prev_step, step, combo_count) then
+        local current_player = players[trial_state.playing_player or 0]
+        local current_action_instance = current_player and current_player.current_action_instance or nil
+        if not is_same_action_continuation_step(prev_step, step, combo_count, current_action_instance) then
             if not advanced then
                 DebugTrace.record_auto_advance(trial_state, auto_advance_debug)
             end
@@ -4645,6 +4937,12 @@ local function advance_same_action_continuation_steps(combo_count, call_site)
 
         step.has_hit = true
         step.actual_combo = math.max(tonumber(step.actual_combo) or 0, combo_count or 0)
+        step.action_instance = current_action_instance
+        if current_action_instance ~= nil then
+            trial_state._consumed_action_instances = trial_state._consumed_action_instances or {}
+            trial_state._consumed_action_instances[current_action_instance] = trial_state.current_step
+            trial_state._last_matched_action_instance = current_action_instance
+        end
         step.last_frame_diff = 0
         ComboTrialsModules.PendingAbsorb.set_timing_ui_result(trial_state, trial_state.current_step, step.last_frame_diff)
         trial_state.current_step = trial_state.current_step + 1
@@ -5175,6 +5473,9 @@ local function ct_player_init(p_idx, p_state)
         p_state.last_profile_name = p_state.profile_name
         p_state.log = {}
         p_state.input_history_queue = {}
+        p_state.action_instance_counter = 0
+        p_state.current_action_instance = 0
+        p_state.buffer_action_instance = 0
         p_state.bcm_cache = {}
         p_state.trigger_mask_cache = {}
         p_state.cache_built = false
@@ -5470,7 +5771,8 @@ local function ct_player_validation(p_idx, p_state)
                             allow_whiff = expected.allow_whiff,
                             reject_reason = "pressure_tail_timeout_skipped"
                         })
-                        expected.last_frame_diff = frames_since - delay
+                        local raw_timeout_frame_diff = frames_since - delay
+                        expected.last_frame_diff = raw_timeout_frame_diff
                         ComboTrialsModules.PendingAbsorb.set_timing_ui_result(trial_state, trial_state.current_step, expected.last_frame_diff)
                         expected.actual_combo = _pf.current_combo or 0
                         trial_state.last_played_frame = engine_frame_count
@@ -5743,6 +6045,7 @@ function _G.CTSameDashFallback.build_candidate(p_state, detected_66_edge, detect
         direct_input = _pf.direct_input or 0,
         b_type = _pf.b_type or 0,
         engine_frame = engine_frame_count,
+        action_instance = p_state.current_action_instance,
         buffer_hold_frames = 0,
         p1 = p1, p2 = p2,
         r1 = r1, r2 = r2,
@@ -5851,6 +6154,9 @@ local function ct_player_input_buffer(p_state)
     p_state.buffer_direct_input = p_state.buffer_direct_input or 0
     p_state.buffer_b_type = p_state.buffer_b_type or 0
     p_state.buffer_hold_frames = p_state.buffer_hold_frames or 0
+    p_state.action_instance_counter = p_state.action_instance_counter or 0
+    p_state.current_action_instance = p_state.current_action_instance or p_state.action_instance_counter
+    p_state.buffer_action_instance = p_state.buffer_action_instance or p_state.current_action_instance
     if p_state.buffer_is_committed == nil then p_state.buffer_is_committed = true end
 
     local actions_to_process = {}
@@ -5894,6 +6200,7 @@ local function ct_player_input_buffer(p_state)
         started_new_action_reason = started_new_action_reason,
         skipped_due_to_duplicate = not started_new_action and _pf.act_id == p_state.buffer_act_id,
         skipped_due_to_same_action = not started_new_action and _pf.act_id == p_state.buffer_act_id,
+        action_instance = p_state.buffer_action_instance,
         candidate_window_open = p_state.buffer_is_committed == false,
         pushed_to_actions_to_process = false
     })
@@ -5947,6 +6254,7 @@ local function ct_player_input_buffer(p_state)
                     is_ignored = true,
                     ignore_reason = "[Ghost Input: " .. tostring(duration) .. "f]",
                     facing_left = false,
+                    action_instance = p_state.buffer_action_instance,
                     start_frame = p_state.buffer_start_frame
                 })
                 if #p_state.log > 100 then table.remove(p_state.log) end
@@ -5959,6 +6267,7 @@ local function ct_player_input_buffer(p_state)
                     direct_input = p_state.buffer_direct_input,
                     b_type = p_state.buffer_b_type,
                     engine_frame = p_state.buffer_start_frame,
+                    action_instance = p_state.buffer_action_instance,
                     buffer_hold_frames = p_state.buffer_hold_frames,
                     p1 = p_state.buffer_p1, p2 = p_state.buffer_p2,
                     r1 = p_state.buffer_r1, r2 = p_state.buffer_r2,
@@ -5970,14 +6279,18 @@ local function ct_player_input_buffer(p_state)
                     current_action_frame = _pf.act_frame,
                     pushed_action_id = p_state.buffer_act_id,
                     pushed_engine_frame = p_state.buffer_start_frame,
+                    pushed_action_instance = p_state.buffer_action_instance,
                     pushed_to_actions_to_process = true,
                     started_new_action = started_new_action,
                     started_new_action_reason = started_new_action_reason
                 })
             end
         end
+        p_state.action_instance_counter = (p_state.action_instance_counter or 0) + 1
+        p_state.current_action_instance = p_state.action_instance_counter
         p_state.buffer_act_id = _pf.act_id
         p_state.buffer_start_frame = engine_frame_count
+        p_state.buffer_action_instance = p_state.current_action_instance
         p_state.buffer_is_committed = false
         p_state.buffer_flags = _pf.flags
         p_state.buffer_action_code = _pf.action_code
@@ -6008,6 +6321,7 @@ local function ct_player_input_buffer(p_state)
             direct_input = p_state.buffer_direct_input,
             b_type = p_state.buffer_b_type,
             engine_frame = p_state.buffer_start_frame,
+            action_instance = p_state.buffer_action_instance,
             buffer_hold_frames = p_state.buffer_hold_frames,
             p1 = p_state.buffer_p1, p2 = p_state.buffer_p2,
             r1 = p_state.buffer_r1, r2 = p_state.buffer_r2,
@@ -6017,6 +6331,7 @@ local function ct_player_input_buffer(p_state)
             push_reason = "ghost_wait_elapsed",
             pushed_action_id = p_state.buffer_act_id,
             pushed_engine_frame = p_state.buffer_start_frame,
+            pushed_action_instance = p_state.buffer_action_instance,
             pushed_to_actions_to_process = true,
             started_new_action = started_new_action,
             started_new_action_reason = started_new_action_reason
@@ -6273,6 +6588,7 @@ local function ct_player_process_actions(p_idx, p_state, actions_to_process)
                         actual_hp = matched_hp,
                         match_reason = match_reason,
                         match_details = match_details,
+                        action_instance = match_details and match_details.action_instance or process_act.action_instance,
                         hold_mask = hold_mask,
                         direct_input = direct_input,
                         hold_frames = hold_frames
@@ -6315,6 +6631,9 @@ local function ct_player_process_actions(p_idx, p_state, actions_to_process)
                         actual_action_name = act_name,
                         actual_motion = motion_str,
                         actual_input = real_input_str,
+                        action_instance = process_act.action_instance,
+                        candidate_action_instance = process_act.action_instance,
+                        previous_action_instance = prev_step and prev_step.action_instance or nil,
                         current_combo = _pf.current_combo or 0,
                         combo_count = _pf.current_combo or 0,
                         actual_hp = process_act.current_hp,
@@ -6735,6 +7054,7 @@ local function ct_player_process_actions(p_idx, p_state, actions_to_process)
                             }
                             _G.CTSameActionTrace.trace("action_match_entry", p_state, {
                                 candidate_action_id = act_id,
+                                candidate_action_instance = process_act.action_instance,
                                 candidate_motion = motion_str,
                                 candidate_input = real_input_str,
                                 previous_step_id = trace_prev_step and trace_prev_step.id or nil,
@@ -6787,6 +7107,10 @@ local function ct_player_process_actions(p_idx, p_state, actions_to_process)
                                 end
                             end
                             local skip_current_action = false
+                            local consumed_for_step = nil
+                            if process_act.action_instance ~= nil and type(trial_state._consumed_action_instances) == "table" then
+                                consumed_for_step = trial_state._consumed_action_instances[process_act.action_instance]
+                            end
                             if expected and not action_match.matched then
                                 local recent_absorb = CharacterRules.find_recent_absorb_confirmation(
                                     p_state.exceptions,
@@ -6905,6 +7229,7 @@ local function ct_player_process_actions(p_idx, p_state, actions_to_process)
                                                 recent_index = chain_absorb.recent_index,
                                                 combo_count = chain_absorb.combo_count,
                                                 start_frame = chain_absorb.start_frame,
+                                                action_instance = chain_absorb.action_instance,
                                                 motion = chain_absorb.motion,
                                                 real_input = chain_absorb.real_input,
                                                 intentional = chain_absorb.intentional,
@@ -6961,10 +7286,31 @@ local function ct_player_process_actions(p_idx, p_state, actions_to_process)
                                 -- EHonda recent absorb already consumed the pending expected step.
                                 match_probe.reject_reason = "skip_after_recent_absorb"
                                 DebugTrace.record_match_probe(trial_state, match_probe)
+                            elseif consumed_for_step and consumed_for_step < (trial_state.current_step or 1) then
+                                match_probe.branch = "consumed_action_instance_ignored"
+                                match_probe.reject_reason = nil
+                                match_probe.duplicate_instance_ignored = true
+                                match_probe.ignored_as_previous_step_residue = true
+                                match_probe.candidate_action_instance = process_act.action_instance
+                                match_probe.consumed_action_instance = process_act.action_instance
+                                match_probe.candidate_consumed_for_step = consumed_for_step
+                                match_probe.last_matched_action_instance = trial_state._last_matched_action_instance
+                                DebugTrace.record_match_probe(trial_state, match_probe)
                             elseif expected and ActionMatcher.is_optional_parent_for_followup(motion_str, expected) then
                                 -- Older combo JSON may omit the stance entry before a > follow-up.
                                 -- Do not let the parent action match the follow-up by button input.
                                 match_probe.reject_reason = "optional_parent_for_followup"
+                                DebugTrace.record_match_probe(trial_state, match_probe)
+                            elseif action_match.matched and expected and trace_prev_step
+                                and trace_prev_step.id == expected.id
+                                and trace_prev_step.id == act_id
+                                and trace_prev_step.action_instance
+                                and process_act.action_instance
+                                and trace_prev_step.action_instance == process_act.action_instance then
+                                match_probe.branch = "same_action_instance_duplicate_ignored"
+                                match_probe.reject_reason = nil
+                                match_probe.previous_action_instance = trace_prev_step.action_instance
+                                match_probe.action_instance = process_act.action_instance
                                 DebugTrace.record_match_probe(trial_state, match_probe)
                             elseif action_match.matched and expected and expected.hit_result == "block" then
                                 _pf.ct_block_action_frame = process_act.synthetic
@@ -7091,7 +7437,12 @@ local function ct_player_process_actions(p_idx, p_state, actions_to_process)
                                     ComboTrialsModules.PendingAbsorb.clear(trial_state, "drive_rush_tolerance")
                                     trial_state.last_played_frame = engine_frame_count
                                     trial_state.current_step = trial_state.current_step + 1
-                                elseif ct_should_ignore_duplicate_previous_pressure_action(trace_prev_step, expected, act_id) then
+                                elseif ct_should_ignore_duplicate_previous_pressure_action(
+                                    trace_prev_step,
+                                    expected,
+                                    act_id,
+                                    process_act.action_instance
+                                ) then
                                     match_probe.branch = "pressure_duplicate_previous_action_ignored"
                                     match_probe.reject_reason = nil
                                     match_probe.ignored_duplicate_previous_id = act_id
@@ -7265,6 +7616,7 @@ local function ct_player_process_actions(p_idx, p_state, actions_to_process)
                 combo_count = 0,
                 is_finished = false,
                 trial_step_idx = trial_step_idx,
+                action_instance = process_act.action_instance,
                 start_frame = engine_frame_count,
                 facing_left = is_facing_left,
                 is_ignored = is_ignored,
@@ -7465,6 +7817,7 @@ re.on_frame(function()
 
     engine_frame_count = engine_frame_count + 1
     trial_state._engine_frame_count = engine_frame_count
+    trial_state._demo_timing_ui_baseline = (demo_state and demo_state.is_playing == true) or false
     logger_process_game_state()
 
     if trial_state.is_recording then
@@ -7946,6 +8299,7 @@ local function start_demo()
     reset_trial_steps()
 
     demo_state.is_playing = true
+    trial_state._demo_timing_ui_baseline = true
     demo_state.countdown = 10
     demo_state.current_frame = 0
     demo_state.current_step = 1

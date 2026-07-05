@@ -89,6 +89,7 @@ local function step_summary(step, idx)
         has_hit = step.has_hit,
         display_only = step.display_only,
         actual_combo = step.actual_combo,
+        action_instance = step.action_instance,
         last_frame_diff = step.last_frame_diff,
         counter_type = step.counter_type,
         is_holdable = step.is_holdable,
@@ -174,6 +175,7 @@ function DebugTrace.build_fail_dump(state, players)
             expected_combo = step.expected_combo,
             is_holdable = step.is_holdable,
             delay_from_prev = step.delay_from_prev,
+            action_instance = step.action_instance,
             display_only = step.display_only
         }
         if i == state.current_step then
@@ -202,6 +204,7 @@ function DebugTrace.build_fail_dump(state, players)
                 motion = l.motion,
                 real_input = l.real_input,
                 frame_diff = l.frame_diff,
+                action_instance = l.action_instance,
                 intentional = l.intentional,
                 hold_frames = l.hold_frames,
                 charge_status = l.charge_status,

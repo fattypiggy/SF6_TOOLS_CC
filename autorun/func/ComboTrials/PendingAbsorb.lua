@@ -9,6 +9,11 @@ local function frame_diff_result(frame_diff)
     return string.format("慢 %df", diff), "late"
 end
 
+function PendingAbsorb.effective_timing_frame_diff(state, frame_diff)
+    if state and state._demo_timing_ui_baseline == true then return 0 end
+    return frame_diff
+end
+
 local function fail_reason_result(reason)
     local s = tostring(reason or "")
     local upper = s:upper()
@@ -37,6 +42,7 @@ function PendingAbsorb.set_ui_result(state, step_idx, text, kind)
 end
 
 function PendingAbsorb.set_timing_ui_result(state, step_idx, frame_diff)
+    frame_diff = PendingAbsorb.effective_timing_frame_diff(state, frame_diff)
     local text, kind = frame_diff_result(frame_diff)
     PendingAbsorb.set_ui_result(state, step_idx, text, kind)
 end
@@ -68,6 +74,7 @@ local function add_fields(ctx, target, pending, prefix)
     target[prefix .. "_created_combo"] = pending.created_combo
     target[prefix .. "_current_combo"] = ctx.pf.current_combo or 0
     target[prefix .. "_frame_diff"] = pending.frame_diff
+    target[prefix .. "_action_instance"] = pending.action_instance
     target[prefix .. "_created_at_frame"] = pending.created_at_frame
     target[prefix .. "_expires_at_frame"] = pending.expires_at_frame
     target[prefix .. "_age_frames"] = ctx.frame - (pending.created_at_frame or ctx.frame)
@@ -84,6 +91,7 @@ function PendingAbsorb.apply_matched_step(ctx, params)
     local validation_frame = params.frame or ctx.frame
     local combo_count = params.combo_count or 0
     local actual_hp = params.actual_hp
+    local action_instance = params.action_instance
     local details = params.match_details
 
     state._step1_wrong_pending = false
@@ -93,13 +101,14 @@ function PendingAbsorb.apply_matched_step(ctx, params)
         actual_delay = validation_frame - last_played
     end
     state.last_played_frame = validation_frame
-    local frame_diff = ctx.Validator.calculate_frame_diff(actual_delay, expected.delay_from_prev)
+    local raw_frame_diff = ctx.Validator.calculate_frame_diff(actual_delay, expected.delay_from_prev)
+    local ui_frame_diff = PendingAbsorb.effective_timing_frame_diff(state, raw_frame_diff)
 
-    if frame_diff < 0 then
-        state.floating_info = string.format("%d frames too early", math.abs(frame_diff))
+    if ui_frame_diff < 0 then
+        state.floating_info = string.format("%d frames too early", math.abs(ui_frame_diff))
         state.floating_color = 0xFF00FFAD
-    elseif frame_diff > 0 then
-        state.floating_info = string.format("%d frames too late", frame_diff)
+    elseif ui_frame_diff > 0 then
+        state.floating_info = string.format("%d frames too late", ui_frame_diff)
         state.floating_color = 0xFF00A5FF
     else
         state.floating_info = "Perfect timing"
@@ -156,7 +165,11 @@ function PendingAbsorb.apply_matched_step(ctx, params)
         allow_hit = expected.allow_hit,
         allow_block = expected.allow_block,
         allow_counter = expected.allow_counter,
-        frame_diff = frame_diff,
+        raw_frame_diff = raw_frame_diff,
+        frame_diff = raw_frame_diff,
+        ui_frame_diff = ui_frame_diff,
+        demo_timing_ui_baseline = state._demo_timing_ui_baseline == true,
+        action_instance = action_instance,
         match_reason = params.match_reason,
         recent_index = details and details.recent_index or nil,
         absorb_ids = details and details.absorb_ids or nil,
@@ -166,9 +179,15 @@ function PendingAbsorb.apply_matched_step(ctx, params)
     if combo_ok and hp_ok then
         local matched_step = state.current_step
         state.sequence[matched_step].has_hit = false
-        state.sequence[matched_step].last_frame_diff = frame_diff
+        state.sequence[matched_step].last_frame_diff = raw_frame_diff
         state.sequence[matched_step].actual_combo = combo_count
-        PendingAbsorb.set_timing_ui_result(state, matched_step, frame_diff)
+        state.sequence[matched_step].action_instance = action_instance
+        if action_instance ~= nil then
+            state._consumed_action_instances = state._consumed_action_instances or {}
+            state._consumed_action_instances[action_instance] = matched_step
+            state._last_matched_action_instance = action_instance
+        end
+        PendingAbsorb.set_timing_ui_result(state, matched_step, raw_frame_diff)
         state.current_step = state.current_step + 1
         PendingAbsorb.clear(state, "step_advanced")
 
@@ -204,7 +223,7 @@ function PendingAbsorb.apply_matched_step(ctx, params)
                 hold_partial_check = expected.hold_partial_check
             }
         end
-        return true, matched_step, frame_diff
+        return true, matched_step, raw_frame_diff
     end
 
     PendingAbsorb.clear(state, "matched_step_failed")
@@ -222,10 +241,10 @@ function PendingAbsorb.apply_matched_step(ctx, params)
             end
         end
         state.fail_reason = custom_reason
-    elseif frame_diff < -2 then
-        state.fail_reason = string.format("TOO EARLY (%df)", math.abs(frame_diff))
-    elseif frame_diff > 2 then
-        state.fail_reason = string.format("TOO LATE (%df)", frame_diff)
+    elseif raw_frame_diff < -2 then
+        state.fail_reason = string.format("TOO EARLY (%df)", math.abs(raw_frame_diff))
+    elseif raw_frame_diff > 2 then
+        state.fail_reason = string.format("TOO LATE (%df)", raw_frame_diff)
     elseif state._hit_grace and state._hit_grace > 0 then
         state.fail_timer = 0
     else
@@ -242,7 +261,7 @@ function PendingAbsorb.apply_matched_step(ctx, params)
             playback_state = "playing"
         })
     end
-    return false, nil, frame_diff
+    return false, nil, raw_frame_diff
 end
 
 local function build_probe(ctx, pending, phase)
@@ -276,6 +295,7 @@ local function build_probe(ctx, pending, phase)
         actual_hp = ctx.pf.p_char and ctx.pf.p_char.vital_new or nil,
         frames_since_prev_step = pending and pending.frames_since_prev_step or nil,
         frame_diff = pending and pending.frame_diff or nil,
+        action_instance = pending and pending.action_instance or nil,
         opponent_knocked_down = ctx.pf.opponent_knocked_down,
         pending_current_absorb_checked = true
     }
@@ -310,6 +330,9 @@ function PendingAbsorb.check(ctx, phase)
         clear_reason = "missing_expected"
     elseif expected.id ~= pending.expected_id then
         clear_reason = "expected_changed"
+    elseif pending.action_instance and ctx.p_state and ctx.p_state.current_action_instance
+        and pending.action_instance ~= ctx.p_state.current_action_instance then
+        clear_reason = "action_instance_changed"
     elseif pending.expires_at_frame and ctx.frame > pending.expires_at_frame then
         clear_reason = "expired"
     elseif math.abs(pending.frame_diff or 999) > 2 then
@@ -378,6 +401,7 @@ function PendingAbsorb.check(ctx, phase)
             expected_combo = pending.expected_combo,
             absorb_ids = pending.absorb_ids,
             source = "current_absorb_pending",
+            action_instance = pending.action_instance,
             pending_age_frames = ctx.frame - (pending.created_at_frame or ctx.frame)
         }
     })
@@ -431,6 +455,7 @@ function PendingAbsorb.store(ctx, expected, current_absorb, match_probe, actual_
         frame_diff = match_probe.frame_diff,
         actual_hp = actual_hp,
         absorb_ids = current_absorb.absorb_ids,
+        action_instance = match_probe.action_instance,
         created_combo = match_probe.current_combo or 0,
         created_at_frame = ctx.frame,
         expires_at_frame = ctx.frame + window,

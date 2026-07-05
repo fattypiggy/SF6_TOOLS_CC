@@ -506,8 +506,8 @@ local function parse_motion_to_icons(log_entry, trial_mode, should_flip, reverse
         s = s:gsub("%+", "{plus}")
     end
 
-    s = s:gsub("63214", "{hcb}")
-    s = s:gsub("41236", "{hcf}")
+    s = s:gsub("63214", "{6}{3}{2}{1}{4}")
+    s = s:gsub("41236", "{4}{1}{2}{3}{6}")
     s = s:gsub("%[4%]", "{4_hold}")
     s = s:gsub("%[2%]", "{2_hold}")
     s = s:gsub("%[6%]", "{6_hold}")
