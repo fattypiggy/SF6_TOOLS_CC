@@ -142,7 +142,9 @@ end
 -- Follow-up group helpers
 -- =========================================================
 local MODERN_DISPLAY_DIR = "TrainingComboTrials_data/modern_display/"
+local EXCEPTION_DISPLAY_DIR = "TrainingComboTrials_data/exceptions/"
 local modern_display_cache = {}
+local exception_display_cache = {}
 
 local function get_sequence_meta(sequence)
     if type(sequence) ~= "table" then return nil end
@@ -265,6 +267,38 @@ local function get_modern_display_motion(modern_map, step)
     return nil
 end
 
+local function load_exception_display_map(character)
+    if type(character) ~= "string" or character == "" then return nil end
+    local safe_character = character:gsub("[^%w_]", "")
+    if safe_character == "" then return nil end
+    if exception_display_cache[safe_character] ~= nil then
+        return exception_display_cache[safe_character] ~= false and exception_display_cache[safe_character] or nil
+    end
+
+    local loaded = nil
+    local ok = false
+    local path = EXCEPTION_DISPLAY_DIR .. safe_character .. ".json"
+    if type(_G.safe_load_json) == "function" then
+        ok, loaded = pcall(_G.safe_load_json, path)
+    end
+    if ok and type(loaded) == "table" then
+        exception_display_cache[safe_character] = loaded
+        return loaded
+    end
+
+    exception_display_cache[safe_character] = false
+    return nil
+end
+
+local function get_exception_display_motion(exception_map, step)
+    if type(exception_map) ~= "table" or type(step) ~= "table" then return nil end
+    local entry = exception_map[tostring(step.id or "")]
+    if type(entry) == "table" and type(entry.override_name) == "string" and entry.override_name ~= "" then
+        return entry.override_name
+    end
+    return nil
+end
+
 local function clone_step_for_display(step, motion)
     if not motion then return step end
     local copy = {}
@@ -277,13 +311,15 @@ end
 local function build_display_lines(sequence)
     local lines = {}
     local modern_map = nil
+    local exception_map = load_exception_display_map(get_sequence_character(sequence))
     if is_modern_sequence(sequence) then
         modern_map = load_modern_display_map(get_sequence_character(sequence))
     end
 
     for i, raw_step in ipairs(sequence) do
         local modern_motion = get_modern_display_motion(modern_map, raw_step)
-        local step = clone_step_for_display(raw_step, modern_motion)
+        local exception_motion = get_exception_display_motion(exception_map, raw_step)
+        local step = clone_step_for_display(raw_step, modern_motion or exception_motion)
         local gid = step.group_id or i
         if #lines == 0 or lines[#lines].group_id ~= gid then
             table.insert(lines, { group_id = gid, first = i, last = i, steps = { step } })

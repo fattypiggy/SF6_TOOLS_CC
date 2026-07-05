@@ -179,6 +179,15 @@
         "is_holdable": false,
         "override_name": "[4]6+HP (Perfect)"
     },
+    "923": {
+        "absorb_ids": "",
+        "force": false,
+        "hold_partial_check": true,
+        "ignore": false,
+        "ignore_prev_frames": 5,
+        "is_holdable": false,
+        "override_name": "214+PP"
+    },
     "930": {
         "absorb_ids": "",
         "force": false,
@@ -295,6 +304,18 @@
         "ignore_prev_frames": 5,
         "is_holdable": false,
         "override_name": ">[4]6+HP"
+    },
+    "945": {
+        "absorb_ids": "923",
+        "follow_up_motion": ">6+PP",
+        "force": false,
+        "hold_partial_check": true,
+        "ignore": false,
+        "ignore_prev_frames": 5,
+        "is_holdable": false,
+        "optional_parent_ids": "923",
+        "optional_parent_motions": "214+PP",
+        "override_name": "214+PP >6+PP"
     },
     "981": {
         "force": false,

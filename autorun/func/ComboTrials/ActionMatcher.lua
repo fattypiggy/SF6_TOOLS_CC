@@ -51,9 +51,48 @@ function ActionMatcher.match_expected_action(expected, actual_action_id, actual_
     }
 end
 
-function ActionMatcher.is_optional_parent_for_followup(actual_motion, expected_step)
+local function list_contains_token(value, token, normalizer)
+    if value == nil or token == nil then return false end
+    token = normalizer and normalizer(token) or tostring(token)
+
+    if type(value) == "table" then
+        for _, item in ipairs(value) do
+            local candidate = normalizer and normalizer(item) or tostring(item)
+            if candidate == token then return true end
+        end
+        return false
+    end
+
+    for item in tostring(value):gmatch("[^,]+") do
+        local candidate = item:match("^%s*(.-)%s*$")
+        candidate = normalizer and normalizer(candidate) or candidate
+        if candidate == token then return true end
+    end
+    return false
+end
+
+local function motion_has_followup_marker(value)
+    local motion = trim(value)
+    return motion:sub(1, 1) == ">" or motion:find(">", 1, true) ~= nil
+end
+
+function ActionMatcher.is_optional_parent_for_followup(actual_motion, expected_step, actual_action_id, expected_exception)
     if type(actual_motion) ~= "string" or type(expected_step) ~= "table" then return false end
     local expected_motion = trim(expected_step.motion)
+    local exception_motion = expected_exception and (
+        expected_exception.follow_up_motion or expected_exception.override_name or expected_exception.display_motion
+    ) or nil
+    if not motion_has_followup_marker(exception_motion or expected_motion) then return false end
+
+    if expected_exception then
+        if list_contains_token(expected_exception.optional_parent_ids, tonumber(actual_action_id), tonumber) then
+            return true
+        end
+        if list_contains_token(expected_exception.optional_parent_motions, actual_motion, ActionMatcher.normalize_motion_token) then
+            return true
+        end
+    end
+
     if expected_motion:sub(1, 1) ~= ">" then return false end
     local motion = actual_motion:match("^%s*(.-)%s*$")
     return motion == "214+P"

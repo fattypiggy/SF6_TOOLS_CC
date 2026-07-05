@@ -7415,7 +7415,12 @@ local function ct_player_process_actions(p_idx, p_state, actions_to_process)
                                 match_probe.candidate_consumed_for_step = consumed_for_step
                                 match_probe.last_matched_action_instance = trial_state._last_matched_action_instance
                                 DebugTrace.record_match_probe(trial_state, match_probe)
-                            elseif expected and ActionMatcher.is_optional_parent_for_followup(motion_str, expected) then
+                            elseif expected and ActionMatcher.is_optional_parent_for_followup(
+                                motion_str,
+                                expected,
+                                act_id,
+                                CharacterRules.get_exception(p_state.exceptions, common_exceptions, expected.id)
+                            ) then
                                 -- Older combo JSON may omit the stance entry before a > follow-up.
                                 -- Do not let the parent action match the follow-up by button input.
                                 match_probe.reject_reason = "optional_parent_for_followup"

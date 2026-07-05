@@ -51,14 +51,13 @@ local function parse_absorb_ids(exception)
 end
 
 function CharacterRules.find_recent_absorb_confirmation(character_rules, common_rules, expected, recent_inputs, character_name)
-    if character_name ~= "EHonda" and character_name ~= "Honda" then
-        return { matched = false, block_reason = "character_not_ehonda" }
-    end
     if not expected then return { matched = false, block_reason = "missing_expected" } end
 
     local exception = CharacterRules.get_exception(character_rules, common_rules, expected.id)
     local absorb_ids = parse_absorb_ids(exception)
     if not absorb_ids then return { matched = false, block_reason = "missing_absorb_ids" } end
+    local is_honda = character_name == "EHonda" or character_name == "Honda"
+    local match_reason = is_honda and "ehonda_recent_absorb" or "exception_recent_absorb"
 
     local expected_combo = tonumber(expected.expected_combo)
     if expected_combo == nil then return { matched = false, block_reason = "missing_expected_combo" } end
@@ -72,7 +71,7 @@ function CharacterRules.find_recent_absorb_confirmation(character_rules, common_
                 return {
                     matched = true,
                     actual_action_id = recent_id,
-                    match_reason = "ehonda_recent_absorb",
+                    match_reason = match_reason,
                     recent_index = i,
                     combo_count = combo_count,
                     start_frame = recent.start_frame,
@@ -101,14 +100,13 @@ function CharacterRules.find_recent_absorb_confirmation(character_rules, common_
 end
 
 function CharacterRules.match_current_absorb_confirmation(character_rules, common_rules, expected, action_id, combo_count, character_name)
-    if character_name ~= "EHonda" and character_name ~= "Honda" then
-        return { matched = false, block_reason = "character_not_ehonda" }
-    end
     if not expected then return { matched = false, block_reason = "missing_expected" } end
 
     local exception = CharacterRules.get_exception(character_rules, common_rules, expected.id)
     local absorb_ids = parse_absorb_ids(exception)
     if not absorb_ids then return { matched = false, block_reason = "missing_absorb_ids" } end
+    local is_honda = character_name == "EHonda" or character_name == "Honda"
+    local match_reason = is_honda and "ehonda_current_absorb" or "exception_current_absorb"
 
     local current_id = tonumber(action_id)
     if not current_id or not absorb_ids[current_id] then
@@ -133,7 +131,7 @@ function CharacterRules.match_current_absorb_confirmation(character_rules, commo
     return {
         matched = true,
         actual_action_id = current_id,
-        match_reason = "ehonda_current_absorb",
+        match_reason = match_reason,
         combo_count = current_combo,
         expected_id = expected.id,
         expected_combo = expected_combo,
