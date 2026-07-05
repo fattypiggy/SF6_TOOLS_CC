@@ -3582,12 +3582,29 @@ end
 
 function CTTimelineSequenceNormalizer.motion_anchor_parts(step)
     local motion = CTTimelineSequenceNormalizer.compact_motion(step and step.motion or ""):gsub("^J%.", "")
-    local dirs, btn = motion:match("^([1-9]+)%+([LMH]?[PK])$")
-    if not dirs or not btn then
-        dirs, btn = motion:match("^([1-9]+)([LMH][PK])$")
-    end
+    local dirs, btn = motion:match("^([1-9]+)%+(.+)$")
+    if not dirs or not btn then dirs, btn = motion:match("^([1-9]+)(PP)$") end
+    if not dirs or not btn then dirs, btn = motion:match("^([1-9]+)(KK)$") end
+    if not dirs or not btn then dirs, btn = motion:match("^([1-9]+)([LMH][PK])$") end
+    if not dirs or not btn then dirs, btn = motion:match("^([1-9]+)([PK])$") end
     if not dirs or not btn then return nil, nil end
-    return dirs:sub(-1), btn
+
+    local normalized_buttons = {}
+    local button_parts = {}
+    if btn == "P" or btn == "K" or btn == "PP" or btn == "KK" then
+        return dirs:sub(-1), btn
+    end
+
+    for part in tostring(btn or ""):gmatch("[^+]+") do
+        local token = tostring(part or ""):upper()
+        if not CTTimelineSequenceNormalizer.button_set[token] then return nil, nil end
+        normalized_buttons[token] = true
+    end
+    for _, button in ipairs(CTTimelineSequenceNormalizer.button_order) do
+        if normalized_buttons[button] then button_parts[#button_parts + 1] = button end
+    end
+    if #button_parts == 0 then return nil, nil end
+    return dirs:sub(-1), table.concat(button_parts, "+")
 end
 
 function CTTimelineSequenceNormalizer.button_matches_token(event, token)
@@ -3597,6 +3614,23 @@ function CTTimelineSequenceNormalizer.button_matches_token(event, token)
         return event.new_button_key == "LP" or event.new_button_key == "MP" or event.new_button_key == "HP"
     elseif token == "K" then
         return event.new_button_key == "LK" or event.new_button_key == "MK" or event.new_button_key == "HK"
+    elseif token == "PP" then
+        local count = 0
+        for _, button in ipairs({ "LP", "MP", "HP" }) do
+            if event.new_buttons and event.new_buttons[button] then count = count + 1 end
+        end
+        return count >= 2
+    elseif token == "KK" then
+        local count = 0
+        for _, button in ipairs({ "LK", "MK", "HK" }) do
+            if event.new_buttons and event.new_buttons[button] then count = count + 1 end
+        end
+        return count >= 2
+    elseif token:find("+", 1, true) then
+        for part in token:gmatch("[^+]+") do
+            if not (event.new_buttons and event.new_buttons[part]) then return false end
+        end
+        return true
     end
     return event.new_button_key == token
 end
@@ -3693,7 +3727,9 @@ function CTTimelineSequenceNormalizer.expand(sequence)
         local duplicate_events = {}
         local step_event_idx = matches[i]
 
-        if CTTimelineSequenceNormalizer.is_simple_button_step(step) and step_event_idx then
+        local combo_delta = final_combo - prev_combo
+        local can_expand_repeated_simple = combo_delta <= 1
+        if CTTimelineSequenceNormalizer.is_simple_button_step(step) and step_event_idx and can_expand_repeated_simple then
             local next_event_idx = nil
             for j = i + 1, #sequence do
                 if matches[j] then next_event_idx = matches[j]; break end
