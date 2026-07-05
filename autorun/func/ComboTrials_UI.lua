@@ -17,7 +17,7 @@ local ctx
 -- Forward declarations resolved in init()
 local d2d_cfg, trial_state, players, file_system
 local common_exceptions, sf6_menu_state
-local load_and_start_trial, start_recording, stop_recording_and_save, cancel_recording
+local load_and_start_trial, start_recording, stop_recording_and_save, cancel_recording, cancel_recording_due_to_menu
 local refresh_combo_list, restore_trial_vital, save_d2d_config, get_exc_filename
 local ui_state
 
@@ -997,6 +997,22 @@ local function _ctui_clear_visual_state()
     pcall(_ctui_flush_trial_display)
 end
 
+local function _ctui_cancel_recording_for_menu(reason)
+    if not trial_state or not trial_state.is_recording then return false end
+
+    if cancel_recording_due_to_menu then
+        local ok, canceled = pcall(cancel_recording_due_to_menu, reason or "menu")
+        if ok and canceled then return true end
+    end
+
+    local cp = trial_state.recording_player
+    if cancel_recording then cancel_recording() end
+    _G.ComboTrials_SaveFailedPlayer = nil
+    _G.ComboTrials_ReplaySavePlayer = nil
+    _G.ComboTrials_PendingSaveCanceled = cp
+    return true
+end
+
 re.on_frame(function()
     if not RuntimeSafety.is_allowed() then
         _ctui_flush_d2d_config_for_exit()
@@ -1021,14 +1037,22 @@ re.on_frame(function()
             is_pause_menu = true
         end
     end
+    if is_pause_menu then
+        _ctui_cancel_recording_for_menu("pause_menu")
+    end
 
     local is_replay_context = (_G.FlowMapID == 10) or (_G.IsInReplay == true) or (_G.IsInBattleHub == true)
     if not is_replay_context and _G.CurrentTrainerMode ~= 4 then
-        _ctui_clear_visual_state()
+        if _ctui_cancel_recording_for_menu("mode_exit") then
+            _ctui_flush_d2d_config_for_exit()
+            _ctui_hide_visual_state()
+        else
+            _ctui_clear_visual_state()
+        end
         return
     end
     if not is_replay_context and _G.TrainingScriptManagerActiveThisFrame ~= true then
-        if is_pause_menu then
+        if is_pause_menu or _ctui_cancel_recording_for_menu("ui_inactive") then
             _ctui_flush_d2d_config_for_exit()
             _ctui_hide_visual_state()
         else
@@ -1042,7 +1066,7 @@ re.on_frame(function()
     _G.ComboTrialsD2DEnabled = should_enable_ct_ui
     if not should_enable_ct_ui then
         _ctui_flush_d2d_config_for_exit()
-        if is_pause_menu then
+        if is_pause_menu or _ctui_cancel_recording_for_menu("ui_hidden") then
             _ctui_hide_visual_state()
         else
             _ctui_clear_visual_state()
@@ -2082,6 +2106,7 @@ function M.init(shared_ctx)
     start_recording = ctx.start_recording
     stop_recording_and_save = ctx.stop_recording_and_save
     cancel_recording = ctx.cancel_recording
+    cancel_recording_due_to_menu = ctx.cancel_recording_due_to_menu
     refresh_combo_list = ctx.refresh_combo_list
     restore_trial_vital = ctx.restore_trial_vital
     save_d2d_config = ctx.save_d2d_config

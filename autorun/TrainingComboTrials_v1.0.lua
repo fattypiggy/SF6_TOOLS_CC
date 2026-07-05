@@ -4014,17 +4014,46 @@ local function start_trial(player_idx)
     trial_state._pending_reinject_settings = true
 end
 
+local function clear_recording_logger(player_idx)
+    local rec = (player_idx == 0) and logger_state.rec_p1 or logger_state.rec_p2
+    if not rec then return end
+    rec.active = false
+    rec.has_started = false
+    rec.wait_neutral = false
+    rec.data = {}
+end
+
 local function cancel_recording()
+    local canceled_player = trial_state.recording_player
     trial_state.is_recording = false
     trial_state.is_playing = false
     trial_state.sequence = {}
     trial_state.current_step = 1
+    trial_state._xt_pending_save = false
+    trial_state._xt_pending_save_player = nil
+    trial_state._xt_pending_save_error = nil
     trial_state._rec_environment = nil
     trial_state._rec_scene_state = nil
     trial_state._rec_hp_snapshot = nil
+    clear_recording_logger(canceled_player)
     -- Flush displayed input history
     reset_combo_visual_runtime()
     step_combo_reset_gc()
+end
+
+local function cancel_recording_due_to_menu(reason)
+    if not trial_state.is_recording then return false end
+
+    local canceled_player = trial_state.recording_player
+    cancel_recording()
+
+    _G.ComboTrials_ReplaySavePlayer = nil
+    _G.ComboTrials_SaveFailedPlayer = nil
+    _G.ComboTrials_LastSavedFilename = nil
+    _G.ComboTrials_LastSavedPlayer = nil
+    _G.ComboTrials_PendingSaveCanceled = canceled_player
+    trial_state._recording_cancel_reason = reason or "menu"
+    return true
 end
 
 local function stop_recording_and_save()
@@ -8118,6 +8147,7 @@ ctx.load_and_start_trial = load_and_start_trial
 ctx.start_recording = start_recording
 ctx.stop_recording_and_save = stop_recording_and_save
 ctx.cancel_recording = cancel_recording
+ctx.cancel_recording_due_to_menu = cancel_recording_due_to_menu
 ctx.refresh_combo_list = refresh_combo_list
 ctx.restore_trial_vital = restore_trial_vital
 ctx.save_d2d_config = save_d2d_config
