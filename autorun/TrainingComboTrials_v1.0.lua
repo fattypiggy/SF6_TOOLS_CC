@@ -3647,6 +3647,30 @@ function CTTimelineSequenceNormalizer.is_simple_button_step(step)
     return dir ~= nil and btn ~= nil
 end
 
+function CTTimelineSequenceNormalizer.simple_button_step_key(step)
+    if not CTTimelineSequenceNormalizer.is_simple_button_step(step) then return nil end
+    local action_id = step and step.id
+    if action_id ~= nil then return "id:" .. tostring(action_id) end
+    return "motion:" .. CTTimelineSequenceNormalizer.compact_motion(step and step.motion or "")
+end
+
+function CTTimelineSequenceNormalizer.build_single_hit_evidence(sequence)
+    local evidence = {}
+    if type(sequence) ~= "table" then return evidence end
+
+    local prev_combo = 0
+    for _, step in ipairs(sequence) do
+        local final_combo = tonumber(step and step.expected_combo) or 0
+        local key = CTTimelineSequenceNormalizer.simple_button_step_key(step)
+        if key and final_combo - prev_combo == 1 then
+            evidence[key] = true
+        end
+        prev_combo = final_combo
+    end
+
+    return evidence
+end
+
 function CTTimelineSequenceNormalizer.event_matches_step(event, step)
     if type(event) ~= "table" or type(step) ~= "table" then return false end
     if CTTimelineSequenceNormalizer.is_drive_rush_step(step) then
@@ -3707,6 +3731,7 @@ function CTTimelineSequenceNormalizer.expand(sequence)
 
     local events = CTTimelineSequenceNormalizer.build_press_events(timeline)
     if #events == 0 then return end
+    local single_hit_evidence = CTTimelineSequenceNormalizer.build_single_hit_evidence(sequence)
 
     local matches = {}
     local search_idx = 1
@@ -3728,7 +3753,9 @@ function CTTimelineSequenceNormalizer.expand(sequence)
         local step_event_idx = matches[i]
 
         local combo_delta = final_combo - prev_combo
+        local simple_step_key = CTTimelineSequenceNormalizer.simple_button_step_key(step)
         local can_expand_repeated_simple = combo_delta <= 1
+            or (combo_delta > 1 and simple_step_key and single_hit_evidence[simple_step_key] == true)
         if CTTimelineSequenceNormalizer.is_simple_button_step(step) and step_event_idx and can_expand_repeated_simple then
             local next_event_idx = nil
             for j = i + 1, #sequence do
