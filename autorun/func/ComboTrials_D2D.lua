@@ -293,8 +293,10 @@ end
 local function get_exception_display_motion(exception_map, step)
     if type(exception_map) ~= "table" or type(step) ~= "table" then return nil end
     local entry = exception_map[tostring(step.id or "")]
-    if type(entry) == "table" and type(entry.override_name) == "string" and entry.override_name ~= "" then
-        return entry.override_name
+    if type(entry) == "table" then
+        for _, key in ipairs({ "display_motion", "display_override", "override_name" }) do
+            if type(entry[key]) == "string" and entry[key] ~= "" then return entry[key] end
+        end
     end
     return nil
 end

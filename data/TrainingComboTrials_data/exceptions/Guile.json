@@ -334,5 +334,14 @@
         "ignore": false,
         "is_holdable": false,
         "override_name": "[2]8+HK (Flash Kick)"
+    },
+    "1200": {
+        "absorb_ids": "",
+        "display_motion": "[4]646+LP+MP",
+        "force": false,
+        "hold_partial_check": true,
+        "ignore": false,
+        "ignore_prev_frames": 5,
+        "is_holdable": false
     }
 }
