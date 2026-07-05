@@ -113,10 +113,18 @@ function M.load_combo_from_file(path, force)
     trial_state._match_probe_history = nil
     trial_state._verify_trace_dump = nil
     if loaded[1] then
-        trial_state.start_pos_p1 = loaded[1].start_pos_p1
-        trial_state.start_pos_p2 = loaded[1].start_pos_p2
-        trial_state.start_pos_p1_raw = loaded[1].start_pos_p1_raw
-        trial_state.start_pos_p2_raw = loaded[1].start_pos_p2_raw
+        trial_state.start_pos_p1 = loaded[1].recording_start_pos_p1 or loaded[1].start_pos_p1
+        trial_state.start_pos_p2 = loaded[1].recording_start_pos_p2 or loaded[1].start_pos_p2
+        trial_state.start_pos_p1_raw = loaded[1].recording_start_pos_p1_raw or loaded[1].start_pos_p1_raw
+        trial_state.start_pos_p2_raw = loaded[1].recording_start_pos_p2_raw or loaded[1].start_pos_p2_raw
+        trial_state.recording_start_pos_p1 = loaded[1].recording_start_pos_p1 or loaded[1].start_pos_p1
+        trial_state.recording_start_pos_p2 = loaded[1].recording_start_pos_p2 or loaded[1].start_pos_p2
+        trial_state.recording_start_pos_p1_raw = loaded[1].recording_start_pos_p1_raw or loaded[1].start_pos_p1_raw
+        trial_state.recording_start_pos_p2_raw = loaded[1].recording_start_pos_p2_raw or loaded[1].start_pos_p2_raw
+        trial_state.first_action_pos_p1 = loaded[1].first_action_pos_p1
+        trial_state.first_action_pos_p2 = loaded[1].first_action_pos_p2
+        trial_state.first_action_pos_p1_raw = loaded[1].first_action_pos_p1_raw
+        trial_state.first_action_pos_p2_raw = loaded[1].first_action_pos_p2_raw
     end
     return true
 end

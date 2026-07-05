@@ -165,8 +165,21 @@ function Copy-TrackedReframeworkFiles {
         throw "Untracked package-source files exist. Track them or move them before packaging:$([Environment]::NewLine)$preview"
     }
 
+    $releaseExcludedTrackedFiles = @(
+        "autorun/SF6CC_DynamicRecords.lua",
+        "autorun/func/DynamicRecords.lua"
+    )
+    $releaseExcludedSet = @{}
+    foreach ($excludedPath in $releaseExcludedTrackedFiles) {
+        $releaseExcludedSet[$excludedPath.ToLowerInvariant()] = $true
+    }
+
     foreach ($relativePath in $trackedFiles) {
         if ([string]::IsNullOrWhiteSpace($relativePath)) {
+            continue
+        }
+        $normalizedRelativePath = ($relativePath -replace '\\', '/').ToLowerInvariant()
+        if ($releaseExcludedSet.ContainsKey($normalizedRelativePath)) {
             continue
         }
 

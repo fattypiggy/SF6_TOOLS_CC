@@ -267,6 +267,14 @@ local trial_state = {
     start_pos_p2 = nil,
     start_pos_p1_raw = nil,
     start_pos_p2_raw = nil,
+    recording_start_pos_p1 = nil,
+    recording_start_pos_p2 = nil,
+    recording_start_pos_p1_raw = nil,
+    recording_start_pos_p2_raw = nil,
+    first_action_pos_p1 = nil,
+    first_action_pos_p2 = nil,
+    first_action_pos_p1_raw = nil,
+    first_action_pos_p2_raw = nil,
     pending_exact_pos = 0,
     pending_exact_timeout = 0,
     saved_start_location = nil,
@@ -4024,6 +4032,14 @@ local function start_recording(player_idx)
     -- Capture live position and refresh (same behavior as start_trial)
     trial_state.start_pos_p1, trial_state.start_pos_p2, trial_state.start_pos_p1_raw, trial_state.start_pos_p2_raw =
         capture_current_positions()
+    trial_state.recording_start_pos_p1 = trial_state.start_pos_p1
+    trial_state.recording_start_pos_p2 = trial_state.start_pos_p2
+    trial_state.recording_start_pos_p1_raw = trial_state.start_pos_p1_raw
+    trial_state.recording_start_pos_p2_raw = trial_state.start_pos_p2_raw
+    trial_state.first_action_pos_p1 = nil
+    trial_state.first_action_pos_p2 = nil
+    trial_state.first_action_pos_p1_raw = nil
+    trial_state.first_action_pos_p2_raw = nil
     trial_state._rec_hp_snapshot = capture_trial_hp_snapshot(player_idx)
     apply_forced_position(true) -- skip_mirror: record in normal position
 
@@ -6947,12 +6963,13 @@ local function ct_player_process_actions(p_idx, p_state, actions_to_process)
 
                 -- 3. COMBO TRIAL HANDLING (Now that motion_str is finalized!)
                 if trial_state.is_recording and p_idx == trial_state.recording_player then
-                    -- Capture exact position at the frame when input was detected
+                    -- Keep playback start at the recording-start position; first action
+                    -- position is only diagnostic/display data.
                     if #trial_state.sequence == 0 then
-                        trial_state.start_pos_p1 = process_act.p1
-                        trial_state.start_pos_p2 = process_act.p2
-                        trial_state.start_pos_p1_raw = process_act.r1
-                        trial_state.start_pos_p2_raw = process_act.r2
+                        trial_state.first_action_pos_p1 = process_act.p1
+                        trial_state.first_action_pos_p2 = process_act.p2
+                        trial_state.first_action_pos_p1_raw = process_act.r1
+                        trial_state.first_action_pos_p2_raw = process_act.r2
                     end
 
                     if #trial_state.sequence > 0 then
@@ -8065,6 +8082,16 @@ function save_trial_sequence(meta)
             trial_state.sequence[1].start_pos_p2 = trial_state.start_pos_p2
             trial_state.sequence[1].start_pos_p1_raw = trial_state.start_pos_p1_raw
             trial_state.sequence[1].start_pos_p2_raw = trial_state.start_pos_p2_raw
+            trial_state.sequence[1].recording_start_pos_p1 = trial_state.recording_start_pos_p1 or trial_state.start_pos_p1
+            trial_state.sequence[1].recording_start_pos_p2 = trial_state.recording_start_pos_p2 or trial_state.start_pos_p2
+            trial_state.sequence[1].recording_start_pos_p1_raw = trial_state.recording_start_pos_p1_raw or trial_state.start_pos_p1_raw
+            trial_state.sequence[1].recording_start_pos_p2_raw = trial_state.recording_start_pos_p2_raw or trial_state.start_pos_p2_raw
+            if trial_state.first_action_pos_p1 and trial_state.first_action_pos_p2 then
+                trial_state.sequence[1].first_action_pos_p1 = trial_state.first_action_pos_p1
+                trial_state.sequence[1].first_action_pos_p2 = trial_state.first_action_pos_p2
+                trial_state.sequence[1].first_action_pos_p1_raw = trial_state.first_action_pos_p1_raw
+                trial_state.sequence[1].first_action_pos_p2_raw = trial_state.first_action_pos_p2_raw
+            end
             trial_state.sequence[1].recorded_by = rec_p
             if trial_state._piyo_detected then
                 trial_state.sequence[1].has_piyo = true
