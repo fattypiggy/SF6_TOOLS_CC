@@ -343,5 +343,14 @@
         "ignore": false,
         "ignore_prev_frames": 5,
         "is_holdable": false
+    },
+    "1201": {
+        "absorb_ids": "",
+        "display_motion": "[4]646+HP",
+        "force": false,
+        "hold_partial_check": true,
+        "ignore": false,
+        "ignore_prev_frames": 5,
+        "is_holdable": false
     }
 }
