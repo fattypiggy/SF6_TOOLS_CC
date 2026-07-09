@@ -707,8 +707,8 @@ local d2d_cfg = {
     font_size = 0.028,
     trial_title_show = true,
     show_trial_notes = false,
-    auto_next_trial = true,
-    auto_retry_on_fail = true,
+    auto_next_trial = true,    -- after a manual success: auto-load the next combo in the list
+    auto_retry_on_fail = true, -- after the fail banner ends: auto-reset the trial (no manual reset needed)
     trial_title_font_size = 0.030,
     spacing_y = 0.045,
     spacing_x = 0.005,
@@ -805,6 +805,8 @@ load_d2d_config()
 -- =========================================================
 do
     local COMPLETED_TRIALS_FILE = "TrainingComboTrials_data/CompletedTrials.json"
+    -- normalized combo file path -> true, for every combo the player has
+    -- finished manually at least once (demo playback never counts)
     local completed_trials = {}
 
     local function completed_trial_key(path)
@@ -3993,8 +3995,16 @@ local function clear_trial_attempt_state(player_idx, phase)
     trial_state.fail_timer = 0
     trial_state.fail_reason = nil
     trial_state.manual_reset_pending = false
+    -- Auto-flow state, owned by ctx.handle_trial_auto_flow:
+    -- _success_latched      = this attempt's success was already processed once
+    --                         (completion mark + auto-advance); survives the
+    --                         self-re-arming success banner
+    -- _auto_next_countdown  = frames left before auto-loading the next combo
+    -- _attempt_had_demo     = demo playback drove (part of) this attempt, so a
+    --                         resulting success must not count as completed
     trial_state._success_latched = false
     trial_state._auto_next_countdown = nil
+    trial_state._attempt_had_demo = false
     trial_state._fail_captured = false
     trial_state.active_universal_hold = nil
     trial_state.pending_auto_check = nil
@@ -7960,6 +7970,14 @@ do
 
     ctx.handle_trial_auto_flow = function()
         if not trial_state.is_playing or (demo_state and demo_state.is_playing) then
+            if demo_state and demo_state.is_playing then
+                -- Demo playback drives the same validation pipeline, and the
+                -- finished steps survive quitting the demo, which can trigger
+                -- a success banner afterwards. Taint the attempt so a
+                -- demo-driven finish never counts as completed; any manual
+                -- reset/restart clears this via clear_trial_attempt_state.
+                trial_state._attempt_had_demo = true
+            end
             trial_state._success_latched = false
             trial_state._auto_next_countdown = nil
             return
@@ -7979,15 +7997,19 @@ do
             return
         end
 
-        -- Latch the first frame of the success banner: record completion once
+        -- Latch the first frame of the success banner: record completion once.
+        -- A demo-tainted attempt gets neither the completion mark nor the
+        -- auto-advance — only manual play counts.
         if (trial_state.success_timer or 0) > 0 and not trial_state._success_latched then
             trial_state._success_latched = true
-            local path = trial_state.current_file_path or trial_state.current_file
-            if file_system.mark_trial_completed(path) then
-                refresh_combo_list_preserve_selection(false)
-            end
-            if d2d_cfg.auto_next_trial ~= false then
-                trial_state._auto_next_countdown = d2d_cfg.fail_display_frames or 120
+            if not trial_state._attempt_had_demo then
+                local path = trial_state.current_file_path or trial_state.current_file
+                if file_system.mark_trial_completed(path) then
+                    refresh_combo_list_preserve_selection(false)
+                end
+                if d2d_cfg.auto_next_trial ~= false then
+                    trial_state._auto_next_countdown = d2d_cfg.fail_display_frames or 120
+                end
             end
         end
 
