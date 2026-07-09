@@ -708,6 +708,7 @@ local d2d_cfg = {
     trial_title_show = true,
     show_trial_notes = false,
     auto_next_trial = true,
+    auto_retry_on_fail = true,
     trial_title_font_size = 0.030,
     spacing_y = 0.045,
     spacing_x = 0.005,
@@ -7931,7 +7932,7 @@ local function ct_player_universal_hold(p_idx, p_state)
 end
 
 -- =========================================================
--- TRIAL SUCCESS: completion marking + auto-advance
+-- TRIAL SUCCESS/FAIL: completion marking, auto-advance, auto-retry
 -- Attached to ctx inside do..end: the main chunk is close to
 -- Lua's 200-local limit, so no new top-level locals.
 -- =========================================================
@@ -7957,10 +7958,24 @@ do
         return true
     end
 
-    ctx.handle_trial_success_progress = function()
+    ctx.handle_trial_auto_flow = function()
         if not trial_state.is_playing or (demo_state and demo_state.is_playing) then
             trial_state._success_latched = false
             trial_state._auto_next_countdown = nil
+            return
+        end
+
+        -- AUTO-RETRY ON FAIL: when the fail banner finishes, the vanilla
+        -- flow sets manual_reset_pending and waits for a manual reset.
+        -- Perform the same reset automatically (mirrors the reset button:
+        -- reset_trial_steps clears manual_reset_pending, so this fires once).
+        if d2d_cfg.auto_retry_on_fail ~= false
+            and trial_state.manual_reset_pending
+            and #trial_state.sequence > 0
+            and (trial_state.fail_timer or 0) == 0
+            and (trial_state.success_timer or 0) == 0 then
+            reset_trial_steps()
+            ct_ticker("失败，自动重试")
             return
         end
 
@@ -8096,7 +8111,7 @@ re.on_frame(function()
     trial_state._engine_frame_count = engine_frame_count
     trial_state._demo_timing_ui_baseline = (demo_state and demo_state.is_playing == true) or false
     logger_process_game_state()
-    if ctx.handle_trial_success_progress then ctx.handle_trial_success_progress() end
+    if ctx.handle_trial_auto_flow then ctx.handle_trial_auto_flow() end
 
     if trial_state.is_recording then
         if not trial_state._rec_frame_count then trial_state._rec_frame_count = 0 end

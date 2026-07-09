@@ -1509,6 +1509,10 @@ local function draw_combo_trials_menu_ui()
             if imgui.button("清除完成标记") and ctx.clear_completed_trials then
                 ctx.clear_completed_trials()
             end
+            if d2d_cfg.auto_retry_on_fail == nil then d2d_cfg.auto_retry_on_fail = true end
+            c, v = imgui.checkbox("失败后自动重试（无需手动重置）", d2d_cfg.auto_retry_on_fail); if c then
+                d2d_cfg.auto_retry_on_fail = v; changed = true
+            end
             c, v = imgui.drag_float("标题字体大小", d2d_cfg.trial_title_font_size or 0.030, 0.001, 0.010, 0.080, "%.3f"); if c then
                 d2d_cfg.trial_title_font_size = v; changed = true
             end
